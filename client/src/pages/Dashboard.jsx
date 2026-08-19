@@ -378,13 +378,11 @@ export default function Dashboard() {
               {employeFiltre ? (
                 <div className="overflow-hidden rounded-xl ring-1 ring-slate-200">
                   <div className="flex items-center gap-3 bg-gradient-to-br from-brand-700 to-violet-700 p-3">
-                    {employeFiltre.photo_url ? (
-                      <img src={employeFiltre.photo_url} alt="Photo" className="h-14 w-14 shrink-0 rounded-full object-cover ring-2 ring-white/60" />
-                    ) : (
-                      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-white/20 text-lg font-black text-white">
-                        {(employeFiltre.nom || '?').charAt(0)}{(employeFiltre.prenom || '').charAt(0)}
-                      </span>
-                    )}
+                  <img 
+  src={`https://xmator-rh-backend.onrender.com/photos/${employeFiltre.matricule}.webp`} 
+  alt="Photo" 
+  className="h-14 w-14 shrink-0 rounded-full object-cover ring-2 ring-white/60" 
+/>
                     <div className="min-w-0 text-white">
                       <p className="truncate text-sm font-bold">{employeFiltre.nom} {employeFiltre.prenom}</p>
                       <p className="text-xs text-white/80">Mat. {employeFiltre.matricule}</p>
