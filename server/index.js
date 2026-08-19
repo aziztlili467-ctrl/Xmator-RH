@@ -11,7 +11,7 @@ const app = express();
 const corsOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()) : false;
 app.use(cors({ origin: corsOrigins }));
 app.use(express.json({ limit: '10mb' }));
-app.use('/data/photos', express.static(path.join(__dirname, 'public/photos')));
+app.use('/photos', express.static(path.join(__dirname, 'public/photos')));
 
 const { requireAuth, requireRole, requireModule } = require('./middleware/auth');
 const { auditLog } = require('./middleware/audit');
