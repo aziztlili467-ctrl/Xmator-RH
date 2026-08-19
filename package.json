@@ -1,0 +1,15 @@
+{
+  "name": "amicale-conges",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SaaS de gestion des congés, maladies et absences — Amicale du Personnel de la Banque Centrale",
+  "scripts": {
+    "install:all": "npm install && npm --prefix server install && npm --prefix client install",
+    "dev": "concurrently -n api,web -c blue,green \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
+    "build": "npm --prefix client run build",
+    "start": "npm --prefix client run build && node --env-file-if-exists=.env server/index.js"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

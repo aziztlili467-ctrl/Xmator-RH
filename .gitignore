@@ -1,0 +1,21 @@
+node_modules/
+dist/
+data/
+*.log
+.DS_Store
+
+# Secrets & configuration locale
+.env
+.env.*
+!.env.example
+
+# Bases de données (données personnelles réelles)
+*.db
+*.db-wal
+*.db-shm
+
+# Documents internes (mots de passe, données employés)
+instructions2026.md
+
+# Scripts de débogage
+dbg*.js
