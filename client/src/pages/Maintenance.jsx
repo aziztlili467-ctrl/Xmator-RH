@@ -64,7 +64,7 @@ export default function Maintenance() {
     setBusy(true); setError(''); setMsg('');
     try {
       const r = await api.maintenance.backupCreer(libelle);
-      setMsg(`Sauvegarde créée : « ${r.nom} » (${fmtTaille(r.taille)}) — ${r.nbEmployes} employé(s), ${r.nbPhotos} photo(s). Copie serveur enregistrée, téléchargement du fichier…`);
+      setMsg(`Sauvegarde créée : « ${r.nom} » (${fmtTaille(r.taille)}) — ${r.nbEmployes} employé(s), ${r.nbPointages} pointage(s), ${r.nbHoraires} ligne(s) d'horaires, ${r.nbPhotos} photo(s). Contenu complet, à jour à la dernière seconde. Copie serveur enregistrée, téléchargement du fichier…`);
       await api.maintenance.backupTelecharger(r.nom);
       setLibelle('');
       loadBackups();
@@ -82,7 +82,7 @@ export default function Maintenance() {
     setBusy(true); setError(''); setMsg('');
     try {
       const r = await api.maintenance.restaurerDepuisSauvegarde(nom);
-      setMsg(`Restauration réussie : ${r.nbEmployes} employé(s), ${r.tables.mouvements} mouvement(s), ${r.tables.demandes_conge} demande(s), ${r.tables.arrets_maladie} arrêt(s), ${r.photoCount} photo(s).`);
+      setMsg(`Restauration réussie : ${r.nbEmployes} employé(s), ${r.tables.pointages} pointage(s), ${r.tables.horaires_travail} ligne(s) d'horaires, ${r.tables.mouvements} mouvement(s), ${r.tables.demandes_conge} demande(s), ${r.tables.arrets_maladie} arrêt(s), ${r.photoCount} photo(s). Toutes les rubriques ont été restaurées.`);
       loadBackups();
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
@@ -96,7 +96,7 @@ export default function Maintenance() {
     setBusy(true); setError(''); setMsg('');
     try {
       const r = await api.maintenance.restaurer(restoreFile);
-      setMsg(`Restauration réussie : ${r.nbEmployes} employé(s), ${r.tables.mouvements} mouvement(s), ${r.tables.demandes_conge} demande(s), ${r.tables.arrets_maladie} arrêt(s), ${r.photoCount} photo(s).`);
+      setMsg(`Restauration réussie : ${r.nbEmployes} employé(s), ${r.tables.pointages} pointage(s), ${r.tables.horaires_travail} ligne(s) d'horaires, ${r.tables.mouvements} mouvement(s), ${r.tables.demandes_conge} demande(s), ${r.tables.arrets_maladie} arrêt(s), ${r.photoCount} photo(s). Toutes les rubriques ont été restaurées.`);
       setRestoreFile(null);
       loadBackups();
     } catch (err) { setError(err.message); }
@@ -128,7 +128,7 @@ export default function Maintenance() {
       <div>
         <h2 className="text-lg font-bold text-slate-900">Sauvegarde & réinitialisation</h2>
         <p className="text-sm text-slate-500">
-          Sauvegarder toutes les données à une date précise, restaurer une sauvegarde en cas de bug ou de mauvaise manipulation, ou remettre les données à l'état vide.
+          Sauvegarder toutes les données de toutes les rubriques à la dernière minute, restaurer une sauvegarde en cas de bug ou de mauvaise manipulation, ou remettre les données à l'état vide.
         </p>
       </div>
 
@@ -139,7 +139,7 @@ export default function Maintenance() {
       <div className="card p-6">
         <h3 className="mb-1 text-sm font-bold uppercase tracking-wide text-slate-500">Créer une sauvegarde</h3>
         <p className="mb-4 text-xs text-slate-400">
-          Le fichier est horodaté automatiquement (ex. amicale_2026-08-15_14h30.db), copié sur le serveur dans data/backups/ puis téléchargé sur votre PC.
+          Le fichier est horodaté automatiquement (ex. amicale_2026-08-15_14h30.db), copié sur le serveur dans data/backups/ puis téléchargé sur votre PC. Il contient <b>toutes les données de toutes les rubriques</b> : employés, catégories, comptes, soldes &amp; mouvements, demandes de congé, arrêts maladie, présences &amp; pointages, horaires de travail, calendrier de l'année, journal d'activité et photos. La sauvegarde est prise <b>à la dernière minute</b> (toutes les écritures en attente sont incluses).
         </p>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="flex-1">
@@ -208,7 +208,7 @@ export default function Maintenance() {
           </button>
         </form>
         <p className="mt-3 text-xs text-amber-600">
-          ⚠️ La restauration REMPLACE toutes les données actuelles (employés, soldes, demandes, arrêts, comptes) par le contenu du fichier.
+          ⚠️ La restauration REMPLACE toutes les données actuelles de toutes les rubriques (employés, soldes, demandes, arrêts, comptes, présences &amp; pointages, horaires, calendrier, journal d'activité, photos) par le contenu du fichier.
         </p>
       </div>
 

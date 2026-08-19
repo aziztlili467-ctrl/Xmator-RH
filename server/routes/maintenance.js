@@ -34,9 +34,15 @@ function verifierMotDePasseDanger(req) {
   return bcrypt.compareSync(pwd, h.valeur);
 }
 
-// Tables copiées lors d'une restauration (settings est volontairement exclu pour
-// ne jamais désamorcer le seed en cas de sauvegarde ancienne sans cette table).
-const TABLES = ['categories', 'employes', 'utilisateurs', 'mouvements', 'demandes_conge', 'arrets_maladie'];
+// Tables copiées lors d'une restauration — TOUTES les tables de l'application (toutes les rubriques :
+// employés, catégories, comptes, soldes & mouvements, demandes de congé, arrêts maladie, présences &
+// pointages, horaires de travail, calendrier de l'année, journal d'activité, réglages). On ne restaure
+// QUE les tables présentes dans le fichier (une sauvegarde plus ancienne laisse les autres intactes).
+const TABLES = [
+  'categories', 'employes', 'utilisateurs', 'mouvements', 'demandes_conge', 'arrets_maladie',
+  'pointages', 'horaires_travail', 'horaires_pointages', 'corrections_pointages',
+  'jours_travail', 'jours_feries', 'config_annees', 'audit_logs', 'settings',
+];
 
 function horodatage() {
   const d = new Date();
@@ -77,18 +83,17 @@ function restaurerDepuis(chemin) {
     try {
       tables = db.transaction(() => {
         const counts = {};
-        for (const t of TABLES) {
+        // On ne restaure que les tables réellement présentes dans le fichier de sauvegarde :
+        // une table absente d'une sauvegarde plus ancienne reste telle quelle (aucune perte).
+        for (const t of backupTables) {
+          if (!TABLES.includes(t)) continue;
           db.prepare(`DELETE FROM "${t}"`).run();
-          if (backupTables.includes(t)) {
-            const cols = db.prepare(`PRAGMA bck.table_info("${t}")`).all().map((c) => c.name);
-            if (!cols.length) { counts[t] = 0; continue; }
-            const colList = cols.map((c) => `"${c}"`).join(',');
-            counts[t] = db
-              .prepare(`INSERT INTO "${t}" (${colList}) SELECT ${colList} FROM "bck"."${t}"`)
-              .run().changes;
-          } else {
-            counts[t] = 0;
-          }
+          const cols = db.prepare(`PRAGMA bck.table_info("${t}")`).all().map((c) => c.name);
+          if (!cols.length) { counts[t] = 0; continue; }
+          const colList = cols.map((c) => `"${c}"`).join(',');
+          counts[t] = db
+            .prepare(`INSERT INTO "${t}" (${colList}) SELECT ${colList} FROM "bck"."${t}"`)
+            .run().changes;
         }
         const seq = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'").get();
         if (seq && backupTables.includes('sqlite_sequence')) {
@@ -132,6 +137,9 @@ function restaurerDepuis(chemin) {
 // ---- Sauvegarde : création (horodatée + libellé optionnel) ----
 router.post('/backup', async (req, res) => {
   try {
+    // La base est en mode WAL : un checkpoint préalable rapatrie dans le fichier principal toutes
+    // les écritures encore en attente, pour que la sauvegarde soit exactement à la dernière seconde.
+    db.pragma('wal_checkpoint(TRUNCATE)');
     const nom = nomFichierBackup((req.body || {}).libelle);
     const chemin = path.join(BACKUP_DIR, nom);
     await db.backup(chemin);
@@ -160,6 +168,8 @@ router.post('/backup', async (req, res) => {
       taille: st.size,
       date: st.mtime,
       nbEmployes: db.prepare('SELECT COUNT(*) AS n FROM employes').get().n,
+      nbPointages: db.prepare('SELECT COUNT(*) AS n FROM pointages').get().n,
+      nbHoraires: db.prepare('SELECT COUNT(*) AS n FROM horaires_travail').get().n,
       nbPhotos,
     });
   } catch (err) {
