@@ -36,6 +36,8 @@ cp .env.example .env
 | `DB_PATH` | Chemin de la base SQLite (défaut `data/amicale.db`) |
 | `CORS_ORIGIN` | Origines autorisées, séparées par des virgules (vide = même origine) |
 
+**Build du client — origine de l'API** : le client appelle l'API en **même origine** (`/api`) quand il est servi par ce serveur (local ou Render). Pour déployer le front React **séparément** du backend, builder avec `VITE_API_URL=https://xmator-rh-backend.onrender.com` (ex. `npm --prefix client run build`) et ouvrir `CORS_ORIGIN` sur le backend.
+
 À la première exécution avec une base vide, le serveur crée automatiquement :
 un compte super admin `Xmator` (mot de passe `ADMIN_PASSWORD` ou aléatoire affiché dans la console) et un jeu de données de démonstration.
 

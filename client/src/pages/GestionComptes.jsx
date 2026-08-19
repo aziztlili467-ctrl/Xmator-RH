@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { fmtDate } from '../utils';
-import { IconDownload } from '../components/icons';
+import { IconDownload, IconUpload } from '../components/icons';
 
 const ROLES = [
   { value: 'super_admin', label: 'Super Admin', cls: 'bg-purple-50 text-purple-700 ring-purple-200' },
@@ -64,6 +64,8 @@ export default function GestionComptes() {
   const [photoEmpId, setPhotoEmpId] = useState('');
   const [photoFile, setPhotoFile] = useState(null);
   const [photoMsg, setPhotoMsg] = useState('');
+  const [photosZip, setPhotosZip] = useState(null);
+  const [photosMsg, setPhotosMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -157,6 +159,28 @@ export default function GestionComptes() {
       setPhotoFile(null);
       load();
     } catch (err) { setPhotoMsg(err.message); }
+    finally { setBusy(false); }
+  };
+
+  const sauverPhotos = async () => {
+    setBusy(true); setPhotosMsg('');
+    try {
+      await api.photosBackup();
+      setPhotosMsg('Sauvegarde des photos effectuée : fichier ZIP téléchargé (photos à la dernière minute, mêmes noms que le dossier photos).');
+    } catch (err) { setPhotosMsg(err.message); }
+    finally { setBusy(false); }
+  };
+
+  const restaurerPhotos = async (e) => {
+    e.preventDefault();
+    if (!photosZip) return setPhotosMsg('Choisissez le fichier ZIP de sauvegarde des photos.');
+    setBusy(true); setPhotosMsg('');
+    try {
+      const res = await api.photosRestaurer(photosZip);
+      setPhotosMsg(`Photos restaurées avec succès (${res.restaurees} fichier(s) .webp remis en place).`);
+      setPhotosZip(null);
+      load();
+    } catch (err) { setPhotosMsg(err.message); }
     finally { setBusy(false); }
   };
 
@@ -413,6 +437,31 @@ export default function GestionComptes() {
           <button type="submit" className="btn-primary" disabled={busy}>Uploader</button>
         </form>
         {photoMsg && <p className="mt-3 text-sm text-emerald-600">{photoMsg}</p>}
+
+        <div className="mt-5 border-t border-slate-100 pt-5">
+          <h4 className="mb-2 text-sm font-semibold text-slate-700">Sauvegarde & restauration des photos d'identité</h4>
+          <p className="mb-4 text-xs leading-relaxed text-slate-500">
+            Sauvegardez <span className="font-semibold text-slate-700">toutes les photos d'identité</span> dans un fichier
+            ZIP (à la dernière minute), avec les <span className="font-semibold text-slate-700">mêmes noms de fichiers et
+            paramètres</span> que le dossier <code className="rounded bg-slate-100 px-1 py-0.5">data/photos</code> : un
+            fichier <code className="rounded bg-slate-100 px-1 py-0.5">{'{matricule}.webp'}</code> par employé. Conservez ce
+            ZIP dans un endroit sûr, puis utilisez <span className="font-semibold text-slate-700">Restaurer</span> pour
+            remettre l'ensemble des photos en place après une réinstallation ou un incident.
+          </p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <button type="button" className="btn-primary" onClick={sauverPhotos} disabled={busy}>
+              <IconDownload /> Sauvegarder les photos (ZIP)
+            </button>
+            <form onSubmit={restaurerPhotos} className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center">
+              <input className="input p-2 flex-1" type="file" accept=".zip,application/zip"
+                onChange={(e) => setPhotosZip(e.target.files[0] || null)} />
+              <button type="submit" className="btn-secondary" disabled={busy}>
+                <IconUpload /> Restaurer les photos (ZIP)
+              </button>
+            </form>
+          </div>
+          {photosMsg && <p className="mt-3 text-sm text-emerald-600">{photosMsg}</p>}
+        </div>
       </div>
     </div>
   );

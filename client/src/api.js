@@ -1,6 +1,12 @@
-const BASE = import.meta.env.VITE_API_URL 
-  ? `${import.meta.env.VITE_API_URL}/api` 
-  : 'https://xmator-rh-backend.onrender.com/api';
+// Base de l'API :
+// - VITE_API_URL défini au build → l'API distante (ex. https://xmator-rh-backend.onrender.com)
+// - sinon : build de production sur un vrai domaine → backend Render (cross-origin, CORS_ORIGIN à configurer)
+// - sinon (localhost / 127.0.0.1, dev comme prod) → '/api' relatif : le serveur Express local sert le client ET l'API
+const BASE = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL.replace(/\/+$/, '')}/api`
+  : (import.meta.env.PROD && typeof window !== 'undefined' && !['localhost', '127.0.0.1'].includes(window.location.hostname)
+      ? 'https://xmator-rh-backend.onrender.com/api'
+      : '/api');
 
 export const TOKEN_KEY = 'amicale_token';
 
@@ -250,5 +256,48 @@ export const api = {
       }
       return data;
     },
+  },
+
+  photosBackup: async () => {
+    const token = getToken();
+    const res = await fetch(BASE + '/comptes/photos/backup', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const err = new Error(data.error || 'Téléchargement des photos impossible.');
+      err.status = res.status;
+      throw err;
+    }
+    const blob = await res.blob();
+    let nom = 'photos_identite.zip';
+    const cd = res.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename="?([^";]+)"?/);
+    if (m) nom = m[1];
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = nom;
+    a.click();
+    URL.revokeObjectURL(url);
+    return { nom };
+  },
+
+  photosRestaurer: async (file) => {
+    const token = getToken();
+    const fd = new FormData();
+    fd.append('fichier', file);
+    const res = await fetch(BASE + '/comptes/photos/restaurer', {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(data.error || 'Restauration des photos impossible.');
+      err.status = res.status;
+      throw err;
+    }
+    return data;
   },
 };
