@@ -65,11 +65,31 @@ app.use('/api/employes', (req, res, next) => {
   return next();
 }, require('./routes/employes'));
 
-// Photos employés (publiques — chargées par <img>) ; source unique = data/photos (ce que lisent et
-// écrivent les uploads). Cache navigateur 1 h (re-upload visible sous 1 h ; le SW rafraîchit déjà
-// en arrière-plan en stale-while-revalidate sur localhost).
+// Photos employés (publiques — chargées par <img>).
+// Source unique servie = data/photos (ce que lisent ET écrivent les uploads).
+// La photothèque de référence (committée dans le dépôt : server/photos-reference/photos)
+// est copiée dans data/photos au démarrage pour les fichiers ABSENTS : garantit que les
+// photos existent dès la 1re exécution (clone local, déploiement Render au disque éphémère).
+// Cache navigateur 1 h (re-upload visible sous 1 h ; le SW rafraîchit déjà en arrière-plan).
 const photosDir = path.join(__dirname, '..', 'data', 'photos');
 if (!fs.existsSync(photosDir)) fs.mkdirSync(photosDir, { recursive: true });
+const photosReference = path.join(__dirname, 'photos-reference', 'photos');
+if (fs.existsSync(photosReference)) {
+  try {
+    let copiees = 0;
+    for (const f of fs.readdirSync(photosReference)) {
+      if (!/\.webp$/i.test(f)) continue;
+      const dest = path.join(photosDir, f);
+      if (!fs.existsSync(dest)) {
+        fs.copyFileSync(path.join(photosReference, f), dest);
+        copiees++;
+      }
+    }
+    if (copiees > 0) console.log(`[photos] ${copiees} photo(s) de référence copiée(s) dans data/photos`);
+  } catch (e) {
+    console.warn('[photos] sync de la photothèque de référence ignorée :', e.message);
+  }
+}
 app.use('/photos', express.static(photosDir, {
   maxAge: '1h',
   etag: true,
