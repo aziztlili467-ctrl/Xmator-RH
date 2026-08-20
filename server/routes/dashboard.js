@@ -6,6 +6,19 @@ const router = Router();
 
 const SEUIL_ALERTE = 5;
 
+// Cache court (10 s) pour les agrégats lourds du tableau de bord (mêmes données pour tous les
+// lecteurs, mais ~26 000 pointages + N+1 solde récalculés à chaque navigation). Légère fraîcheur
+// maximale : 10 s après une écriture — acceptable pour un tableau de bord.
+const DASH_CACHE_TTL = 10000;
+const dashCache = new Map();
+function dashMemo(key, build) {
+  const hit = dashCache.get(key);
+  if (hit && Date.now() - hit.t < DASH_CACHE_TTL) return hit.v;
+  const v = build();
+  dashCache.set(key, { v, t: Date.now() });
+  return v;
+}
+
 function iso(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
@@ -28,6 +41,7 @@ function placeholders(n) {
 router.get('/', (req, res) => {
   const annee = String(new Date().getFullYear());
 
+  res.json(dashMemo('accueil:' + annee, () => {
   const nbEmployes = db.prepare('SELECT COUNT(*) AS n FROM employes WHERE actif = 1').get().n;
 
   const anneeStats = db.prepare(`
@@ -94,7 +108,7 @@ router.get('/', (req, res) => {
     negatif: employes.filter((e) => e.solde < 0),
   };
 
-  res.json({
+  return {
     annee,
     seuilAlerte: SEUIL_ALERTE,
     nbEmployes,
@@ -110,7 +124,8 @@ router.get('/', (req, res) => {
     mensuelMaladie,
     employes,
     alertes,
-  });
+  };
+  }));
 });
 
 const MOIS_ABBR = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
@@ -170,6 +185,8 @@ router.get('/audit', (req, res) => {
     `).all();
   }
   if (!employes.length) return res.status(404).json({ error: 'Aucun employé ne correspond au filtre.' });
+
+  res.json(dashMemo('audit:' + req.originalUrl, () => {
   const ids = employes.map((e) => e.id);
 
   const jours = joursEntre(debut, fin);
@@ -475,8 +492,8 @@ router.get('/audit', (req, res) => {
     etoiles_sortie: noteEtoiles(c.journees_presence - c.departs_anticipe, c.journees_presence),
   }));
 
-  // Calendrier jour par jour (pour l'employé filtré) : présence / congé / maladie / absence / repos
-  const calendrier = jours.map((d) => {
+  // Calendrier jour par jour (pour l'employé filtré uniquement) : présence / congé / maladie / absence / repos
+  const calendrier = (employe_id || matricule) ? jours.map((d) => {
     const pj = pointagesJour[d];
     const ouvrable = estOuvrable(d) ? 1 : 0;
     const badge = pj ? pj.journees : 0;
@@ -485,9 +502,9 @@ router.get('/audit', (req, res) => {
     const maladie = jourMaladie[d] || 0;
     const absence = Math.max(0, ouvrable * ids.length - present - conge - maladie);
     return { date: d, ouvrable, heures: legalMap[d] || 0, badge, present, conge, maladie, absence };
-  });
+  }) : [];
 
-  res.json({
+  return {
     filtre: { granularite, debut, fin, employe_id, matricule },
     periode: { debut, fin },
     effectif,
@@ -536,7 +553,8 @@ router.get('/audit', (req, res) => {
     parCategorie: parCategorieAudit,
     employes: employesDetail,
     alertes,
-  });
+  };
+  }));
 });
 
 module.exports = router;

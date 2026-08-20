@@ -195,6 +195,8 @@ export default function Dashboard() {
   const [employesList, setEmployesList] = useState([]);
   const [recherche, setRecherche] = useState('');
   const [employesReady, setEmployesReady] = useState(false);
+  const [photoErr, setPhotoErr] = useState(false);
+  const [filtresOuverts, setFiltresOuverts] = useState(false);
 
   useEffect(() => {
     api.employes().then((l) => { setEmployesList(l); setEmployesReady(true); }).catch(() => { setEmployesReady(true); });
@@ -211,6 +213,8 @@ export default function Dashboard() {
     return employesList.find((e) => e.matricule === m || (!Number.isNaN(n) && Number(e.matricule) === n)) || null;
   }, [filtreEmployeId, matricule, employesList]);
 
+  useEffect(() => { setPhotoErr(false); }, [employeFiltre && (employeFiltre.id || employeFiltre.matricule)]);
+
   const matriculeIntrouvable = employesReady && !!matricule.trim() && !filtreEmployeId && !employeFiltre;
 
   const showCalendrier = (preset === 'mois' || preset === 'mois_dernier') && !!employeFiltre && !!data && !!data.calendrier;
@@ -220,27 +224,33 @@ export default function Dashboard() {
     return periodePreset(preset) || { debut: persoDebut, fin: persoFin };
   }, [preset, persoDebut, persoFin]);
 
-  // Requête uniquement si le filtre est résolu : jamais de 404 qui écrase le dashboard
-  useEffect(() => {
-    if (matriculeIntrouvable) {
-      setData(null);
-      setError('');
-      return;
-    }
-    const params = {
+  // Requête uniquement si le filtre est résolu : jamais de 404 qui écrase le dashboard.
+  // Les paramètres sont mémorisés : quand employesList se charge (employesReady), le fetch
+  // n'est PAS relancé si le filtre est inchangé (évite un double appel inutile).
+  const auditParams = useMemo(() => {
+    if (matriculeIntrouvable) return null;
+    return {
       granularite,
       debut: periode.debut,
       fin: periode.fin,
       employe_id: filtreEmployeId || undefined,
       matricule: filtreEmployeId ? undefined : (employeFiltre ? employeFiltre.matricule : undefined),
     };
+  }, [granularite, periode, filtreEmployeId, employeFiltre, matriculeIntrouvable]);
+
+  useEffect(() => {
+    if (!auditParams) {
+      setData(null);
+      setError('');
+      return;
+    }
     setLoading(true);
     setError('');
-    api.dashboardAudit(params)
+    api.dashboardAudit(auditParams)
       .then((d) => { setData(d); })
       .catch((e) => { setData(null); setError(e.message); })
       .finally(() => setLoading(false));
-  }, [granularite, periode, filtreEmployeId, employeFiltre, matriculeIntrouvable, employesReady]);
+  }, [auditParams]);
 
   // Données de l'histogramme heures légales vs travaillées
   const barData = useMemo(() => (data?.series || []).map((s) => ({
@@ -310,15 +320,22 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-4">
         <aside className="xl:col-span-1">
           <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card xl:sticky xl:top-24">
-            <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-700/10 text-brand-700"><IconTrendUp /></span>
-              <div>
-                <h2 className="text-sm font-bold text-slate-800">Filtres d'audit</h2>
-                <p className="text-[11px] text-slate-400">Appliqués à tous les graphiques</p>
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={() => setFiltresOuverts(!filtresOuverts)}
+              className="flex w-full items-center justify-between gap-2 border-b border-slate-100 pb-3 text-start xl:pointer-events-none xl:cursor-default"
+            >
+              <span className="flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-700/10 text-brand-700"><IconTrendUp /></span>
+                <span>
+                  <h2 className="text-sm font-bold text-slate-800">Filtres d'audit</h2>
+                  <p className="text-[11px] text-slate-400">Appliqués à tous les graphiques</p>
+                </span>
+              </span>
+              <svg className={`shrink-0 text-slate-400 transition-transform xl:hidden ${filtresOuverts ? 'rotate-180' : ''}`} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 9l6 6 6-6" /></svg>
+            </button>
 
-            <div className="mt-4 space-y-4">
+            <div className={`mt-4 space-y-4 ${filtresOuverts ? 'block' : 'hidden'} xl:block`}>
               <div>
                 <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Granularité</label>
                 <div className="grid grid-cols-3 overflow-hidden rounded-lg ring-1 ring-slate-200">
@@ -378,11 +395,18 @@ export default function Dashboard() {
               {employeFiltre ? (
                 <div className="overflow-hidden rounded-xl ring-1 ring-slate-200">
                   <div className="flex items-center gap-3 bg-gradient-to-br from-brand-700 to-violet-700 p-3">
-                  <img 
-  src={`https://xmator-rh-backend.onrender.com/photos/${employeFiltre.matricule}.webp`} 
-  alt="Photo" 
-  className="h-14 w-14 shrink-0 rounded-full object-cover ring-2 ring-white/60" 
-/>
+                    {photoErr ? (
+                      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-white/20 text-lg font-black text-white">
+                        {(employeFiltre.nom || '?').charAt(0)}{(employeFiltre.prenom || '').charAt(0)}
+                      </span>
+                    ) : (
+                      <img
+                        src={`/photos/${employeFiltre.matricule}.webp`}
+                        alt="Photo"
+                        className="h-14 w-14 shrink-0 rounded-full object-cover ring-2 ring-white/60"
+                        onError={() => setPhotoErr(true)}
+                      />
+                    )}
                     <div className="min-w-0 text-white">
                       <p className="truncate text-sm font-bold">{employeFiltre.nom} {employeFiltre.prenom}</p>
                       <p className="text-xs text-white/80">Mat. {employeFiltre.matricule}</p>
@@ -790,16 +814,16 @@ export default function Dashboard() {
 
           {/* ===== Tableau des employés ===== */}
           <div className="rounded-2xl border border-slate-200/80 bg-white shadow-card">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+            <div className="flex w-full flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-5">
               <div>
                 <h2 className="text-sm font-bold uppercase tracking-wide text-slate-700">Détail par employé</h2>
                 <p className="mt-0.5 text-xs text-slate-400">
                   {employesFiltres.length} / {data.employes.length} employé(s) affiché(s)
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex w-full items-center gap-2 sm:w-auto">
                 <input
-                  className="input w-64 text-sm"
+                  className="input w-full text-sm sm:w-64"
                   placeholder="Rechercher matricule / nom…"
                   value={recherche}
                   onChange={(e) => setRecherche(e.target.value)}
@@ -807,8 +831,8 @@ export default function Dashboard() {
                 <Link to="/employes" className="shrink-0 text-xs font-semibold text-brand-700 hover:underline">Voir tout →</Link>
               </div>
             </div>
-            <div className="max-h-[480px] overflow-auto">
-              <table className="w-full text-sm">
+            <div className="table-wrap max-h-[480px] overflow-auto">
+              <table className="w-max-table text-sm">
                 <thead className="sticky top-0 z-10 bg-slate-50">
                   <tr className="text-start text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                     <th className="px-4 py-3">Employé</th>

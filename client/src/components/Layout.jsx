@@ -1,4 +1,5 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import {
   IconDashboard,
   IconUsers,
@@ -20,6 +21,7 @@ import {
   IconLogout,
 } from './icons';
 import { useAuth } from '../AuthContext';
+import PwaInstall from './PwaInstall';
 
 const NAV = [
   { to: '/', label: 'Tableau de bord', icon: IconDashboard, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
@@ -71,6 +73,8 @@ function itemVisible(item, role, perms) {
 export default function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [menuOuvert, setMenuOuvert] = useState(false);
   const role = user?.role || 'employe';
   const perms = role === 'moderateur' ? user?.permissions : null;
   let nav = NAV.filter((item) => itemVisible(item, role, perms));
@@ -83,6 +87,9 @@ export default function Layout() {
     return liens.some((x) => x.to);
   });
 
+  // Ferme le menu mobile à chaque changement de route
+  useEffect(() => { setMenuOuvert(false); }, [location.pathname]);
+
   const deconnexion = () => {
     logout();
     navigate('/login', { replace: true });
@@ -90,7 +97,10 @@ export default function Layout() {
 
   return (
     <div className="flex min-h-screen">
-      <aside className="fixed inset-y-0 start-0 z-30 flex w-64 flex-col bg-brand-950 text-white">
+      {menuOuvert && (
+        <div className="fixed inset-0 z-30 bg-black/40 backdrop-blur-[2px] md:hidden" onClick={() => setMenuOuvert(false)} />
+      )}
+      <aside className={`fixed inset-y-0 start-0 z-40 flex w-64 flex-col bg-brand-950 text-white transition-transform duration-200 ease-out md:translate-x-0 ${menuOuvert ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex items-center gap-3 px-5 py-6">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-lg font-extrabold text-white ring-1 ring-white/20">
             A
@@ -99,6 +109,13 @@ export default function Layout() {
             <p className="truncate text-sm font-bold leading-tight">Amicale du Personnel</p>
             <p className="truncate text-xs text-brand-200">Banque Centrale — RH</p>
           </div>
+          <button
+            onClick={() => setMenuOuvert(false)}
+            title="Fermer le menu"
+            className="ms-auto rounded-lg p-1.5 text-brand-200 transition hover:bg-white/10 hover:text-white md:hidden"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
         </div>
         <nav className="mt-2 flex-1 space-y-1 overflow-y-auto overscroll-contain px-3 pb-4 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.25)_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/25 [&::-webkit-scrollbar-track]:bg-transparent">
           {nav.map((item, i) =>
@@ -132,20 +149,29 @@ export default function Layout() {
         </div>
       </aside>
 
-      <div className="ms-64 flex min-h-screen flex-1 flex-col">
+      <div className="flex min-h-screen flex-1 flex-col md:ms-64">
         <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
-          <div className="flex items-center justify-between gap-4 px-8 py-4">
-            <div>
-              <h1 className="text-lg font-bold text-slate-900">Gestion des congés</h1>
-              <p className="text-xs text-slate-500">Amicale du Personnel de la Banque Centrale — 140 employés</p>
+          <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-8 sm:py-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <button
+                onClick={() => setMenuOuvert(true)}
+                title="Ouvrir le menu"
+                className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 md:hidden"
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+              </button>
+              <div className="min-w-0">
+                <h1 className="truncate text-base font-bold text-slate-900 sm:text-lg">Gestion des congés</h1>
+                <p className="hidden truncate text-xs text-slate-500 sm:block">Amicale du Personnel de la Banque Centrale — 140 employés</p>
+              </div>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex shrink-0 items-center gap-2 sm:gap-4">
               {role === 'employe' && (
                 <NavLink to="/mon-espace" className="text-sm font-semibold text-brand-600 hover:underline">
                   Mon espace
                 </NavLink>
               )}
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 sm:gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-700 text-sm font-bold text-white">
                   {user?.login?.slice(0, 1)?.toUpperCase() || 'A'}
                 </div>
@@ -164,10 +190,11 @@ export default function Layout() {
             </div>
           </div>
         </header>
-        <main className="flex-1 px-8 py-6">
+        <main className="flex-1 px-4 py-4 sm:px-8 sm:py-6">
           <Outlet />
         </main>
       </div>
+      <PwaInstall />
     </div>
   );
 }

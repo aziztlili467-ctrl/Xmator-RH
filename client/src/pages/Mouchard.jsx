@@ -321,8 +321,8 @@ export default function Mouchard() {
           </h3>
           <span className="text-xs text-slate-400">Lecture · Ajout · Modification par rubrique</span>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="table-wrap">
+          <table className="w-max-table text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <th className="px-3 py-2 text-start" rowSpan={2}>Login</th>
@@ -404,8 +404,8 @@ export default function Mouchard() {
           </h3>
           <span className="text-xs text-slate-400">100 derniers événements</span>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="table-wrap">
+          <table className="w-max-table text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-2.5 text-start">Date &amp; heure</th>

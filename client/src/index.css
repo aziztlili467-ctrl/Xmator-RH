@@ -37,4 +37,20 @@
   .label {
     @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500;
   }
+  /* Tableaux larges : scroll horizontal fluide sur mobile, pleine largeur sur desktop */
+  .table-wrap {
+    @apply overflow-x-auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .table-wrap table {
+    @apply min-w-full;
+  }
+  .table-wrap table.w-max-table {
+    width: max-content;
+    min-width: 100%;
+  }
+  /* Boutons pleine largeur sur mobile uniquement */
+  .btn-block {
+    @apply w-full sm:w-auto;
+  }
 }

@@ -1,30 +1,41 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth, canAccess, homeForRole } from './AuthContext';
 import Layout from './components/Layout';
-import Login from './pages/Login';
-import AccesRefuse from './pages/AccesRefuse';
-import MonEspace from './pages/MonEspace';
-import GestionComptes from './pages/GestionComptes';
-import Dashboard from './pages/Dashboard';
-import Employes from './pages/Employes';
-import EmployeDetail from './pages/EmployeDetail';
-import NouveauSoldeInitial from './pages/NouveauSoldeInitial';
-import PrelevementConges from './pages/PrelevementConges';
-import AjoutAnnuel from './pages/AjoutAnnuel';
-import Journal from './pages/Journal';
-import Categories from './pages/Categories';
-import NouvelleDemande from './pages/NouvelleDemande';
-import DemandesInstance from './pages/DemandesInstance';
-import ArretMaladie from './pages/ArretMaladie';
-import ArretsMaladieInstance from './pages/ArretsMaladieInstance';
-import AjoutSoldeMaladie from './pages/AjoutSoldeMaladie';
-import JournalMaladie from './pages/JournalMaladie';
-import StatsJournal from './pages/StatsJournal';
-import Maintenance from './pages/Maintenance';
-import Mouchard from './pages/Mouchard';
-import Horaires from './pages/Horaires';
-import Presence from './pages/Presence';
-import CalendrierAnnee from './pages/CalendrierAnnee';
+
+// Code-splitting par route : seul le code de la page visitée est chargé
+const Login = lazy(() => import('./pages/Login'));
+const AccesRefuse = lazy(() => import('./pages/AccesRefuse'));
+const MonEspace = lazy(() => import('./pages/MonEspace'));
+const GestionComptes = lazy(() => import('./pages/GestionComptes'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Employes = lazy(() => import('./pages/Employes'));
+const EmployeDetail = lazy(() => import('./pages/EmployeDetail'));
+const NouveauSoldeInitial = lazy(() => import('./pages/NouveauSoldeInitial'));
+const PrelevementConges = lazy(() => import('./pages/PrelevementConges'));
+const AjoutAnnuel = lazy(() => import('./pages/AjoutAnnuel'));
+const Journal = lazy(() => import('./pages/Journal'));
+const Categories = lazy(() => import('./pages/Categories'));
+const NouvelleDemande = lazy(() => import('./pages/NouvelleDemande'));
+const DemandesInstance = lazy(() => import('./pages/DemandesInstance'));
+const ArretMaladie = lazy(() => import('./pages/ArretMaladie'));
+const ArretsMaladieInstance = lazy(() => import('./pages/ArretsMaladieInstance'));
+const AjoutSoldeMaladie = lazy(() => import('./pages/AjoutSoldeMaladie'));
+const JournalMaladie = lazy(() => import('./pages/JournalMaladie'));
+const StatsJournal = lazy(() => import('./pages/StatsJournal'));
+const Maintenance = lazy(() => import('./pages/Maintenance'));
+const Mouchard = lazy(() => import('./pages/Mouchard'));
+const Horaires = lazy(() => import('./pages/Horaires'));
+const Presence = lazy(() => import('./pages/Presence'));
+const CalendrierAnnee = lazy(() => import('./pages/CalendrierAnnee'));
+
+function Chargement() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-100 text-slate-500">
+      Chargement…
+    </div>
+  );
+}
 
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
@@ -60,7 +71,8 @@ function PublicOnly({ children }) {
 
 function AppRoutes() {
   return (
-    <Routes>
+    <Suspense fallback={<Chargement />}>
+      <Routes>
       <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
       <Route path="/acces-refuse" element={<AccesRefuse />} />
 
@@ -95,7 +107,8 @@ function AppRoutes() {
         <Route path="/maladie/journal" element={<JournalMaladie />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 }
 

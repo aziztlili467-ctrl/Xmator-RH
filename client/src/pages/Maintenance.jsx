@@ -162,8 +162,8 @@ export default function Maintenance() {
         <div className="border-b border-slate-200 px-6 py-4">
           <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Sauvegardes du serveur</h3>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="table-wrap">
+          <table className="w-max-table text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-3">Fichier</th>

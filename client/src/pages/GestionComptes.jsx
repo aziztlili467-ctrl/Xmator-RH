@@ -201,8 +201,8 @@ export default function GestionComptes() {
       {error && <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-200">{error}</p>}
 
       <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="table-wrap">
+          <table className="w-max-table text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-3">Login</th>
@@ -282,7 +282,7 @@ export default function GestionComptes() {
               {form.role === 'moderateur' && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3">
                   <label className="label">Droits d'accès par rubrique</label>
-                  <table className="w-full text-xs">
+                  <table className="w-max-table text-xs">
                     <thead>
                       <tr>
                         <th className="pb-1 text-start font-semibold text-slate-500">Rubrique</th>
@@ -386,7 +386,7 @@ export default function GestionComptes() {
                   ⚠️ Identifiants affichés UNE FOIS en clair : transmettez-les à chaque employé, puis fermez cette fenêtre.
                 </p>
                 <div className="max-h-64 overflow-y-auto rounded-lg border border-slate-200">
-                  <table className="w-full text-sm">
+                  <table className="w-max-table text-sm">
                     <thead className="sticky top-0 bg-slate-50 text-start text-xs uppercase text-slate-500">
                       <tr>
                         <th className="px-3 py-2">Matricule</th>

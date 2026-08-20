@@ -87,7 +87,7 @@ export default function Categories() {
       {error && <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-200">{error}</p>}
 
       <div className="card overflow-hidden">
-        <table className="w-full text-sm">
+        <table className="w-max-table text-sm">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">
               <th className="px-5 py-3">Libellé</th>

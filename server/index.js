@@ -11,7 +11,6 @@ const app = express();
 const corsOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()) : false;
 app.use(cors({ origin: corsOrigins }));
 app.use(express.json({ limit: '10mb' }));
-app.use('/photos', express.static(path.join(__dirname, 'public/photos')));
 
 const { requireAuth, requireRole, requireModule } = require('./middleware/auth');
 const { auditLog } = require('./middleware/audit');
@@ -66,14 +65,15 @@ app.use('/api/employes', (req, res, next) => {
   return next();
 }, require('./routes/employes'));
 
-// Photos employés (publiques — chargées par <img>) ; montage inconditionnel + no-cache
-// pour qu'un re-upload du même matricule soit immédiatement visible (pas de cache navigateur)
+// Photos employés (publiques — chargées par <img>) ; source unique = data/photos (ce que lisent et
+// écrivent les uploads). Cache navigateur 1 h (re-upload visible sous 1 h ; le SW rafraîchit déjà
+// en arrière-plan en stale-while-revalidate sur localhost).
 const photosDir = path.join(__dirname, '..', 'data', 'photos');
 if (!fs.existsSync(photosDir)) fs.mkdirSync(photosDir, { recursive: true });
 app.use('/photos', express.static(photosDir, {
-  maxAge: 0,
+  maxAge: '1h',
   etag: true,
-  setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
+  setHeaders: (res) => res.setHeader('Cache-Control', 'public, max-age=3600'),
 }));
 
 const clientDist = path.join(__dirname, '..', 'client', 'dist');

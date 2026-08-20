@@ -362,8 +362,8 @@ export default function CalendrierAnnee() {
                 Mois de travail : du <span className="font-semibold">21 du mois précédent</span> au <span className="font-semibold">20 du mois courant</span>.
                 (Ex. août = 21 juillet → 20 août.)
               </p>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
+              <div className="table-wrap">
+                <table className="w-max-table text-left text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 text-[11px] uppercase tracking-wide text-slate-500">
                       <th className="py-2 pr-2">Période</th>
@@ -457,8 +457,8 @@ export default function CalendrierAnnee() {
                 </div>
               </form>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+            <div className="table-wrap">
+              <table className="w-max-table text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-[11px] uppercase tracking-wide text-slate-500">
                     <th className="py-2 pr-2">Nom</th>
@@ -522,8 +522,8 @@ export default function CalendrierAnnee() {
                           {fmtDate(range.start)} → {fmtDate(range.end)} · {totJ} jours · {totH} h
                         </span>
                       </p>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left text-sm">
+                      <div className="table-wrap">
+                        <table className="w-max-table text-left text-sm">
                           <thead>
                             <tr className="border-b border-slate-200 text-[11px] uppercase tracking-wide text-slate-500">
                               <th className="py-1.5 pr-2">Date</th>
