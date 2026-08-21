@@ -1,12 +1,22 @@
-// Base de l'API :
+// Base de l'API et origine des médias statiques (photos) :
 // - VITE_API_URL défini au build → l'API distante (ex. https://xmator-rh-backend.onrender.com)
 // - sinon : build de production sur un vrai domaine → backend Render (cross-origin, CORS_ORIGIN à configurer)
 // - sinon (localhost / 127.0.0.1, dev comme prod) → '/api' relatif : le serveur Express local sert le client ET l'API
-const BASE = import.meta.env.VITE_API_URL
-  ? `${import.meta.env.VITE_API_URL.replace(/\/+$/, '')}/api`
+const MEDIA_ORIGIN = import.meta.env.VITE_API_URL
+  ? import.meta.env.VITE_API_URL.replace(/\/+$/, '')
   : (import.meta.env.PROD && typeof window !== 'undefined' && !['localhost', '127.0.0.1'].includes(window.location.hostname)
-      ? 'https://xmator-rh-backend.onrender.com/api'
-      : '/api');
+      ? 'https://xmator-rh-backend.onrender.com'
+      : '');
+
+const BASE = MEDIA_ORIGIN ? `${MEDIA_ORIGIN}/api` : '/api';
+
+// Construit l'URL complète d'un média (photo employé) : les chemins relatifs servis par
+// l'API (« /photos/35.webp ») sont préfixés par l'origine des médias ; les URL déjà
+// absolues (http/https/data:) sont renvoyées telles quelles.
+export function mediaSrc(path) {
+  if (!path) return '';
+  return /^(https?:\/\/|data:)/i.test(path) ? path : `${MEDIA_ORIGIN}${path.startsWith('/') ? '' : '/'}${path}`;
+}
 
 export const TOKEN_KEY = 'amicale_token';
 

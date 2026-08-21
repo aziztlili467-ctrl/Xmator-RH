@@ -4,7 +4,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
   AreaChart, Area, PieChart, Pie, Cell,
 } from 'recharts';
-import { api } from '../api';
+import { api, mediaSrc } from '../api';
 import { fmtJours, fmtDate } from '../utils';
 import { presenceColor } from '../components/PresenceHeures';
 import CalendarJour from '../components/CalendarJour';
@@ -196,6 +196,8 @@ export default function Dashboard() {
   const [recherche, setRecherche] = useState('');
   const [employesReady, setEmployesReady] = useState(false);
   const [photoErr, setPhotoErr] = useState(false);
+  // Matricules dont la photo est introuvable (404/erreur) → bascule sur les initiales dans le tableau
+  const [photosErreur, setPhotosErreur] = useState(() => new Set());
   const [filtresOuverts, setFiltresOuverts] = useState(false);
 
   useEffect(() => {
@@ -214,6 +216,15 @@ export default function Dashboard() {
   }, [filtreEmployeId, matricule, employesList]);
 
   useEffect(() => { setPhotoErr(false); }, [employeFiltre && (employeFiltre.id || employeFiltre.matricule)]);
+
+  const marquerPhotoErreur = (matricule) => {
+    setPhotosErreur((prev) => {
+      if (prev.has(matricule)) return prev;
+      const s = new Set(prev);
+      s.add(matricule);
+      return s;
+    });
+  };
 
   const matriculeIntrouvable = employesReady && !!matricule.trim() && !filtreEmployeId && !employeFiltre;
 
@@ -401,7 +412,7 @@ export default function Dashboard() {
                       </span>
                     ) : (
                       <img
-                        src={`/photos/${employeFiltre.matricule}.webp`}
+                        src={mediaSrc(employeFiltre.photo_url || `/photos/${employeFiltre.matricule}.webp`)}
                         alt="Photo"
                         className="h-14 w-14 shrink-0 rounded-full object-cover ring-2 ring-white/60"
                         onError={() => setPhotoErr(true)}
@@ -856,8 +867,13 @@ export default function Dashboard() {
                     <tr key={e.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-3">
-                          {e.photo_url ? (
-                            <img src={e.photo_url} alt="Photo" className="h-9 w-9 rounded-full object-cover ring-1 ring-slate-200" />
+                          {e.photo_url && !photosErreur.has(e.matricule) ? (
+                            <img
+                              src={mediaSrc(e.photo_url)}
+                              alt="Photo"
+                              className="h-9 w-9 rounded-full object-cover ring-1 ring-slate-200"
+                              onError={() => marquerPhotoErreur(e.matricule)}
+                            />
                           ) : (
                             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-400">
                               {(e.nom || '?').charAt(0)}{(e.prenom || '').charAt(0)}
