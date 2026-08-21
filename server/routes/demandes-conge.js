@@ -61,7 +61,7 @@ router.get('/:id', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { employe_id, nature_conge, date_demande, date_debut, date_fin, direction, nombre_jours } = req.body || {};
+  const { employe_id, nature_conge, date_demande, date_debut, date_fin, direction, nombre_jours, demi_journee } = req.body || {};
 
   if (!['legal', 'exceptionnel'].includes(nature_conge)) {
     return res.status(400).json({ error: 'La nature du congé doit être "legal" ou "exceptionnel".' });
@@ -86,13 +86,28 @@ router.post('/', (req, res) => {
   let jours;
   if (nombre_jours !== undefined && nombre_jours !== null && nombre_jours !== '') {
     const v = Number(nombre_jours);
-    if (!Number.isInteger(v) || v <= 0) {
-      return res.status(400).json({ error: 'Le nombre de jours saisi manuellement doit être un entier positif.' });
+    // Demi-journées acceptées : tout multiple de 0,5 strictement positif (0,5 · 1 · 2,5 …)
+    if (!Number.isFinite(v) || v <= 0 || (v * 2) % 1 !== 0) {
+      return res.status(400).json({ error: 'Le nombre de jours saisi manuellement doit être un multiple de 0,5 positif (ex. : 0,5 pour une demi-journée, 2,5 pour deux jours et demi).' });
     }
     jours = v;
   } else {
     jours = nbJours(date_debut, date_fin);
     if (!jours) return res.status(400).json({ error: 'La date de fin doit être postérieure ou égale à la date de début.' });
+    if (demi_journee) {
+      jours -= 0.5;
+      if (jours < 0.5) return res.status(400).json({ error: 'Une demi-journée nécessite au moins un jour ouvrable dans la période.' });
+    }
+  }
+  // Normalisation demi-journée :
+  // - valeur fractionnaire saisie manuellement sans la case => demi-journée sur le dernier jour
+  // - case cochée mais valeur pleine saisie => le dernier jour passe à 0,5
+  const plage = nbJours(date_debut, date_fin);
+  let demi = demi_journee ? 1 : 0;
+  if (!demi && !Number.isInteger(jours)) demi = 1;
+  if (demi && plage !== null && jours === plage) {
+    jours -= 0.5;
+    if (jours < 0.5) return res.status(400).json({ error: 'Une demi-journée nécessite au moins un jour ouvrable dans la période.' });
   }
 
   const numero = nextNumero();
@@ -101,12 +116,12 @@ router.post('/', (req, res) => {
   const r = db.prepare(`
     INSERT INTO demandes_conge
       (numero_sequentiel, employe_id, matricule, nom_prenom, direction, nature_conge,
-       date_demande, date_debut, date_fin, nombre_jours, solde_a_la_demande, statut)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,'en_instance')
+       date_demande, date_debut, date_fin, nombre_jours, demi_journee, solde_a_la_demande, statut)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'en_instance')
   `).run(
     numero, Number(employe_id), emp.matricule, NOM_PRETEMPS(emp),
     direction || 'Amicale', nature_conge,
-    date_demande, date_debut, date_fin, jours, solde
+    date_demande, date_debut, date_fin, jours, demi, solde
   );
   const created = db.prepare(BASE + ' WHERE d.id = ?').get(r.lastInsertRowid);
   res.status(201).json(created);
@@ -168,6 +183,8 @@ router.get('/:id/pdf', (req, res) => {
   };
   const n = String(d.numero_sequentiel).padStart(3, '0');
   const nature = d.nature_conge === 'legal' ? 'Légal' : 'Exceptionnel';
+  // Demi-journées : affichage à la française (0,5 · 2,5) sur le formulaire imprimé
+  const fmtJ = (v) => String(v).replace('.', ',');
 
   const doc = new PDFDocument({ size: 'A4', margins: { top: 18, bottom: 18, left: 60, right: 60 } });
   doc.registerFont('Amiri', path.join(__dirname, '..', 'fonts', 'Amiri-Regular.ttf'));
@@ -221,7 +238,7 @@ router.get('/:id/pdf', (req, res) => {
   doc.font('Garamond').fontSize(24).fillColor('#111827').text('Demande de Congé', L, titreY, { align: 'center', width: W, lineBreak: false });
   doc.moveTo(L + 160, titreY + 30).lineTo(R - 160, titreY + 30).strokeColor('#111827').lineWidth(1).stroke();
 
-  doc.font('Garamond').fontSize(11).fillColor('#374151').text(`Solde de congé : ${d.solde_a_la_demande} jour(s)`, L, titreY + 40, { align: 'right', width: W, lineBreak: false });
+  doc.font('Garamond').fontSize(11).fillColor('#374151').text(`Solde de congé : ${fmtJ(d.solde_a_la_demande)} jour(s)`, L, titreY + 40, { align: 'right', width: W, lineBreak: false });
 
   ligne('Nom et Prénom :', d.nom_prenom, 180);
   ligne('Direction :', `... ${d.direction} ........`, 210);
@@ -236,7 +253,7 @@ router.get('/:id/pdf', (req, res) => {
   checkbox(L + 96, 366);
 
   noir().text(`Du : ${fmtFR(d.date_debut)} au : ${fmtFR(d.date_fin)} inclus.`, L, 410);
-  noir().text(`Nombre de jours : ${d.nombre_jours}`, mid + 10, 410);
+  noir().text(`Nombre de jours : ${fmtJ(d.nombre_jours)}`, mid + 10, 410);
 
   doc.font('Helvetica').fontSize(10).fillColor('#374151').text('Signature du demandeur', L, 462, { width: 220, lineBreak: false });
   doc.font('Helvetica').fontSize(10).fillColor('#374151').text('Signature du Supérieur hiérarchique', mid + 10, 462, { width: 220, lineBreak: false });
@@ -252,7 +269,7 @@ router.get('/:id/pdf', (req, res) => {
   ligne('Matricule :', `...${d.matricule}.................`, 630);
 
   noir().text(`Du : ${fmtFR(d.date_debut)} au : ${fmtFR(d.date_fin)} inclus.`, L, 670);
-  noir().text(`Nombre de jours : ${d.nombre_jours}`, mid + 10, 670);
+  noir().text(`Nombre de jours : ${fmtJ(d.nombre_jours)}`, mid + 10, 670);
 
   doc.font('Helvetica').fontSize(10).fillColor('#374151').text('Signature du Supérieur hiérarchique', mid + 10, 706, { width: 220, lineBreak: false });
 

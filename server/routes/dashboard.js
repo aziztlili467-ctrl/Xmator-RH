@@ -219,7 +219,7 @@ router.get('/audit', (req, res) => {
   // Congés acceptés / arrêts validés chevauchant la période
   // (l'absence est DÉDUITE : jour ouvrable sans badge ET sans congé validé ET sans maladie acceptée)
   const conges = db.prepare(`
-    SELECT employe_id, date_debut, date_fin FROM demandes_conge
+    SELECT employe_id, date_debut, date_fin, demi_journee FROM demandes_conge
     WHERE statut = 'acceptee' AND date_debut <= ? AND date_fin >= ?
   `).all(fin, debut);
   const arrets = db.prepare(`
@@ -229,9 +229,11 @@ router.get('/audit', (req, res) => {
 
   const jourConge = {};
   const jourMaladie = {};
+  const jourDemi = {};
+  const jourCongeDemi = {};
   const empConge = {};
   const empMaladie = {};
-  const marquer = (jourMap, empMap, empId, dD, dF) => {
+  const marquer = (jourMap, empMap, empId, dD, dF, demiFin) => {
     const s = dD > debut ? dD : debut;
     const e = dF < fin ? dF : fin;
     if (e < s) return;
@@ -240,13 +242,21 @@ router.get('/audit', (req, res) => {
     while (cur <= end) {
       const d = iso(cur);
       if (joursSet.has(d) && estOuvrable(d)) {
-        jourMap[d] = (jourMap[d] || 0) + 1;
-        empMap[empId] = (empMap[empId] || 0) + 1;
+        // Demi-journée : la date de fin de la demande compte pour 0,5
+        const inc = demiFin && d === dF ? 0.5 : 1;
+        jourMap[d] = (jourMap[d] || 0) + inc;
+        empMap[empId] = (empMap[empId] || 0) + inc;
+        if (inc === 0.5) {
+          jourDemi[d] = 1;
+          jourCongeDemi[d] = (jourCongeDemi[d] || 0) + 0.5;
+        }
       }
       cur.setDate(cur.getDate() + 1);
     }
   };
-  for (const c of conges) if (idsSet.has(c.employe_id)) marquer(jourConge, empConge, c.employe_id, c.date_debut, c.date_fin);
+  // Demi-journée : flag explicite OU valeur fractionnaire héritée d'une saisie manuelle
+  // (répare les demandes créées avant la normalisation : 1,5 j sur 2 jours => dernier jour à 0,5)
+  for (const c of conges) if (idsSet.has(c.employe_id)) marquer(jourConge, empConge, c.employe_id, c.date_debut, c.date_fin, !!c.demi_journee || !Number.isInteger(Number(c.nombre_jours)));
   for (const a of arrets) if (idsSet.has(a.employe_id)) marquer(jourMaladie, empMaladie, a.employe_id, a.date_debut, a.date_fin);
 
   // --- Présence & ponctualité (depuis les pointages bruts) ---
@@ -381,6 +391,8 @@ router.get('/audit', (req, res) => {
   const totLegal = series.reduce((s, b) => s + b.legal_heures, 0);
   const totTrav = series.reduce((s, b) => s + b.travaille_heures, 0);
   const totConge = series.reduce((s, b) => s + b.jours_conge, 0);
+  // Portion « demi-journées » du total congé (0,5 par date de fin marquée demi-journée)
+  const totCongeDemi = Object.values(jourCongeDemi).reduce((s, v) => s + v, 0);
   const totMaladie = series.reduce((s, b) => s + b.jours_maladie, 0);
   const totAbsence = series.reduce((s, b) => s + b.jours_absence, 0);
   const totOuvrables = series.reduce((s, b) => s + b.jours_ouvrables, 0);
@@ -501,7 +513,7 @@ router.get('/audit', (req, res) => {
     const conge = jourConge[d] || 0;
     const maladie = jourMaladie[d] || 0;
     const absence = Math.max(0, ouvrable * ids.length - present - conge - maladie);
-    return { date: d, ouvrable, heures: legalMap[d] || 0, badge, present, conge, maladie, absence };
+    return { date: d, ouvrable, heures: legalMap[d] || 0, badge, present, conge, maladie, absence, demi: jourDemi[d] || 0 };
   }) : [];
 
   return {
@@ -519,6 +531,7 @@ router.get('/audit', (req, res) => {
       jours_absence: totAbsence,
       jours_absence_pct,
       jours_conge: totConge,
+      jours_conge_demi: totCongeDemi,
       jours_maladie: totMaladie,
       jours_ouvrables: totOuvrables,
       solde_conge: soldeConge,

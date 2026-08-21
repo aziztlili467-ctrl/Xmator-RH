@@ -32,9 +32,12 @@ export default function NouvelleDemande() {
   const [created, setCreated] = useState(null);
   const [editJours, setEditJours] = useState(false);
   const [joursManuel, setJoursManuel] = useState(null);
+  const [demiFin, setDemiFin] = useState(false);
   const [doublon, setDoublon] = useState(null);
 
-  const joursAuto = nbJours(dateDebut, dateFin);
+  const joursAutoBrut = nbJours(dateDebut, dateFin);
+  // Demi-journée cochée : la date de fin compte pour 0,5 (ex. : 3 jours ouvrables → 2,5)
+  const joursAuto = joursAutoBrut !== null && demiFin ? Math.max(joursAutoBrut - 0.5, 0.5) : joursAutoBrut;
   const jours = joursManuel !== null ? joursManuel : joursAuto;
   const joursOk = jours !== null && jours > 0;
   const finOk = !dateDebut || !dateFin || joursAuto !== null;
@@ -76,6 +79,7 @@ export default function NouvelleDemande() {
         date_fin: dateFin,
         direction,
         nombre_jours: jours,
+        demi_journee: demiFin ? 1 : 0,
       });
       setCreated(d);
       setSelected(null);
@@ -84,6 +88,7 @@ export default function NouvelleDemande() {
       setDateDemande(today());
       setEditJours(false);
       setJoursManuel(null);
+      setDemiFin(false);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -105,7 +110,7 @@ export default function NouvelleDemande() {
       <div>
         <h2 className="text-lg font-bold text-slate-900">Nouvelle Demande de Congé</h2>
         <p className="text-sm text-slate-500">
-          Générez une demande officielle. Le numéro séquentiel est attribué automatiquement par le serveur. Les samedis et dimanches ne sont pas comptés.
+          Générez une demande officielle. Le numéro séquentiel est attribué automatiquement par le serveur. Les samedis et dimanches ne sont pas comptés. Pour une demi-journée, cochez « Dernier jour en demi-journée » : la date de fin compte pour 0,5 (ex. : du lundi au mercredi coché = 2,5 jours). Déduits du solde uniquement après acceptation.
         </p>
       </div>
 
@@ -195,22 +200,36 @@ export default function NouvelleDemande() {
           </Field>
           <Field label="Au (date fin, incluse)" required>
             <input type="date" className="input" value={dateFin} onChange={(e) => setDateFin(e.target.value)} required />
+            <label className="mt-1.5 flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-600">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-violet-600"
+                checked={demiFin}
+                onChange={(e) => setDemiFin(e.target.checked)}
+              />
+              Dernier jour en demi-journée (0,5)
+            </label>
           </Field>
           <Field
             label="Nombre de jours"
             required
-            hint={editJours ? 'Valeur saisie manuellement (jour férié, etc.).' : 'Calculé automatiquement hors samedis et dimanches.'}
+            hint={editJours ? 'Valeur manuelle par pas de 0,5 — demi-journée : 0,5 · deux jours et demi : 2,5.' : 'Calculé automatiquement hors samedis et dimanches ; tient compte de la case « dernier jour en demi-journée ».'}
           >
             {editJours ? (
               <div className="flex items-center gap-2">
                 <input
                   type="number"
-                  min={1}
-                  step={1}
+                  min={0.5}
+                  step={0.5}
                   className="input"
                   value={joursManuel ?? ''}
-                  placeholder="Saisir le nombre de jours"
-                  onChange={(e) => setJoursManuel(e.target.value === '' ? null : Number(e.target.value))}
+                  placeholder="Ex. : 0,5 · 1 · 2,5"
+                  onChange={(e) => {
+                    const v = e.target.value === '' ? null : Number(e.target.value);
+                    setJoursManuel(v);
+                    // Cohérence : valeur fractionnaire => la case « dernier jour en demi-journée » se coche automatiquement
+                    if (v !== null) setDemiFin(!Number.isInteger(v));
+                  }}
                 />
                 <button
                   type="button"
@@ -224,7 +243,7 @@ export default function NouvelleDemande() {
               <div className="flex items-center gap-2">
                 <input
                   className={`input flex-1 bg-slate-50 ${finOk ? 'text-slate-800' : 'text-red-600'}`}
-                  value={joursAuto === null ? '' : `${joursAuto} jour(s)`}
+                  value={joursAuto === null ? '' : `${fmtJours(joursAuto)} jour(s)`}
                   readOnly
                 />
                 <button

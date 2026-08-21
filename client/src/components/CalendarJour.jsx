@@ -8,6 +8,7 @@ const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 
 const LEGENDE = [
   { st: 'present', label: 'Présent', dot: '#10b981' },
   { st: 'conge', label: 'Congé', dot: '#3860ea' },
+  { st: 'conge_demi', label: 'Demi-journée de congé', dot: '#8b5cf6' },
   { st: 'maladie', label: 'Maladie', dot: '#f43f5e' },
   { st: 'absence', label: 'Absent', dot: '#f59e0b' },
   { st: 'repos', label: 'Repos / férié', dot: '#cbd5e1' },
@@ -16,6 +17,7 @@ const LEGENDE = [
 const CELLS = {
   present: 'bg-emerald-500 text-white shadow-sm ring-1 ring-emerald-600/40',
   conge: 'bg-blue-600 text-white shadow-sm ring-1 ring-blue-700/40',
+  conge_demi: 'bg-violet-500 text-white shadow-sm ring-1 ring-violet-600/40',
   maladie: 'bg-rose-500 text-white shadow-sm ring-1 ring-rose-600/40',
   absence: 'bg-amber-500 text-white shadow-sm ring-1 ring-amber-600/40',
   repos: 'bg-slate-200 text-slate-500',
@@ -25,6 +27,8 @@ const CELLS = {
 const statutJour = (j) => {
   if (!j) return { st: 'vide', day: '' };
   const day = Number(j.date.slice(8, 10));
+  // Demi-journée de congé : prioritaire sur « présent » pour rester visible même si l'agent a badgeé
+  if (j.demi && j.conge > 0) return { st: 'conge_demi', day };
   if (j.badge > 0) return { st: 'present', day };
   if (j.conge > 0) return { st: 'conge', day };
   if (j.maladie > 0) return { st: 'maladie', day };
@@ -103,7 +107,7 @@ export default function CalendarJour({ debut, fin, jours, nom, prenom, matricule
                   return (
                     <div
                       key={`${m.cle}-${i}`}
-                      title={j ? fmtDate(j.date) : ''}
+                      title={j ? `${fmtDate(j.date)}${j.demi && j.conge > 0 ? ' · demi-journée de congé' : ''}` : ''}
                       className={`flex h-9 w-full items-center justify-center rounded-lg text-xs font-bold ${CELLS[st]}`}
                     >
                       {day}

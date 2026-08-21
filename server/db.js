@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS demandes_conge (
   date_debut         TEXT NOT NULL,
   date_fin           TEXT NOT NULL,
   nombre_jours       REAL NOT NULL CHECK (nombre_jours > 0),
+  demi_journee       INTEGER NOT NULL DEFAULT 0,
   solde_a_la_demande REAL NOT NULL,
   statut             TEXT NOT NULL DEFAULT 'en_instance'
                      CHECK (statut IN ('en_instance','acceptee','rejetee')),
@@ -238,6 +239,10 @@ function migrate() {
   const hCols = db.prepare('PRAGMA table_info(horaires_travail)').all().map((c) => c.name);
   if (!hCols.includes('debut')) db.exec('ALTER TABLE horaires_travail ADD COLUMN debut TEXT');
   if (!hCols.includes('fin')) db.exec('ALTER TABLE horaires_travail ADD COLUMN fin TEXT');
+
+  // Demandes de congé : `demi_journee` = dernier jour de la demande compté comme demi-journée
+  const dcCols = db.prepare('PRAGMA table_info(demandes_conge)').all().map((c) => c.name);
+  if (!dcCols.includes('demi_journee')) db.exec('ALTER TABLE demandes_conge ADD COLUMN demi_journee INTEGER NOT NULL DEFAULT 0');
 
   // Utilisateurs : rôle 'moderateur' + colonne permissions (reconstruction de la table si nécessaire)
   const uCols = db.prepare('PRAGMA table_info(utilisateurs)').all().map((c) => c.name);

@@ -178,6 +178,7 @@ function CardTitle({ title, sub, right }) {
 const STACK_COLORS = {
   Présence: '#10b981',
   'Congé légal': '#3860ea',
+  'Demi-journées de congé': '#8b5cf6',
   Maladie: '#f43f5e',
   Absence: '#f59e0b',
 };
@@ -286,14 +287,17 @@ export default function Dashboard() {
     };
   }), [data]);
 
-  // Donut répartition globale
+  // Donut répartition globale — les demi-journées de congé forment une tranche dédiée (violet)
   const donutData = useMemo(() => {
     const k = data?.kpis;
     if (!k) return [];
+    const demi = k.jours_conge_demi || 0;
+    const plein = Math.max(0, (k.jours_conge || 0) - demi);
     const tot = k.jours_presence + k.jours_conge + k.jours_maladie + k.jours_absence;
     return [
       { name: 'Présence', value: k.jours_presence, color: STACK_COLORS['Présence'] },
-      { name: 'Congé légal', value: k.jours_conge, color: STACK_COLORS['Congé légal'] },
+      { name: 'Congé légal', value: plein, color: STACK_COLORS['Congé légal'] },
+      { name: 'Demi-journées de congé', value: demi, color: STACK_COLORS['Demi-journées de congé'] },
       { name: 'Maladie', value: k.jours_maladie, color: STACK_COLORS.Maladie },
       { name: 'Absence', value: k.jours_absence, color: STACK_COLORS.Absence },
     ].filter((d) => d.value > 0).map((d) => ({ ...d, pct: tot > 0 ? Math.round((d.value / tot) * 1000) / 10 : 0 }));
