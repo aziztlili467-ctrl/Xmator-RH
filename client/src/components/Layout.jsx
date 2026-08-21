@@ -39,7 +39,6 @@ const NAV = [
   { to: '/stats-journal', label: 'Journal de statistiques', icon: IconTrendUp, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
   { section: 'Horaires', roles: ['super_admin', 'consultation', 'moderateur'] },
   { to: '/horaires', label: 'Horaires de travail', icon: IconClock, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
-  { section: 'Présence', roles: ['super_admin', 'consultation', 'moderateur'] },
   { to: '/presence', label: 'Pointages & présences', icon: IconUserClock, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
   { section: 'Maladie', roles: ['super_admin', 'moderateur'] },
   { to: '/maladie/nouvel-arret', label: 'Nouvel arrêt maladie', icon: IconStethoscope, end: true, roles: ['super_admin', 'moderateur'], module: 'maladie' },
