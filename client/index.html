@@ -13,6 +13,13 @@
     <link rel="icon" href="/icons/icon-192.png" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <title>Amicale — Gestion des congés</title>
+    <script>
+      // Capte l'événement d'installation PWA dès que le navigateur l'émet (peut précéder le bundle JS)
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault();
+        window.__pwaInstall = e;
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>
