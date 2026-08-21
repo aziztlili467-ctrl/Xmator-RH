@@ -228,7 +228,8 @@ export default function Dashboard() {
 
   const matriculeIntrouvable = employesReady && !!matricule.trim() && !filtreEmployeId && !employeFiltre;
 
-  const showCalendrier = (preset === 'mois' || preset === 'mois_dernier') && !!employeFiltre && !!data && !!data.calendrier;
+  // Calendrier de présence : mois en cours / mois dernier / période personnalisée, avec filtre employé
+  const showCalendrier = (preset === 'mois' || preset === 'mois_dernier' || preset === 'perso') && !!employeFiltre && !!data && !!data.calendrier;
 
   const periode = useMemo(() => {
     if (preset === 'perso') return { debut: persoDebut, fin: persoFin };
@@ -528,7 +529,7 @@ export default function Dashboard() {
             />
           </div>
 
-          {/* ===== Calendrier de présence (mois en cours / mois précédent, filtre par matricule) ===== */}
+          {/* ===== Calendrier de présence (mois en cours / mois précédent / période personnalisée, filtre par matricule) ===== */}
           {showCalendrier && (
             <CalendarJour
               debut={data.periode.debut}
