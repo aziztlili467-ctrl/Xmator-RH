@@ -382,6 +382,35 @@ router.get('/:matricule/heures', validerAccesMatricule, (req, res) => {
   for (const r of pTravail.all(req.employe.id, debutPar, finPar)) {
     travailMap[r.date] = Number(r.duree_secondes) / 3600;
   }
+  // Repli badges bruts : toute journée badgée absente de horaires_travail (ex. nouveaux imports
+  // de pointages non encore fusionnés dans le journal des heures) compte aussi, durée =
+  // dernier badgeage − premier badgeage. horaires_travail reste prioritaire (journal de référence).
+  const pBadges = db.prepare(`
+    SELECT date, MIN(horodatage) AS mn, MAX(horodatage) AS mx, COUNT(*) AS nb
+    FROM pointages WHERE employe_id = ? AND date >= ? AND date <= ?
+    GROUP BY date
+  `);
+  for (const r of pBadges.all(req.employe.id, debutPar, finPar)) {
+    if (!r.mn || !r.mx || r.nb < 2 || travailMap[r.date]) continue;
+    const sec = Math.max(0, Math.round((new Date(String(r.mx).replace(' ', 'T')).getTime() - new Date(String(r.mn).replace(' ', 'T')).getTime()) / 1000));
+    if (sec) travailMap[r.date] = sec / 3600;
+  }
+
+  // Jours d'arrêt maladie VALIDÉ de l'employé chevauchant la période (pour déduire
+  // les heures correspondantes des heures à travailler avant le calcul du % présence).
+  const maladieJours = new Set();
+  for (const a of db.prepare(
+    "SELECT date_debut, date_fin FROM arrets_maladie WHERE employe_id = ? AND statut = 'valide' AND date_debut <= ? AND date_fin >= ?"
+  ).all(req.employe.id, finPar, debutPar)) {
+    const sD = a.date_debut > debutPar ? a.date_debut : debutPar;
+    const eD = a.date_fin < finPar ? a.date_fin : finPar;
+    const cur = new Date(sD + 'T00:00:00');
+    const end = new Date(eD + 'T00:00:00');
+    while (cur <= end) {
+      maladieJours.add(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`);
+      cur.setDate(cur.getDate() + 1);
+    }
+  }
 
   const arrondi = (v) => Math.round(v * 100) / 100;
 
@@ -394,13 +423,16 @@ router.get('/:matricule/heures', validerAccesMatricule, (req, res) => {
     const legal = legalMap[date];
     const travaille = travailMap[date] || 0;
     const legalHeures = legal ? legal.heures : null;
-    const presence = legalHeures ? Math.round((travaille / legalHeures) * 1000) / 10 : null;
+    const enMaladie = maladieJours.has(date);
+    // Jour en arrêt maladie validé : aucune exigence de présence → pas de % négatif
+    const presence = legalHeures && !enMaladie && legalHeures > 0 ? Math.round((travaille / legalHeures) * 1000) / 10 : null;
     parJour.push({
       date,
       jour_type: legal ? legal.source : null,
       label: legal ? legal.label : null,
       legal_heures: legalHeures,
       travaille_heures: arrondi(travaille),
+      maladie: enMaladie ? 1 : 0,
       presence_pct: presence,
     });
     // Mois de travail : 21 du mois précédent → 20 du mois courant (ex. juillet 2026 = 21/06 → 20/07)
@@ -413,25 +445,36 @@ router.get('/:matricule/heures', validerAccesMatricule, (req, res) => {
         mois: `${mt.annee}-${String(mt.mois + 1).padStart(2, '0')}`,
         debut: `${sY}-${String(sM + 1).padStart(2, '0')}-21`,
         fin: `${mt.annee}-${String(mt.mois + 1).padStart(2, '0')}-20`,
-        legal_heures: 0, travaille_heures: 0, jours_legaux: 0, jours_presents: 0, jours: 0,
+        legal_heures: 0, maladie_heures: 0, travaille_heures: 0, jours_legaux: 0, jours_presents: 0, jours: 0,
       };
     }
     const m = moisMap[key];
     m.jours++;
-    if (legalHeures) { m.legal_heures += legalHeures; m.jours_legaux++; }
+    if (legalHeures) {
+      m.legal_heures += legalHeures;
+      m.jours_legaux++;
+      if (enMaladie) m.maladie_heures += legalHeures;
+    }
     if (travaille > 0) m.jours_presents++;
     m.travaille_heures += travaille;
     d.setDate(d.getDate() + 1);
   }
 
-  const parMois = Object.values(moisMap).map((m) => ({
-    ...m,
-    legal_heures: arrondi(m.legal_heures),
-    travaille_heures: arrondi(m.travaille_heures),
-    presence_pct: m.legal_heures ? Math.round((m.travaille_heures / m.legal_heures) * 1000) / 10 : null,
-  }));
+  const parMois = Object.values(moisMap).map((m) => {
+    const legalNette = Math.max(0, m.legal_heures - m.maladie_heures);
+    return {
+      ...m,
+      legal_heures: arrondi(m.legal_heures),
+      heures_maladie: arrondi(m.maladie_heures),
+      legal_nette: arrondi(legalNette),
+      travaille_heures: arrondi(m.travaille_heures),
+      presence_pct: legalNette ? Math.round((m.travaille_heures / legalNette) * 1000) / 10 : null,
+    };
+  });
 
-  const totLegal = parMois.reduce((s, m) => s + m.legal_heures, 0);
+  const totLegalBrut = parMois.reduce((s, m) => s + m.legal_heures, 0);
+  const totMaladieH = parMois.reduce((s, m) => s + m.heures_maladie, 0);
+  const totLegal = Math.max(0, totLegalBrut - totMaladieH);
   const totTrav = parMois.reduce((s, m) => s + m.travaille_heures, 0);
 
   res.json({
@@ -443,6 +486,8 @@ router.get('/:matricule/heures', validerAccesMatricule, (req, res) => {
     parMois,
     totaux: {
       legal_heures: arrondi(totLegal),
+      legal_avant_maladie: arrondi(totLegalBrut),
+      heures_maladie: arrondi(totMaladieH),
       travaille_heures: arrondi(totTrav),
       presence_pct: totLegal ? Math.round((totTrav / totLegal) * 1000) / 10 : null,
       jours_legaux: parMois.reduce((s, m) => s + m.jours_legaux, 0),

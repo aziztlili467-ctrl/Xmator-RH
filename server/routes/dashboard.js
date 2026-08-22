@@ -213,7 +213,7 @@ router.get('/audit', (req, res) => {
   // Congés acceptés / arrêts validés chevauchant la période
   // (l'absence est DÉDUITE : jour ouvrable sans badge ET sans congé validé ET sans maladie acceptée)
   const conges = db.prepare(`
-    SELECT employe_id, date_debut, date_fin, demi_journee FROM demandes_conge
+    SELECT employe_id, date_debut, date_fin, demi_journee, nombre_jours FROM demandes_conge
     WHERE statut = 'acceptee' AND date_debut <= ? AND date_fin >= ?
   `).all(fin, debut);
   const arrets = db.prepare(`
@@ -227,7 +227,9 @@ router.get('/audit', (req, res) => {
   const jourCongeDemi = {};
   const empConge = {};
   const empMaladie = {};
-  const marquer = (jourMap, empMap, empId, dD, dF, demiFin) => {
+  // Jours de maladie par employé (pour déduire les heures d'arrêts validés des heures à travailler)
+  const empMaladieJours = {};
+  const marquer = (jourMap, empMap, empId, dD, dF, demiFin, empJours) => {
     const s = dD > debut ? dD : debut;
     const e = dF < fin ? dF : fin;
     if (e < s) return;
@@ -235,11 +237,18 @@ router.get('/audit', (req, res) => {
     const end = new Date(e + 'T00:00:00');
     while (cur <= end) {
       const d = iso(cur);
-      if (joursSet.has(d) && estOuvrable(d)) {
+      // Jour ouvrable = jour PRÉVU au calendrier administratif (heures > 0) :
+      // les jours de repos hebdomadaire et les jours fériés payés (nationaux, religieux,
+      // manuels à 0 h) sont exclus des congés/maladies comme des taux.
+      if (joursSet.has(d) && (legalMap[d] || 0) > 0) {
         // Demi-journée : la date de fin de la demande compte pour 0,5
         const inc = demiFin && d === dF ? 0.5 : 1;
         jourMap[d] = (jourMap[d] || 0) + inc;
         empMap[empId] = (empMap[empId] || 0) + inc;
+        if (empJours) {
+          if (!empJours[empId]) empJours[empId] = {};
+          empJours[empId][d] = (empJours[empId][d] || 0) + inc;
+        }
         if (inc === 0.5) {
           jourDemi[d] = 1;
           jourCongeDemi[d] = (jourCongeDemi[d] || 0) + 0.5;
@@ -251,7 +260,7 @@ router.get('/audit', (req, res) => {
   // Demi-journée : flag explicite OU valeur fractionnaire héritée d'une saisie manuelle
   // (répare les demandes créées avant la normalisation : 1,5 j sur 2 jours => dernier jour à 0,5)
   for (const c of conges) if (idsSet.has(c.employe_id)) marquer(jourConge, empConge, c.employe_id, c.date_debut, c.date_fin, !!c.demi_journee || !Number.isInteger(Number(c.nombre_jours)));
-  for (const a of arrets) if (idsSet.has(a.employe_id)) marquer(jourMaladie, empMaladie, a.employe_id, a.date_debut, a.date_fin);
+  for (const a of arrets) if (idsSet.has(a.employe_id)) marquer(jourMaladie, empMaladie, a.employe_id, a.date_debut, a.date_fin, false, empMaladieJours);
 
   // --- Présence & ponctualité (depuis les pointages bruts) ---
   const ramadanByAnnee = {};
@@ -291,7 +300,7 @@ router.get('/audit', (req, res) => {
     if (g.min === null || r.horodatage < g.min) g.min = r.horodatage;
     if (g.max === null || r.horodatage > g.max) g.max = r.horodatage;
   }
-  // Durée quotidienne dérivée des badges bruts (repli du calendrier quand la journée
+  // Durée quotidienne dérivée des badges bruts (repli quand la journée
   // est absente de horaires_travail) : durée = dernier badgeage − premier badgeage
   const badgesEmp = {};
   for (const g of parJour.values()) {
@@ -300,6 +309,19 @@ router.get('/audit', (req, res) => {
     if (!sec) continue;
     if (!badgesEmp[g.employe_id]) badgesEmp[g.employe_id] = {};
     badgesEmp[g.employe_id][g.date] = sec;
+  }
+  // Le repli badges bruts alimente AUSSI les heures travaillées des KPIs, séries,
+  // détail par employé et catégories : sans lui, toute période postérieure au dernier
+  // import « horaires de travail » afficherait 0 h travaillée (heures légales > 0 → taux 0 %).
+  // horaires_travail reste prioritaire quand la journée y existe (journal de référence).
+  for (const [empId, joursBadges] of Object.entries(badgesEmp)) {
+    const t = travailEmp[empId] || (travailEmp[empId] = {});
+    for (const [d, sec] of Object.entries(joursBadges)) {
+      if (t[d]) continue;
+      const h = sec / 3600;
+      t[d] = h;
+      travailMap[d] = (travailMap[d] || 0) + h;
+    }
   }
   // Corrections manuelles des retards / sorties anticipées (rubrique Présences & pointages)
   const corrMap = new Map();
@@ -319,7 +341,11 @@ router.get('/audit', (req, res) => {
     const statut = statutPour({ nb: g.nb, horaire, retardSec, sortieSec: depSec });
     const delta = {
       journees: 1,
-      presents: estOuvrable(g.date) ? 1 : 0,
+      // « Présent » uniquement les jours PRÉVUS au calendrier (heures > 0) : un badge
+      // un dimanche ou un jour férié ne gonfle pas les jours présents (ses heures comptent
+      // quand même dans heures travaillées) ; l'équation absence = ouvrables − présents
+      // − congés − maladies reste équilibrée.
+      presents: (legalMap[g.date] || 0) > 0 ? 1 : 0,
       retards: retardSec > 0 ? 1 : 0,
       departs: depSec > 0 ? 1 : 0,
       retardsSec: retardSec,
@@ -344,12 +370,13 @@ router.get('/audit', (req, res) => {
     const [y, m] = k.split('-');
     return `${MOIS_ABBR[Number(m) - 1]} ${y}`;
   };
+  const effectif = employes.length;
   const buckets = {};
   for (const d of jours) {
     const k = bucketKey(d);
     if (!buckets[k]) buckets[k] = {
       key: k, label: bucketLabel(k),
-      legal_heures: 0, travaille_heures: 0, jours_ouvrables: 0,
+      legal_heures: 0, maladie_heures: 0, travaille_heures: 0, jours_ouvrables: 0,
       jours_conge: 0, jours_maladie: 0, jours_absence: 0,
       journees_presence: 0, jours_presents: 0, retards: 0, retard_secondes: 0,
       departs_anticipe: 0, sortie_anticipee_secondes: 0,
@@ -357,8 +384,12 @@ router.get('/audit', (req, res) => {
     };
     const b = buckets[k];
     b.legal_heures += legalMap[d] || 0;
+    // Heures de maladie du jour (arrêts validés) : déduites des heures à travailler
+    b.maladie_heures += (legalMap[d] || 0) * Math.min(jourMaladie[d] || 0, effectif);
     b.travaille_heures += travailMap[d] || 0;
-    if (estOuvrable(d)) b.jours_ouvrables += 1;
+    // Jour ouvrable = jour PRÉVU au calendrier administratif (heures > 0) :
+    // repos hebdomadaires et fériés payés (nationaux/religieux/manuels à 0 h) exclus.
+    if ((legalMap[d] || 0) > 0) b.jours_ouvrables += 1;
     b.jours_conge += jourConge[d] || 0;
     b.jours_maladie += jourMaladie[d] || 0;
     const pp = pointagesJour[d];
@@ -374,18 +405,21 @@ router.get('/audit', (req, res) => {
     }
   }
 
-  const effectif = employes.length;
   const series = Object.values(buckets).map((b) => {
     // Absence = jour ouvrable sans badge ET sans congé validé ET sans maladie acceptée
     const absence_calc = Math.max(0, b.jours_ouvrables * effectif - b.jours_presents - b.jours_conge - b.jours_maladie);
-    // Le calendrier des heures légales s'applique à chaque employé : total = heures du jour × effectif
-    const legal_total = b.legal_heures * effectif;
+    // Heures à travailler NETTES = calendrier × effectif − heures des arrêts maladie validés
+    // (les repos hebdomadaires et fériés payés sont déjà à 0 h dans jours_travail).
+    const legal_avant_maladie = b.legal_heures * effectif;
+    const legal_total = Math.max(0, legal_avant_maladie - b.maladie_heures);
     const presence_pct = legal_total ? Math.round((b.travaille_heures / legal_total) * 1000) / 10 : null;
     const jours_presence = b.jours_presents;
     return {
       ...b,
       jours_absence: absence_calc,
       legal_heures: Math.round(legal_total * 100) / 100,
+      legal_avant_maladie: Math.round(legal_avant_maladie * 100) / 100,
+      heures_maladie: Math.round(b.maladie_heures * 100) / 100,
       travaille_heures: Math.round(b.travaille_heures * 100) / 100,
       presence_pct,
       jours_presence,
@@ -438,12 +472,19 @@ router.get('/audit', (req, res) => {
 
   // Détail par employé
   const legalParJour = jours.reduce((s, d) => s + (legalMap[d] || 0), 0);
-  const joursOuvrablesPeriode = jours.reduce((s, d) => s + (estOuvrable(d) ? 1 : 0), 0);
+  const joursOuvrablesPeriode = jours.reduce((s, d) => s + ((legalMap[d] || 0) > 0 ? 1 : 0), 0);
   const employesDetail = employes.map((e) => {
     const trav = travailEmp[e.id] || {};
     let travaille = 0;
     for (const d of jours) travaille += trav[d] || 0;
     travaille = Math.round(travaille * 100) / 100;
+    // Heures de maladie de l'employé (arrêts validés sur des jours prévus au calendrier),
+    // déduites des heures à travailler avant le calcul du taux de présence
+    const malJours = empMaladieJours[e.id] || {};
+    let maladieHeuresEmp = 0;
+    for (const d of jours) if (malJours[d]) maladieHeuresEmp += legalMap[d] || 0;
+    maladieHeuresEmp = Math.round(maladieHeuresEmp * 100) / 100;
+    const legalNetteEmp = Math.max(0, Math.round((legalParJour - maladieHeuresEmp) * 100) / 100);
     const pp = pointagesEmp[e.id] || {};
     const journees = pp.journees || 0;
     const retards = pp.retards || 0;
@@ -458,8 +499,10 @@ router.get('/audit', (req, res) => {
     return {
       ...e,
       travaille_heures: travaille,
-      legal_heures: Math.round(legalParJour * 100) / 100,
-      presence_pct: legalParJour ? Math.round((travaille / legalParJour) * 1000) / 10 : null,
+      legal_heures: legalNetteEmp,
+      legal_avant_maladie: Math.round(legalParJour * 100) / 100,
+      heures_maladie: maladieHeuresEmp,
+      presence_pct: legalNetteEmp ? Math.round((travaille / legalNetteEmp) * 1000) / 10 : null,
       jours_ouvrables: joursOuvrablesPeriode,
       jours_presents,
       jours_presents_pct,
@@ -515,7 +558,8 @@ router.get('/audit', (req, res) => {
   const badgesFiltre = ids.length === 1 ? (badgesEmp[ids[0]] || {}) : null;
   const calendrier = (employe_id || matricule) ? jours.map((d) => {
     const pj = pointagesJour[d];
-    const ouvrable = estOuvrable(d) ? 1 : 0;
+    // Ouvrable = jour PRÉVU au calendrier (heures > 0) : week-ends et fériés payés exclus
+    const ouvrable = (legalMap[d] || 0) > 0 ? 1 : 0;
     const badge = pj ? pj.journees : 0;
     const present = pj ? pj.presents : 0;
     const conge = jourConge[d] || 0;
