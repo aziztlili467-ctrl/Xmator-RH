@@ -101,7 +101,7 @@ export default function PwaInstall() {
 
           <div className="flex items-center gap-3 p-4 pe-9">
             <img
-              src="/icons/icon-192.png"
+              src="/icons/icon-192.png?v=20260822"
               alt="XMATOR RH"
               className="h-12 w-12 shrink-0 rounded-xl bg-white object-contain p-0.5 ring-1 ring-white/40"
               style={{ animation: 'pwa-pouls 2.4s ease-in-out infinite' }}

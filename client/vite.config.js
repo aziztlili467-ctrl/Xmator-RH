@@ -4,7 +4,7 @@ import { writeFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 // --- Génération du service worker PWA au build (sans dépendance) ---
-const SW_CACHE = 'xmator-rh-v2';
+const SW_CACHE = 'xmator-rh-v4';
 
 const SW_TEMPLATE = `const CACHE = '${SW_CACHE}';
 const PRECACHE = __PRECACHE_MANIFEST__;
