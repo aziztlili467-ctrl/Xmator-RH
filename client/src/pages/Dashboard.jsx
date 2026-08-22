@@ -101,30 +101,30 @@ function KpiCard({ title, value, sub, icon, chip, accent }) {
 }
 
 // ---- Baromètre circulaire (jauge) ----
-function Barometre({ pct, label, sub, color }) {
+function Barometre({ pct, label, sub, color, compact }) {
   const R = 34;
   const C = 2 * Math.PI * R;
   const val = Math.max(0, Math.min(100, pct === null || pct === undefined ? 0 : pct));
   const angle = val / 100;
   return (
-    <div className="flex items-center gap-4 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-card">
-      <div className="relative h-24 w-24 shrink-0">
+    <div className={`flex items-center rounded-2xl border border-slate-200/80 bg-white shadow-card ${compact ? 'gap-3 p-3' : 'gap-4 p-4'}`}>
+      <div className={`relative shrink-0 ${compact ? 'h-16 w-16' : 'h-24 w-24'}`}>
         <svg viewBox="0 0 84 84" className="h-full w-full">
-          <circle cx="42" cy="42" r={R} fill="none" stroke="#e2e8f0" strokeWidth="9" />
+          <circle cx="42" cy="42" r={R} fill="none" stroke="#e2e8f0" strokeWidth={compact ? 10 : 9} />
           <circle
             cx="42" cy="42" r={R} fill="none"
-            stroke={color} strokeWidth="9" strokeLinecap="round"
+            stroke={color} strokeWidth={compact ? 10 : 9} strokeLinecap="round"
             strokeDasharray={`${C * angle} ${C}`}
             transform="rotate(-90 42 42)"
             style={{ transition: 'stroke-dasharray 0.7s ease' }}
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-lg font-black" style={{ color }}>{fmtPct(pct)}</span>
+          <span className={`font-black ${compact ? 'text-sm' : 'text-lg'}`} style={{ color }}>{fmtPct(pct)}</span>
         </div>
       </div>
       <div className="min-w-0">
-        <p className="text-sm font-bold text-slate-800">{label}</p>
+        <p className={`font-bold text-slate-800 ${compact ? 'text-xs' : 'text-sm'}`}>{label}</p>
         <p className="mt-0.5 text-xs text-slate-500">{sub}</p>
       </div>
     </div>
@@ -182,6 +182,50 @@ const STACK_COLORS = {
   Absence: '#f59e0b',
 };
 
+// ---- Carte ★ Évaluation de la ponctualité (colonne 1/2) ----
+function CarteEvaluationPonctualite({ k, baro }) {
+  return (
+    <div className="flex h-full flex-col rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="flex items-center gap-1.5 text-sm font-bold uppercase tracking-wide text-slate-800">
+            <span className="text-brand-700">★</span> ÉVALUATION DE LA PONCTUALITÉ
+          </h3>
+          <p className="mt-1 text-xs text-slate-500">
+            Note de 0 à 5 étoiles selon le % de journées conformes (sans retard / sortie régulière).
+          </p>
+        </div>
+        <span className="rounded-full border border-brand-700/20 bg-brand-700/10 px-3 py-1 text-xs font-semibold text-brand-700">
+          {k.journees_presence} journée(s) évaluée(s)
+        </span>
+      </div>
+
+      <div className="flex flex-1 flex-col justify-center gap-3 py-4">
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/50 p-4 shadow-sm transition-shadow hover:shadow-md">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-rose-600">Retards (entrées)</p>
+            <p className="mt-1 text-xl font-black text-slate-900">{fmtPct(baro.ponctualite)}</p>
+            <p className="mt-0.5 text-[11px] text-slate-500">{k.journees_presence - k.retards} jour(s) sans retard / {k.journees_presence}</p>
+          </div>
+          <Stars value={k.note_retards} size={22} label="Note retards" />
+        </div>
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/50 p-4 shadow-sm transition-shadow hover:shadow-md">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-sky-600">Sorties anticipées</p>
+            <p className="mt-1 text-xl font-black text-slate-900">{fmtPct(baro.sorties_conformes)}</p>
+            <p className="mt-0.5 text-[11px] text-slate-500">{k.journees_presence - k.departs_anticipe} sortie(s) régulière(s) / {k.journees_presence}</p>
+          </div>
+          <Stars value={k.note_sorties} size={22} label="Note sorties" />
+        </div>
+      </div>
+
+      <p className="text-[11px] text-slate-400">
+        Échelle : 5 ★ ≥ 97,5 % · 4 ★ ≥ 92 % · 3 ★ ≥ 82 % · 2 ★ ≥ 65 % · 1 ★ ≥ 40 % · 0 ★ &lt; 40 % de journées conformes.
+      </p>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [granularite, setGranularite] = useState('mois');
   const [preset, setPreset] = useState('annee');
@@ -199,9 +243,13 @@ export default function Dashboard() {
   // Matricules dont la photo est introuvable (404/erreur) → bascule sur les initiales dans le tableau
   const [photosErreur, setPhotosErreur] = useState(() => new Set());
   const [filtresOuverts, setFiltresOuverts] = useState(false);
+  const [categoriesList, setCategoriesList] = useState([]);
+  const [categorieId, setCategorieId] = useState('');
+  const [alea, setAlea] = useState(0);
 
   useEffect(() => {
     api.employes().then((l) => { setEmployesList(l); setEmployesReady(true); }).catch(() => { setEmployesReady(true); });
+    api.categories().then(setCategoriesList).catch(() => {});
   }, []);
 
   const filtreEmployeId = employeId ? Number(employeId) : null;
@@ -245,10 +293,12 @@ export default function Dashboard() {
       granularite,
       debut: periode.debut,
       fin: periode.fin,
+      categorie_id: categorieId ? Number(categorieId) : undefined,
       employe_id: filtreEmployeId || undefined,
       matricule: filtreEmployeId ? undefined : (employeFiltre ? employeFiltre.matricule : undefined),
+      alea: alea || undefined,
     };
-  }, [granularite, periode, filtreEmployeId, employeFiltre, matriculeIntrouvable]);
+  }, [granularite, periode, categorieId, filtreEmployeId, employeFiltre, matriculeIntrouvable, alea]);
 
   useEffect(() => {
     if (!auditParams) {
@@ -319,6 +369,8 @@ export default function Dashboard() {
   const presenceChip = k ? cartePresence(k.presence_pct) : null;
 
   // Filtres sur le tableau des employés
+  const libelleCategorie = (categoriesList.find((c) => String(c.id) === categorieId) || {}).libelle;
+
   const employesFiltres = useMemo(() => {
     const list = data?.employes || [];
     if (!recherche.trim()) return list;
@@ -330,7 +382,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       {/* ===== Panneau de filtres global (sidebar) ===== */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-4">
+      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-4">
         <aside className="xl:col-span-1">
           <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card xl:sticky xl:top-24">
             <button
@@ -384,6 +436,20 @@ export default function Dashboard() {
                   <input type="date" className="input text-sm" value={persoFin} onChange={(e) => setPersoFin(e.target.value)} />
                 </div>
               )}
+
+              <div>
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Catégorie</label>
+                <select
+                  className="input w-full text-sm"
+                  value={categorieId}
+                  onChange={(e) => { setCategorieId(e.target.value); setEmployeId(''); setMatricule(''); }}
+                >
+                  <option value="">Toutes catégories</option>
+                  {categoriesList.map((c) => (
+                    <option key={c.id} value={c.id}>{c.libelle}</option>
+                  ))}
+                </select>
+              </div>
 
               <div>
                 <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Employé</label>
@@ -552,69 +618,35 @@ export default function Dashboard() {
             <Barometre pct={data.barometres.ponctualite} label="Ponctualité globale" sub={`${k.journees_presence - k.retards} / ${k.journees_presence} journée(s) sans retard`} color="#8b5cf6" />
           </div>
 
-          {/* ===== Évaluation des employés (étoiles dorées) ===== */}
-          <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-5 text-white shadow-card">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-amber-300">
-                  ★ Évaluation de la ponctualité
-                </h2>
-                <p className="mt-1 text-xs text-slate-300">
-                  Note de 0 à 5 étoiles selon le % de journées conformes (sans retard / sortie régulière) — période filtrée.
-                </p>
-              </div>
-              <span className="rounded-lg bg-white/10 px-2.5 py-1 text-xs font-semibold text-amber-200 ring-1 ring-white/20">
-                {k.journees_presence} journée(s) évaluée(s)
-              </span>
-            </div>
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="flex items-center justify-between gap-4 rounded-xl bg-white/10 p-4 ring-1 ring-white/15 backdrop-blur">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-rose-200">Retards (entrées)</p>
-                  <p className="mt-1 text-2xl font-black text-white">{fmtPct(data.barometres.ponctualite)}</p>
-                  <p className="mt-0.5 text-[11px] text-slate-300">{k.journees_presence - k.retards} jour(s) sans retard / {k.journees_presence}</p>
-                </div>
-                <Stars value={k.note_retards} size={26} label="Note retards" />
-              </div>
-              <div className="flex items-center justify-between gap-4 rounded-xl bg-white/10 p-4 ring-1 ring-white/15 backdrop-blur">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-sky-200">Sorties anticipées</p>
-                  <p className="mt-1 text-2xl font-black text-white">{fmtPct(data.barometres.sorties_conformes)}</p>
-                  <p className="mt-0.5 text-[11px] text-slate-300">{k.journees_presence - k.departs_anticipe} sortie(s) régulière(s) / {k.journees_presence}</p>
-                </div>
-                <Stars value={k.note_sorties} size={26} label="Note sorties" />
-              </div>
-            </div>
-            <p className="mt-3 text-[11px] text-slate-400">
-              Échelle : 5 ★ ≥ 97,5 % · 4 ★ ≥ 92 % · 3 ★ ≥ 82 % · 2 ★ ≥ 65 % · 1 ★ ≥ 40 % · 0 ★ &lt; 40 % de journées conformes.
-            </p>
-          </div>
+          {/* ===== Ligne 2 colonnes : ★ Évaluation de la ponctualité + Présence & ponctualité ===== */}
+          <div className="grid grid-cols-1 items-stretch gap-6 xl:grid-cols-2">
+            <CarteEvaluationPonctualite k={k} baro={data.barometres} />
 
-          {/* ===== Présence & ponctualité (pointages) ===== */}
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card">
-            <CardTitle
-              title="Présence & ponctualité"
-              sub={`${k.journees_presence} journée(s) pointée(s) sur la période filtrée`}
-              right={
-                <span className="rounded-lg bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-600">
-                  {k.retards} retard(s) · {fmtDur(k.retard_secondes)}
-                </span>
-              }
-            />
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <Barometre pct={data.barometres.ponctualite} label="Ponctualité entrée" sub={`${k.journees_presence - k.retards} / ${k.journees_presence} journée(s) sans retard`} color="#f43f5e" />
-              <Barometre pct={data.barometres.sorties_conformes} label="Sorties conformes" sub={`${k.journees_presence - k.departs_anticipe} / ${k.journees_presence} sortie(s) régulière(s)`} color="#0ea5e9" />
-              <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-card">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Retards cumulés</p>
-                <p className="mt-1 text-2xl font-black text-slate-900">{k.retards} <span className="text-sm font-semibold text-slate-400">jour(s)</span></p>
-                <p className="mt-1 text-xs text-slate-500">total {fmtDur(k.retard_secondes)}</p>
-                <div className="mt-2"><Stars value={k.note_retards} size={14} label="Note retards" /></div>
-              </div>
-              <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-card">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Sorties anticipées</p>
-                <p className="mt-1 text-2xl font-black text-slate-900">{k.departs_anticipe} <span className="text-sm font-semibold text-slate-400">jour(s)</span></p>
-                <p className="mt-1 text-xs text-slate-500">total {fmtDur(k.sortie_anticipee_secondes)}</p>
-                <div className="mt-2"><Stars value={k.note_sorties} size={14} label="Note sorties" /></div>
+            <div className="flex h-full flex-col rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card">
+              <CardTitle
+                title="Présence & ponctualité"
+                sub={`${k.journees_presence} journée(s) pointée(s) sur la période filtrée`}
+                right={
+                  <span className="rounded-lg bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-600">
+                    {k.retards} retard(s) · {fmtDur(k.retard_secondes)}
+                  </span>
+                }
+              />
+              <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2 sm:content-center">
+                <Barometre compact pct={data.barometres.ponctualite} label="Ponctualité entrée" sub={`${k.journees_presence - k.retards} / ${k.journees_presence} journée(s) sans retard`} color="#f43f5e" />
+                <Barometre compact pct={data.barometres.sorties_conformes} label="Sorties conformes" sub={`${k.journees_presence - k.departs_anticipe} / ${k.journees_presence} sortie(s) régulière(s)`} color="#0ea5e9" />
+                <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4 shadow-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Retards cumulés</p>
+                  <p className="mt-1 text-xl font-black text-slate-900">{k.retards} <span className="text-sm font-semibold text-slate-400">jour(s)</span></p>
+                  <p className="mt-1 text-xs text-slate-500">total {fmtDur(k.retard_secondes)}</p>
+                  <div className="mt-2"><Stars value={k.note_retards} size={14} label="Note retards" /></div>
+                </div>
+                <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4 shadow-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Sorties anticipées</p>
+                  <p className="mt-1 text-xl font-black text-slate-900">{k.departs_anticipe} <span className="text-sm font-semibold text-slate-400">jour(s)</span></p>
+                  <p className="mt-1 text-xs text-slate-500">total {fmtDur(k.sortie_anticipee_secondes)}</p>
+                  <div className="mt-2"><Stars value={k.note_sorties} size={14} label="Note sorties" /></div>
+                </div>
               </div>
             </div>
           </div>

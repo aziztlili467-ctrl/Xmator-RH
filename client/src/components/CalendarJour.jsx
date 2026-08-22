@@ -24,6 +24,26 @@ const CELLS = {
   vide: 'bg-transparent',
 };
 
+// Couleur des heures travaillées dans la case : lisible et distincte sur chaque fond
+const HEURES_TXT = {
+  present: 'text-emerald-950/80',
+  conge: 'text-blue-100',
+  conge_demi: 'text-violet-100',
+  maladie: 'text-rose-100',
+  absence: 'text-amber-950/80',
+  repos: 'text-slate-600',
+  vide: '',
+};
+
+// Secondes → « 8h35 » (ou « 6h » si minutes nulles) ; 0 → '' (rien d'affiché)
+const fmtH = (sec) => {
+  if (!sec || sec <= 0) return '';
+  const m = Math.round(sec / 60);
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return mm ? `${h}h${String(mm).padStart(2, '0')}` : `${h}h`;
+};
+
 const statutJour = (j) => {
   if (!j) return { st: 'vide', day: '' };
   const day = Number(j.date.slice(8, 10));
@@ -75,6 +95,9 @@ export default function CalendarJour({ debut, fin, jours, nom, prenom, matricule
           <p className="mt-1 text-xs text-slate-400">
             {nom} {prenom} · Mat. {matricule} · du {fmtDate(debut)} au {fmtDate(fin)}
           </p>
+          <p className="mt-0.5 text-[11px] italic text-slate-400">
+            Durée travaillée affichée dans chaque case = dernier badgeage − premier badgeage du jour.
+          </p>
         </div>
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-medium text-slate-600">
           {LEGENDE.map((l) => (
@@ -104,13 +127,19 @@ export default function CalendarJour({ debut, fin, jours, nom, prenom, matricule
                 ))}
                 {m.cells.map((j, i) => {
                   const { st, day } = statutJour(j);
+                  const heuresTxt = fmtH(j && j.travaille_secondes);
                   return (
                     <div
                       key={`${m.cle}-${i}`}
-                      title={j ? `${fmtDate(j.date)}${j.demi && j.conge > 0 ? ' · demi-journée de congé' : ''}` : ''}
-                      className={`flex h-9 w-full items-center justify-center rounded-lg text-xs font-bold ${CELLS[st]}`}
+                      title={j ? `${fmtDate(j.date)}${j.demi && j.conge > 0 ? ' · demi-journée de congé' : ''}${heuresTxt ? ` · ${heuresTxt} travaillées` : ''}` : ''}
+                      className={`flex h-11 w-full flex-col items-center justify-center rounded-lg leading-none sm:h-12 md:h-14 ${CELLS[st]}`}
                     >
-                      {day}
+                      <span className="text-[11px] font-bold sm:text-xs">{day}</span>
+                      {heuresTxt && (
+                        <span className={`mt-1 text-[8px] font-semibold sm:text-[9px] md:text-[10px] ${HEURES_TXT[st]}`}>
+                          {heuresTxt}
+                        </span>
+                      )}
                     </div>
                   );
                 })}

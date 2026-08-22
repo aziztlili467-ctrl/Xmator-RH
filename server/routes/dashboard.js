@@ -147,8 +147,8 @@ function noteEtoiles(conformes, total) {
   return 0;
 }
 
-// ---- Audit dashboard : filtre unique (granularité + période + employé) appliqué à tous les graphiques ----
-// ?granularite=jour|mois|annee (défaut mois) &debut=&fin= (défaut année en cours) &employe_id=|matricule=
+// ---- Audit dashboard : filtre unique (granularité + période + catégorie + employé) appliqué à tous les graphiques ----
+// ?granularite=jour|mois|annee (défaut mois) &debut=&fin= &categorie_id= &employe_id=|matricule=
 router.get('/audit', (req, res) => {
   const granularite = ['jour', 'mois', 'annee'].includes(req.query.granularite) ? req.query.granularite : 'mois';
   const anneeCourante = String(new Date().getFullYear());
@@ -156,34 +156,28 @@ router.get('/audit', (req, res) => {
   const fin = String(req.query.fin || `${anneeCourante}-12-31`);
   const employe_id = req.query.employe_id ? Number(req.query.employe_id) : null;
   const matricule = String(req.query.matricule || '').trim();
+  const categorie_id = req.query.categorie_id ? Number(req.query.categorie_id) : null;
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(debut) || !/^\d{4}-\d{2}-\d{2}$/.test(fin) || fin < debut) {
     return res.status(400).json({ error: 'Période invalide (AAAA-MM-JJ, fin ≥ début).' });
   }
 
-  // Employés concernés par le filtre (tous par défaut)
-  let employes;
-  if (employe_id) {
-    employes = db.prepare(`
-      SELECT e.id, e.matricule, e.nom, e.prenom, e.photo_url, c.libelle AS categorie
-      FROM employes e JOIN categories c ON c.id = e.categorie_id
-      WHERE e.id = ? AND e.actif = 1
-    `).all(employe_id);
-  } else if (matricule) {
+  // Employés concernés par le filtre (tous par défaut) — catégorie et employé se combinent
+  let where = 'e.actif = 1';
+  const wparams = [];
+  if (categorie_id) { where += ' AND e.categorie_id = ?'; wparams.push(categorie_id); }
+  if (employe_id) { where += ' AND e.id = ?'; wparams.push(employe_id); }
+  else if (matricule) {
     const n = parseInt(matricule, 10);
-    employes = db.prepare(`
-      SELECT e.id, e.matricule, e.nom, e.prenom, e.photo_url, c.libelle AS categorie
-      FROM employes e JOIN categories c ON c.id = e.categorie_id
-      WHERE (e.matricule = ? OR CAST(e.matricule AS INTEGER) = ?) AND e.actif = 1
-    `).all(matricule, isNaN(n) ? -1 : n);
-  } else {
-    employes = db.prepare(`
-      SELECT e.id, e.matricule, e.nom, e.prenom, e.photo_url, c.libelle AS categorie
-      FROM employes e JOIN categories c ON c.id = e.categorie_id
-      WHERE e.actif = 1
-      ORDER BY CAST(e.matricule AS INTEGER), e.matricule
-    `).all();
+    where += ' AND (e.matricule = ? OR CAST(e.matricule AS INTEGER) = ?)';
+    wparams.push(matricule, isNaN(n) ? -1 : n);
   }
+  const employes = db.prepare(`
+    SELECT e.id, e.matricule, e.nom, e.prenom, e.photo_url, c.libelle AS categorie
+    FROM employes e JOIN categories c ON c.id = e.categorie_id
+    WHERE ${where}
+    ORDER BY CAST(e.matricule AS INTEGER), e.matricule
+  `).all(...wparams);
   if (!employes.length) return res.status(404).json({ error: 'Aucun employé ne correspond au filtre.' });
 
   res.json(dashMemo('audit:' + req.originalUrl, () => {
@@ -296,6 +290,16 @@ router.get('/audit', (req, res) => {
     g.nb += 1;
     if (g.min === null || r.horodatage < g.min) g.min = r.horodatage;
     if (g.max === null || r.horodatage > g.max) g.max = r.horodatage;
+  }
+  // Durée quotidienne dérivée des badges bruts (repli du calendrier quand la journée
+  // est absente de horaires_travail) : durée = dernier badgeage − premier badgeage
+  const badgesEmp = {};
+  for (const g of parJour.values()) {
+    if (g.nb < 2 || !g.min || !g.max) continue;
+    const sec = Math.max(0, Math.round((new Date(String(g.max).replace(' ', 'T')).getTime() - new Date(String(g.min).replace(' ', 'T')).getTime()) / 1000));
+    if (!sec) continue;
+    if (!badgesEmp[g.employe_id]) badgesEmp[g.employe_id] = {};
+    badgesEmp[g.employe_id][g.date] = sec;
   }
   // Corrections manuelles des retards / sorties anticipées (rubrique Présences & pointages)
   const corrMap = new Map();
@@ -505,6 +509,10 @@ router.get('/audit', (req, res) => {
   }));
 
   // Calendrier jour par jour (pour l'employé filtré uniquement) : présence / congé / maladie / absence / repos
+  // + heures travaillées du jour : durée horaires_travail, sinon repli sur les badges bruts (dernier − premier badgeage)
+  // → chaque journée badgée (verte) affiche ses heures travaillées
+  const travailFiltre = ids.length === 1 ? (travailEmp[ids[0]] || {}) : null;
+  const badgesFiltre = ids.length === 1 ? (badgesEmp[ids[0]] || {}) : null;
   const calendrier = (employe_id || matricule) ? jours.map((d) => {
     const pj = pointagesJour[d];
     const ouvrable = estOuvrable(d) ? 1 : 0;
@@ -513,13 +521,25 @@ router.get('/audit', (req, res) => {
     const conge = jourConge[d] || 0;
     const maladie = jourMaladie[d] || 0;
     const absence = Math.max(0, ouvrable * ids.length - present - conge - maladie);
-    return { date: d, ouvrable, heures: legalMap[d] || 0, badge, present, conge, maladie, absence, demi: jourDemi[d] || 0 };
+    return {
+      date: d, ouvrable, heures: legalMap[d] || 0, badge, present, conge, maladie, absence, demi: jourDemi[d] || 0,
+      travaille_secondes: (travailFiltre && travailFiltre[d] ? Math.round(travailFiltre[d] * 3600) : 0) || (badgesFiltre ? badgesFiltre[d] || 0 : 0),
+    };
   }) : [];
 
+  // 9 employés au hasard parmi le périmètre filtré (grille 3×3 du tableau de bord)
+  const photos_aleatoires = db.prepare(`
+    SELECT e.matricule, e.nom, e.prenom, e.photo_url, c.libelle AS categorie
+    FROM employes e JOIN categories c ON c.id = e.categorie_id
+    WHERE ${where}
+    ORDER BY RANDOM() LIMIT 9
+  `).all(...wparams);
+
   return {
-    filtre: { granularite, debut, fin, employe_id, matricule },
+    filtre: { granularite, debut, fin, employe_id, matricule, categorie_id },
     periode: { debut, fin },
     effectif,
+    photos_aleatoires,
     kpis: {
       effectif,
       heures_legales: Math.round(totLegal * 100) / 100,
