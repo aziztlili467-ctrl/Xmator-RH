@@ -27,11 +27,6 @@ app.use('/api', requireAuth);
 app.use('/api/mouchard', requireRole('super_admin'), require('./routes/mouchard'));
 app.use('/api', auditLog);
 
-// Sauvegardes automatiques : toute écriture réussie (POST/PUT/DELETE sur une rubrique)
-// planifie une sauvegarde complète de la base + photos, 45 s après la dernière écriture.
-const { surveillerEcritures } = require('./routes/maintenance');
-app.use('/api', surveillerEcritures);
-
 // Super Admin uniquement — gestion des comptes, import, maintenance, calendrier de l'année
 app.use('/api/comptes', requireRole('super_admin'), require('./routes/comptes'));
 app.use('/api/maintenance', requireRole('super_admin'), require('./routes/maintenance'));

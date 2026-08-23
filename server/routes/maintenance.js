@@ -145,7 +145,7 @@ function restaurerDepuis(chemin) {
   }
 }
 
-// ---- Noyau de sauvegarde (utilisé par la création manuelle ET les sauvegardes automatiques) ----
+// ---- Noyau de sauvegarde (utilisé par la création manuelle uniquement) ----
 // 1) checkpoint WAL → toutes les écritures en attente sont rapatriées dans le fichier principal ;
 // 2) db.backup() → copie complète de la base ;
 // 3) photos_bak → intégration des photos d'identité (fichiers hors base) dans le fichier ;
@@ -190,70 +190,20 @@ async function creerFichierSauvegarde(chemin) {
   return nbPhotos;
 }
 
-// ---- Sauvegardes automatiques : chaque mise à jour d'une rubrique/données est incluse ----
-// Déclenchées par le middleware `surveillerEcritures` (index.js) après toute écriture réussie,
-// avec anti-rebond (45 s après la dernière écriture) et cadence minimale (1 par 5 min max).
-const AUTO_PREFIXE = 'auto_';
-const AUTO_GARDEES = 24;
-const AUTO_DELAI_MS = 45 * 1000;
-const AUTO_CADENCE_MIN_MS = 5 * 60 * 1000;
-let autoTimer = null;
-let autoDerniereFin = 0;
-let autoEnCours = false;
+// ---- Sauvegarde manuelle : déclenchée explicitement par l'admin ----
+// Plus de minuterie automatique : la sauvegarde ne se lance que sur demande explicite via
+// le bouton "Sauvegarde manuelle" du tableau de bord maintenance.
 
 function nettoyerAnciennes(prefixe, garder) {
   try {
     const fichiers = fs.readdirSync(BACKUP_DIR)
-      .filter((f) => f.startsWith(prefixe) && f.toLowerCase().endsWith('.db'))
+      .filter((f) => f.toLowerCase().endsWith('.db') && !f.startsWith('_'))
       .map((f) => ({ f, t: fs.statSync(path.join(BACKUP_DIR, f)).mtime.getTime() }))
       .sort((a, b) => b.t - a.t);
     for (const x of fichiers.slice(garder)) {
       try { fs.unlinkSync(path.join(BACKUP_DIR, x.f)); } catch {}
     }
   } catch {}
-}
-
-async function executerSauvegardeAuto(motif) {
-  if (autoEnCours) return;
-  autoEnCours = true;
-  try {
-    let nom = `${AUTO_PREFIXE}amicale_${horodatage()}`;
-    let chemin = path.join(BACKUP_DIR, `${nom}.db`);
-    let i = 2;
-    while (fs.existsSync(chemin)) { chemin = path.join(BACKUP_DIR, `${nom}_${i}.db`); i++; }
-    await creerFichierSauvegarde(chemin);
-    autoDerniereFin = Date.now();
-    nettoyerAnciennes(AUTO_PREFIXE, AUTO_GARDEES);
-    console.log(`[sauvegarde auto] ${path.basename(chemin)} — déclenchée par : ${motif}`);
-  } catch (e) {
-    console.warn('[sauvegarde auto] échec (réessai à la prochaine écriture) :', e.message);
-  } finally {
-    autoEnCours = false;
-  }
-}
-
-function planifierSauvegardeAuto(motif) {
-  if (autoTimer) clearTimeout(autoTimer);
-  autoTimer = setTimeout(() => {
-    autoTimer = null;
-    if (Date.now() - autoDerniereFin < AUTO_CADENCE_MIN_MS) return;
-    executerSauvegardeAuto(motif);
-  }, AUTO_DELAI_MS);
-}
-
-// Middleware à monter sur /api (après auditLog) : planifie une sauvegarde auto après chaque
-// écriture réussie (POST/PUT/DELETE en 2xx). Les lectures, connexions et la création manuelle
-// de sauvegarde sont exclues.
-function surveillerEcritures(req, res, next) {
-  if (req.method === 'GET') return next();
-  const url = req.originalUrl || req.url || '';
-  if (/^\/api\/auth\//.test(url)) return next();
-  if (/^\/api\/maintenance\/backup/.test(url)) return next();
-  res.on('finish', () => {
-    if (res.statusCode >= 400) return;
-    planifierSauvegardeAuto(`${req.method} ${url}`);
-  });
-  return next();
 }
 
 // Snapshot de sécurité AVANT une opération destructive (restauration, réinitialisation).
@@ -304,10 +254,21 @@ router.get('/backups', (req, res) => {
     .filter((f) => f.toLowerCase().endsWith('.db') && !f.startsWith('_'))
     .map((f) => {
       const st = fs.statSync(path.join(BACKUP_DIR, f));
-      return { nom: f, taille: st.size, date: st.mtime, auto: f.startsWith(AUTO_PREFIXE) };
+      return { nom: f, taille: st.size, date: st.mtime };
     })
     .sort((a, b) => new Date(b.date) - new Date(a.date));
   res.json(files);
+});
+
+// ---- Suppression de TOUTES les sauvegardes ----
+router.delete('/backups', (req, res) => {
+  const fichiers = fs.readdirSync(BACKUP_DIR)
+    .filter((f) => f.toLowerCase().endsWith('.db') && !f.startsWith('_'))
+  let supprimees = 0;
+  for (const f of fichiers) {
+    try { fs.unlinkSync(path.join(BACKUP_DIR, f)); supprimees++; } catch {}
+  }
+  res.json({ ok: true, supprimees, message: `${supprimees} sauvegarde(s) supprimée(s) définitivement.` });
 });
 
 // ---- Téléchargement d'une sauvegarde ----
@@ -419,5 +380,3 @@ router.post('/reset/journal', async (req, res) => {
 });
 
 module.exports = router;
-module.exports.surveillerEcritures = surveillerEcritures;
-module.exports.planifierSauvegardeAuto = planifierSauvegardeAuto;
