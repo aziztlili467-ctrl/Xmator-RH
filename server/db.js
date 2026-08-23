@@ -215,6 +215,81 @@ CREATE TABLE IF NOT EXISTS corrections_pointages (
   UNIQUE (employe_id, date)
 );
 CREATE INDEX IF NOT EXISTS idx_corrections_emp_date ON corrections_pointages(employe_id, date);
+
+-- Application Web : tracking des appareils/sessions (une ligne par connexion réussie)
+CREATE TABLE IF NOT EXISTS sessions_appareils (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  utilisateur_id    INTEGER REFERENCES utilisateurs(id),
+  login             TEXT NOT NULL,
+  role              TEXT,
+  type_appareil     TEXT CHECK (type_appareil IN ('pc','mobile','tablette','autre')),
+  nom_appareil      TEXT,
+  user_agent        TEXT,
+  ip_adresse        TEXT,
+  date_connexion    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  derniere_activite TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  date_deconnexion  TEXT,
+  duree_secondes    INTEGER,
+  statut            TEXT NOT NULL DEFAULT 'connecte' CHECK (statut IN ('connecte','deconnecte'))
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_login   ON sessions_appareils(login);
+CREATE INDEX IF NOT EXISTS idx_sessions_statut  ON sessions_appareils(statut);
+CREATE INDEX IF NOT EXISTS idx_sessions_date    ON sessions_appareils(date_connexion);
+
+-- Application Web : chat en direct utilisateur ↔ Super Admin (1 conversation par compte)
+CREATE TABLE IF NOT EXISTS messages_chat (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  utilisateur_id  INTEGER NOT NULL REFERENCES utilisateurs(id),
+  expediteur_id   INTEGER NOT NULL REFERENCES utilisateurs(id),
+  expediteur_role TEXT NOT NULL CHECK (expediteur_role IN ('admin','utilisateur')),
+  contenu         TEXT NOT NULL,
+  date_envoi      TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  lu              INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_chat_user_date ON messages_chat(utilisateur_id, date_envoi);
+CREATE INDEX IF NOT EXISTS idx_chat_lu        ON messages_chat(utilisateur_id, expediteur_role, lu);
+
+-- Paie mensuelle : Paramètres & Codification (codes de présence du futur journal de paie)
+CREATE TABLE IF NOT EXISTS codes_paie (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  code       TEXT NOT NULL UNIQUE,
+  libelle    TEXT NOT NULL,
+  couleur    TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  updated_at TEXT
+);
+
+-- Paie mensuelle : Journal RMA — codifications importées (A1/CA/MA/R3/RP…) par employé et date,
+-- fusionnées avec P1 (pointages badgeuse) dans le journal de paie.
+CREATE TABLE IF NOT EXISTS codes_importes (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  employe_id   INTEGER NOT NULL REFERENCES employes(id),
+  matricule    TEXT,
+  date         TEXT NOT NULL,
+  code         TEXT NOT NULL,
+  demi_journee INTEGER NOT NULL DEFAULT 0,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  UNIQUE (employe_id, date, code)
+);
+CREATE INDEX IF NOT EXISTS idx_codes_importes_emp_date ON codes_importes(employe_id, date);
+CREATE INDEX IF NOT EXISTS idx_codes_importes_date     ON codes_importes(date);
+
+-- Rubrique Horaires : Notification d'Absences (formulaire du supérieur hiérarchique / responsable RH).
+-- nb_jours = jours PRÉVUS au calendrier administratif (jours_travail.heures > 0),
+-- c'est-à-dire hors repos hebdomadaire et hors jours fériés payés (religieux/nationaux).
+CREATE TABLE IF NOT EXISTS notifications_absence (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  employe_id  INTEGER NOT NULL REFERENCES employes(id),
+  matricule   TEXT NOT NULL,
+  date_debut  TEXT NOT NULL,
+  date_fin    TEXT NOT NULL,
+  nb_jours    REAL NOT NULL,
+  superieur   TEXT NOT NULL,
+  cree_par    TEXT,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_notif_abs_emp   ON notifications_absence(employe_id);
+CREATE INDEX IF NOT EXISTS idx_notif_abs_dates ON notifications_absence(date_debut, date_fin);
 `);
 
 // ---- Migration d'une base existante ----
@@ -235,6 +310,17 @@ function migrate() {
   const jfCols = db.prepare('PRAGMA table_info(jours_feries)').all().map((c) => c.name);
   if (!jfCols.includes('automatique')) db.exec('ALTER TABLE jours_feries ADD COLUMN automatique INTEGER NOT NULL DEFAULT 0');
 
+  // Appareils connectés : identifiant unique de l'appareil (fingerprint navigateur, équivalent MAC web)
+  if (!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sessions_appareils'").get()) {
+    // table créée plus haut au premier démarrage — rien à faire
+  } else {
+    const saCols = db.prepare('PRAGMA table_info(sessions_appareils)').all().map((c) => c.name);
+    if (!saCols.includes('identifiant_appareil')) {
+      db.exec('ALTER TABLE sessions_appareils ADD COLUMN identifiant_appareil TEXT');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_appareil ON sessions_appareils(identifiant_appareil)');
+    }
+  }
+
   // Horaires travaillés : colonnes `debut` / `fin` (premier / dernier badgeage de la journée)
   const hCols = db.prepare('PRAGMA table_info(horaires_travail)').all().map((c) => c.name);
   if (!hCols.includes('debut')) db.exec('ALTER TABLE horaires_travail ADD COLUMN debut TEXT');
@@ -243,6 +329,10 @@ function migrate() {
   // Demandes de congé : `demi_journee` = dernier jour de la demande compté comme demi-journée
   const dcCols = db.prepare('PRAGMA table_info(demandes_conge)').all().map((c) => c.name);
   if (!dcCols.includes('demi_journee')) db.exec('ALTER TABLE demandes_conge ADD COLUMN demi_journee INTEGER NOT NULL DEFAULT 0');
+
+  // Journal RMA : `demi_journee` = congé d'une demi-journée (CA en noir)
+  const ciCols = db.prepare('PRAGMA table_info(codes_importes)').all().map((c) => c.name);
+  if (!ciCols.includes('demi_journee')) db.exec('ALTER TABLE codes_importes ADD COLUMN demi_journee INTEGER NOT NULL DEFAULT 0');
 
   // Utilisateurs : rôle 'moderateur' + colonne permissions (reconstruction de la table si nécessaire)
   const uCols = db.prepare('PRAGMA table_info(utilisateurs)').all().map((c) => c.name);
@@ -287,6 +377,35 @@ function migrate() {
 }
 
 migrate();
+
+// Amorçage des codes de présence par défaut (Paramètres & Codification — journal de paie)
+// + migration : ajoute les codifications manquantes si la table existe déjà (sans écraser les couleurs personnalisées)
+const codesParDefaut = [
+  ['P1', 'PRÉSENT', '#10b981'],
+  ['A1', 'ABSENT', '#f59e0b'],
+  ['CA', 'CONGÉ ANNUEL', '#0ea5e9'],
+  ['MA', 'MALADIE', '#f43f5e'],
+  ['RP', 'REPOS', '#64748b'],
+  ['R3', 'REPOS PAYÉ', '#8b5cf6'],
+];
+const nbCodesPaie = db.prepare('SELECT COUNT(*) AS n FROM codes_paie').get().n;
+if (nbCodesPaie === 0) {
+  const insCode = db.prepare('INSERT INTO codes_paie (code, libelle, couleur) VALUES (?,?,?)');
+  db.transaction(() => {
+    for (const [c, l, col] of codesParDefaut) insCode.run(c, l, col);
+  })();
+} else {
+  for (const [c, l, col] of codesParDefaut) {
+    if (!db.prepare('SELECT id FROM codes_paie WHERE code = ?').get(c)) {
+      db.prepare('INSERT INTO codes_paie (code, libelle, couleur) VALUES (?,?,?)').run(c, l, col);
+    }
+  }
+  // corrige la couleur historique de R3 si elle doublonne P1 ( #10b981 → #8b5cf6 pour différencier)
+  const r3 = db.prepare("SELECT couleur FROM codes_paie WHERE code = 'R3'").get();
+  if (r3 && String(r3.couleur).toLowerCase() === '#10b981') {
+    db.prepare("UPDATE codes_paie SET couleur = '#8b5cf6' WHERE code = 'R3'").run();
+  }
+}
 
 const TYPES_CREDIT = ['solde_initial', 'ajout_annuel'];
 const TYPES_DEBIT_CONGE = ['prelevement'];

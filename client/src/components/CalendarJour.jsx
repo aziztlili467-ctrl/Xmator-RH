@@ -6,21 +6,27 @@ const JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 
 const LEGENDE = [
-  { st: 'present', label: 'Présent', dot: '#10b981' },
+  { st: 'present', label: 'Présent (P1)', dot: '#10b981' },
   { st: 'conge', label: 'Congé', dot: '#3860ea' },
-  { st: 'conge_demi', label: 'Demi-journée de congé', dot: '#8b5cf6' },
+  { st: 'conge_demi', label: 'Demi-journée de congé', dot: '#000000' },
   { st: 'maladie', label: 'Maladie', dot: '#f43f5e' },
   { st: 'absence', label: 'Absent', dot: '#f59e0b' },
   { st: 'repos', label: 'Repos / férié', dot: '#cbd5e1' },
+  { st: 'rma_A1', label: 'A1 — Absent', dot: '#f59e0b' },
+  { st: 'rma_CA', label: 'CA — Congé Annuel', dot: '#0ea5e9' },
+  { st: 'rma_MA', label: 'MA — Maladie', dot: '#f43f5e' },
+  { st: 'rma_R3', label: 'R3 — Repos Payé', dot: '#8b5cf6' },
+  { st: 'rma_RP', label: 'RP — Repos', dot: '#64748b' },
 ];
 
 const CELLS = {
   present: 'bg-emerald-500 text-white shadow-sm ring-1 ring-emerald-600/40',
   conge: 'bg-blue-600 text-white shadow-sm ring-1 ring-blue-700/40',
-  conge_demi: 'bg-violet-500 text-white shadow-sm ring-1 ring-violet-600/40',
+  conge_demi: 'bg-black text-white shadow-sm ring-1 ring-black/40',
   maladie: 'bg-rose-500 text-white shadow-sm ring-1 ring-rose-600/40',
   absence: 'bg-amber-500 text-white shadow-sm ring-1 ring-amber-600/40',
   repos: 'bg-slate-200 text-slate-500',
+  rma: 'text-white shadow-sm ring-1 ring-black/10',
   vide: 'bg-transparent',
 };
 
@@ -28,10 +34,11 @@ const CELLS = {
 const HEURES_TXT = {
   present: 'text-emerald-950/80',
   conge: 'text-blue-100',
-  conge_demi: 'text-violet-100',
+  conge_demi: 'text-white/90',
   maladie: 'text-rose-100',
   absence: 'text-amber-950/80',
   repos: 'text-slate-600',
+  rma: 'text-white/90',
   vide: '',
 };
 
@@ -47,6 +54,12 @@ const fmtH = (sec) => {
 const statutJour = (j) => {
   if (!j) return { st: 'vide', day: '' };
   const day = Number(j.date.slice(8, 10));
+  // Codifications RMA (Journal RMA → Journal de paie) : prioritaires, affichées avec leur couleur paramétrée
+  // Demi-journée CA : CA en noir (même si RMA)
+  if (j.rma_code) {
+    if (j.rma_code.includes('CA') && (j.rma_demi || (j.demi && j.conge > 0))) return { st: 'rma', day, code: j.rma_code, couleur: '#000000' };
+    return { st: 'rma', day, code: j.rma_code, couleur: j.rma_couleur || '#64748b' };
+  }
   // Demi-journée de congé : prioritaire sur « présent » pour rester visible même si l'agent a badgeé
   if (j.demi && j.conge > 0) return { st: 'conge_demi', day };
   if (j.badge > 0) return { st: 'present', day };
@@ -126,20 +139,27 @@ export default function CalendarJour({ debut, fin, jours, nom, prenom, matricule
                   <div key={`b${i}`} />
                 ))}
                 {m.cells.map((j, i) => {
-                  const { st, day } = statutJour(j);
+                  const { st, day, code, couleur } = statutJour(j);
                   const heuresTxt = fmtH(j && j.travaille_secondes);
+                  const rma = j && j.rma_code;
+                  const styleRma = st === 'rma' ? { backgroundColor: couleur } : undefined;
                   return (
                     <div
                       key={`${m.cle}-${i}`}
-                      title={j ? `${fmtDate(j.date)}${j.demi && j.conge > 0 ? ' · demi-journée de congé' : ''}${heuresTxt ? ` · ${heuresTxt} travaillées` : ''}` : ''}
+                      title={j ? `${fmtDate(j.date)}${rma ? ` · ${rma}` : ''}${j.demi && j.conge > 0 ? ' · demi-journée de congé' : ''}${heuresTxt ? ` · ${heuresTxt} travaillées` : ''}` : ''}
                       className={`flex h-11 w-full flex-col items-center justify-center rounded-lg leading-none sm:h-12 md:h-14 ${CELLS[st]}`}
+                      style={styleRma}
                     >
-                      <span className="text-[11px] font-bold sm:text-xs">{day}</span>
-                      {heuresTxt && (
+                      <span className="text-[11px] font-bold sm:text-xs">{rma ? rma.split('/')[0] : day}</span>
+                      {rma && rma.includes('/') ? (
+                        <span className="text-[7px] font-bold leading-none opacity-90">{rma}</span>
+                      ) : heuresTxt ? (
                         <span className={`mt-1 text-[8px] font-semibold sm:text-[9px] md:text-[10px] ${HEURES_TXT[st]}`}>
                           {heuresTxt}
                         </span>
-                      )}
+                      ) : rma ? (
+                        <span className="text-[10px] font-bold sm:text-xs">{day}</span>
+                      ) : null}
                     </div>
                   );
                 })}

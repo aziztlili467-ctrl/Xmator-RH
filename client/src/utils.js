@@ -9,6 +9,11 @@ export function today() {
   return new Date().toISOString().split('T')[0];
 }
 
+export function debutMois() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
 export function fmtJours(n) {
   const v = Number(n);
   if (!Number.isFinite(v)) return '—';

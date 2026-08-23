@@ -2,9 +2,12 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { fmtDate, fmtJours } from '../utils';
 import BadgeStatut from '../components/BadgeStatut';
-import { IconAlert } from '../components/icons';
+import { IconAlert, IconTrash, IconEdit } from '../components/icons';
+import { useAuth } from '../AuthContext';
 
 export default function ArretsMaladieInstance() {
+  const { user } = useAuth();
+  const estAdmin = user?.role === 'super_admin';
   const [arrets, setArrets] = useState([]);
   const [categories, setCategories] = useState([]);
   const [filters, setFilters] = useState({ statut: '', categorie: '', search: '' });
@@ -16,6 +19,9 @@ export default function ArretsMaladieInstance() {
   const [motifRejet, setMotifRejet] = useState('');
   const [decisionError, setDecisionError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const [aSupprimer, setASupprimer] = useState(null);
+  const [suppression, setSuppression] = useState(false);
 
   useEffect(() => {
     api.categories().then(setCategories).catch(() => {});
@@ -43,11 +49,12 @@ export default function ArretsMaladieInstance() {
     setSaving(true);
     try {
       if (decision.type === 'valider') {
-        const a = await api.validerArretMaladie(decision.arret.id);
+        await api.validerArretMaladie(decision.arret.id);
         setSuccess(`Arrêt N°${String(decision.arret.numero_sequentiel).padStart(3, '0')} validé. ${fmtJours(decision.arret.nombre_jours)} j déduits du solde maladie et journalisés.`);
       } else {
         await api.rejeterArretMaladie(decision.arret.id, motifRejet);
-        setSuccess(`Arrêt N°${String(decision.arret.numero_sequentiel).padStart(3, '0')} rejeté. L'employé est considéré comme absent — événement journalisé.`);
+        const restauration = decision.arret.statut === 'valide' ? ` Solde maladie restauré de ${fmtJours(decision.arret.nombre_jours)} j.` : " L'employé est considéré comme absent.";
+        setSuccess(`Arrêt N°${String(decision.arret.numero_sequentiel).padStart(3, '0')} rejeté.${restauration}`);
       }
       setDecision(null);
       load();
@@ -55,6 +62,23 @@ export default function ArretsMaladieInstance() {
       setDecisionError(err.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const confirmerSuppression = async () => {
+    setSuppression(true);
+    setError('');
+    try {
+      await api.supprimerArretMaladie(aSupprimer.id);
+      const msgRestauration = aSupprimer.statut === 'valide' ? ` Solde maladie restauré de ${fmtJours(aSupprimer.nombre_jours)} j.` : '';
+      setSuccess(`Arrêt N°${String(aSupprimer.numero_sequentiel).padStart(3, '0')} supprimé.${msgRestauration}`);
+      setASupprimer(null);
+      load();
+    } catch (e) {
+      setError(e.message);
+      setASupprimer(null);
+    } finally {
+      setSuppression(false);
     }
   };
 
@@ -140,6 +164,31 @@ export default function ArretsMaladieInstance() {
                             </button>
                           </>
                         )}
+                        {a.statut === 'valide' && (
+                          <button
+                            className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-amber-700"
+                            onClick={() => openDecision('rejeter', a)}
+                            title="Modifier : repasser en rejeté (restaure le solde maladie)"
+                          >
+                            <IconEdit /> Modifier
+                          </button>
+                        )}
+                        {a.statut === 'rejete' && (
+                          <button
+                            className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+                            onClick={() => openDecision('valider', a)}
+                            title="Modifier : repasser en validé"
+                          >
+                            <IconEdit /> Modifier
+                          </button>
+                        )}
+                        <button
+                          className="rounded-md p-1.5 text-red-500 transition hover:bg-red-50"
+                          onClick={() => setASupprimer(a)}
+                          title="Supprimer cet arrêt"
+                        >
+                          <IconTrash />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -155,7 +204,9 @@ export default function ArretsMaladieInstance() {
           <div className="card max-h-[90vh] w-full max-w-md overflow-auto p-6" onMouseDown={(e) => e.stopPropagation()}>
             <div className={`mb-4 flex items-center justify-between ${decision.type === 'rejeter' ? 'text-red-700' : 'text-slate-900'}`}>
               <h3 className="text-base font-bold">
-                {decision.type === 'valider' ? "Valider l'arrêt maladie" : "Rejeter l'arrêt maladie"}
+                {decision.type === 'valider'
+                  ? (decision.arret.statut === 'rejete' ? "Modifier : valider l'arrêt maladie" : "Valider l'arrêt maladie")
+                  : (decision.arret.statut === 'valide' ? "Modifier : rejeter l'arrêt maladie" : "Rejeter l'arrêt maladie")}
               </h3>
               <button onClick={() => setDecision(null)} className="text-slate-400 hover:text-slate-600">✕</button>
             </div>
@@ -163,20 +214,35 @@ export default function ArretsMaladieInstance() {
             <div className="space-y-4">
               <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
                 {`N° ${String(decision.arret.numero_sequentiel).padStart(3, '0')} — ${decision.arret.nom_prenom} · ${fmtJours(decision.arret.nombre_jours)} jour(s) · Bulletin ${decision.arret.numero_bulletin}`}
+                {decision.arret.statut !== 'en_instance' && (
+                  <span className="ml-1 text-xs text-slate-400">(actuellement : {decision.arret.statut === 'valide' ? 'validé' : 'rejeté'})</span>
+                )}
               </p>
 
               {decision.type === 'valider' ? (
                 <div className="flex items-start gap-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">
                   <span className="mt-0.5 shrink-0"><IconAlert /></span>
-                  <p>{`La validation déduira ${fmtJours(decision.arret.nombre_jours)} j du solde maladie de l'agent et créera un mouvement dans le journal (type : Maladie).`}</p>
+                  <p>
+                    {decision.arret.statut === 'rejete'
+                      ? `Cet arrêt est actuellement rejeté : la validation déduira ${fmtJours(decision.arret.nombre_jours)} j du solde maladie et créera un mouvement (type Maladie). L'événement d'absence et le code A1 seront supprimés.`
+                      : `La validation déduira ${fmtJours(decision.arret.nombre_jours)} j du solde maladie de l'agent et créera un mouvement dans le journal (type : Maladie).`}
+                  </p>
                 </div>
               ) : (
                 <div>
+                  {decision.arret.statut === 'valide' && (
+                    <div className="mb-3 flex items-start gap-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-700">
+                      <span className="mt-0.5 shrink-0"><IconAlert /></span>
+                      <p>Cet arrêt est actuellement <strong>validé</strong> ({fmtJours(decision.arret.nombre_jours)} j déjà déduits) : le rejet <strong>restaurera {fmtJours(decision.arret.nombre_jours)} j</strong> au solde maladie et basculera le code RMA de <strong>MA → A1</strong>.</p>
+                    </div>
+                  )}
                   <label className="label">Motif du rejet (optionnel)</label>
                   <textarea className="input" rows={2} value={motifRejet} onChange={(e) => setMotifRejet(e.target.value)} placeholder="Ex. Certificat non conforme" />
-                  <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-                    {"L'employé sera considéré comme absent : un événement « Absence » sera journalisé (aucune déduction du solde maladie)."}
-                  </p>
+                  {decision.arret.statut !== 'valide' && (
+                    <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                      {"L'employé sera considéré comme absent : un événement « Absence » sera journalisé (aucune déduction du solde maladie)."}
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -189,9 +255,38 @@ export default function ArretsMaladieInstance() {
                   disabled={saving}
                   onClick={submitDecision}
                 >
-                  {saving ? 'Traitement…' : decision.type === 'valider' ? 'Confirmer la validation' : 'Confirmer le rejet'}
+                  {saving ? 'Traitement…' : decision.type === 'valider' ? (decision.arret.statut === 'rejete' ? 'Confirmer la modification' : 'Confirmer la validation') : (decision.arret.statut === 'valide' ? 'Confirmer la modification' : 'Confirmer le rejet')}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {aSupprimer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !suppression && setASupprimer(null)}>
+          <div className="card w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-slate-900">Supprimer l'arrêt N° {String(aSupprimer.numero_sequentiel).padStart(3, '0')} ?</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Arrêt de <strong>{aSupprimer.nom_prenom}</strong> ({aSupprimer.matricule}) du {fmtDate(aSupprimer.date_debut)} au {fmtDate(aSupprimer.date_fin)} — {fmtJours(aSupprimer.nombre_jours)} jour(s), statut : <strong>{aSupprimer.statut}</strong>, bulletin {aSupprimer.numero_bulletin}.
+              {aSupprimer.statut === 'valide' && (
+                <span className="mt-2 block rounded bg-amber-50 px-2 py-1 text-amber-700">Le solde maladie sera restauré de {fmtJours(aSupprimer.nombre_jours)} j et les codes RMA MA supprimés.</span>
+              )}
+              {aSupprimer.statut === 'rejete' && (
+                <span className="mt-2 block rounded bg-slate-50 px-2 py-1 text-slate-600">L'événement d'absence et le code A1 seront supprimés.</span>
+              )}
+              Cette action est définitive.
+            </p>
+            {!estAdmin && <p className="mt-2 text-xs text-red-600">La suppression est réservée au super admin.</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <button className="btn-secondary" onClick={() => setASupprimer(null)} disabled={suppression}>Annuler</button>
+              <button
+                className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
+                onClick={confirmerSuppression}
+                disabled={suppression}
+              >
+                <IconTrash /> {suppression ? 'Suppression…' : 'Supprimer'}
+              </button>
             </div>
           </div>
         </div>

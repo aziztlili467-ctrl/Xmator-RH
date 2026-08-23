@@ -27,6 +27,35 @@ function nbJours(debut, fin) {
   return count;
 }
 
+const pad2 = (n) => String(n).padStart(2, '0');
+const CODE_RMA_CONGE = 'CA';
+
+// Helpers synchronisation Demande ↔ Journal RMA + Journal des mouvements
+function insererRMAForDemande(d) {
+  const cur = new Date(d.date_debut + 'T00:00:00');
+  const end = new Date(d.date_fin + 'T00:00:00');
+  const ins = db.prepare('INSERT INTO codes_importes (employe_id, matricule, date, code, demi_journee) VALUES (?,?,?,?,?) ON CONFLICT(employe_id, date, code) DO UPDATE SET demi_journee = excluded.demi_journee');
+  while (cur <= end) {
+    const wd = cur.getDay();
+    if (wd !== 0 && wd !== 6) {
+      const iso = `${cur.getFullYear()}-${pad2(cur.getMonth() + 1)}-${pad2(cur.getDate())}`;
+      const demi = d.demi_journee && iso === d.date_fin ? 1 : 0;
+      ins.run(d.employe_id, d.matricule, iso, CODE_RMA_CONGE, demi);
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+}
+
+function supprimerRMAForDemande(d) {
+  db.prepare('DELETE FROM codes_importes WHERE employe_id = ? AND date >= ? AND date <= ? AND code = ?').run(d.employe_id, d.date_debut, d.date_fin, CODE_RMA_CONGE);
+}
+
+// Vérifie si un mouvement RMA (per-date) existe déjà pour la période → évite double déduction
+function rmaMouvementExistePourPeriode(employe_id, debut, fin) {
+  const row = db.prepare("SELECT id FROM mouvements WHERE employe_id = ? AND type_operation = 'prelevement' AND solde_type = 'conge' AND motif LIKE 'RMA%' AND date_operation >= ? AND date_operation <= ? LIMIT 1").get(employe_id, debut, fin);
+  return !!row;
+}
+
 const NOM_PRETEMPS = (e) => `${e.nom} ${e.prenom}`;
 
 const BASE = `
@@ -130,8 +159,11 @@ router.post('/', (req, res) => {
 router.post('/:id/accepter', (req, res) => {
   const d = db.prepare('SELECT * FROM demandes_conge WHERE id = ?').get(req.params.id);
   if (!d) return res.status(404).json({ error: 'Demande introuvable.' });
-  if (d.statut !== 'en_instance') {
-    return res.status(400).json({ error: `Seules les demandes en instance peuvent être acceptées (statut actuel : ${d.statut}).` });
+  if (d.statut === 'acceptee') {
+    return res.status(400).json({ error: `Cette demande est déjà acceptée (N°${String(d.numero_sequentiel).padStart(3, '0')}).` });
+  }
+  if (!['en_instance', 'rejetee'].includes(d.statut)) {
+    return res.status(400).json({ error: `Statut incompatible pour acceptation (actuel : ${d.statut}).` });
   }
 
   const soldeActuel = soldeEmploye(d.employe_id);
@@ -141,16 +173,22 @@ router.post('/:id/accepter', (req, res) => {
     });
   }
 
+  // Évite double déduction si la période a déjà été déduite via le RMA (import manuel CA)
+  const dejaDeduitViaRMA = rmaMouvementExistePourPeriode(d.employe_id, d.date_debut, d.date_fin);
+
   try {
     const tx = db.transaction(() => {
-      insertMouvement({
-        employe_id: d.employe_id,
-        type_operation: 'prelevement',
-        date_operation: d.date_fin,
-        jours: d.nombre_jours,
-        motif: `Congé (validé) — Demande N°${String(d.numero_sequentiel).padStart(3, '0')}`,
-      });
-      db.prepare(`UPDATE demandes_conge SET statut = 'acceptee', date_decision = datetime('now','localtime') WHERE id = ?`).run(d.id);
+      if (!dejaDeduitViaRMA) {
+        insertMouvement({
+          employe_id: d.employe_id,
+          type_operation: 'prelevement',
+          date_operation: d.date_fin,
+          jours: d.nombre_jours,
+          motif: `Congé (validé) — Demande N°${String(d.numero_sequentiel).padStart(3, '0')}`,
+        });
+      }
+      insererRMAForDemande(d);
+      db.prepare(`UPDATE demandes_conge SET statut = 'acceptee', date_decision = datetime('now','localtime'), motif_rejet = NULL WHERE id = ?`).run(d.id);
     });
     tx();
   } catch (e) {
@@ -164,12 +202,61 @@ router.post('/:id/rejeter', (req, res) => {
   const { motif_rejet } = req.body || {};
   const d = db.prepare('SELECT * FROM demandes_conge WHERE id = ?').get(req.params.id);
   if (!d) return res.status(404).json({ error: 'Demande introuvable.' });
-  if (d.statut !== 'en_instance') {
-    return res.status(400).json({ error: `Seules les demandes en instance peuvent être rejetées (statut actuel : ${d.statut}).` });
+  if (d.statut === 'rejetee') {
+    return res.status(400).json({ error: `Cette demande est déjà rejetée (N°${String(d.numero_sequentiel).padStart(3, '0')}).` });
   }
-  db.prepare(`UPDATE demandes_conge SET statut = 'rejetee', date_decision = datetime('now','localtime'), motif_rejet = ? WHERE id = ?`)
-    .run(motif_rejet ? String(motif_rejet).trim() : null, d.id);
+  if (!['en_instance', 'acceptee'].includes(d.statut)) {
+    return res.status(400).json({ error: `Statut incompatible pour rejet (actuel : ${d.statut}).` });
+  }
+  try {
+    const tx = db.transaction(() => {
+      // Si la demande était acceptée, le solde a déjà été débité : on le restaure et on nettoie le RMA
+      if (d.statut === 'acceptee') {
+        insertMouvement({
+          employe_id: d.employe_id,
+          type_operation: 'ajout_annuel',
+          date_operation: new Date().toISOString().split('T')[0],
+          jours: d.nombre_jours,
+          motif: `Annulation congé — Demande N°${String(d.numero_sequentiel).padStart(3, '0')} repassée en rejetée`,
+          solde_type: 'conge',
+        });
+        supprimerRMAForDemande(d);
+      }
+      db.prepare(`UPDATE demandes_conge SET statut = 'rejetee', date_decision = datetime('now','localtime'), motif_rejet = ? WHERE id = ?`)
+        .run(motif_rejet ? String(motif_rejet).trim() : null, d.id);
+    });
+    tx();
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
   res.json(db.prepare(BASE + ' WHERE d.id = ?').get(d.id));
+});
+
+// Suppression d'une demande (super_admin uniquement via requireModule — DELETE bloqué pour modérateur)
+router.delete('/:id', (req, res) => {
+  const d = db.prepare('SELECT * FROM demandes_conge WHERE id = ?').get(req.params.id);
+  if (!d) return res.status(404).json({ error: 'Demande introuvable.' });
+  try {
+    const tx = db.transaction(() => {
+      if (d.statut === 'acceptee') {
+        // Restauration du solde : on crédite les jours prélevés et on nettoie le RMA
+        insertMouvement({
+          employe_id: d.employe_id,
+          type_operation: 'ajout_annuel',
+          date_operation: new Date().toISOString().split('T')[0],
+          jours: d.nombre_jours,
+          motif: `Annulation congé — Demande N°${String(d.numero_sequentiel).padStart(3, '0')} supprimée`,
+          solde_type: 'conge',
+        });
+        supprimerRMAForDemande(d);
+      }
+      db.prepare('DELETE FROM demandes_conge WHERE id = ?').run(d.id);
+    });
+    tx();
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+  res.json({ ok: true, supprimee: d.numero_sequentiel });
 });
 
 router.get('/:id/pdf', (req, res) => {

@@ -19,9 +19,17 @@ import {
   IconCalendarDays,
   IconUserClock,
   IconLogout,
+  IconDownloadApp,
+  IconMonitor,
+  IconChat,
+  IconSettings,
+  IconClipboardList,
+  IconBellAlert,
 } from './icons';
 import { useAuth } from '../AuthContext';
+import { api, getToken, getSessionId } from '../api';
 import PwaInstall from './PwaInstall';
+import ChatWidget from './ChatWidget';
 
 const NAV = [
   { to: '/', label: 'Tableau de bord', icon: IconDashboard, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
@@ -35,11 +43,14 @@ const NAV = [
   { to: '/prelevement', label: 'Prélèvement de congé', icon: IconArrowDown, end: true, roles: ['super_admin', 'moderateur'], module: 'soldes' },
   { to: '/ajout-annuel', label: 'Ajout de solde annuel', icon: IconCalendarCheck, end: true, roles: ['super_admin', 'moderateur'], module: 'soldes' },
   { to: '/journal', label: 'Journal des mouvements', icon: IconJournal, end: true, roles: ['super_admin', 'moderateur'], module: 'soldes' },
-  { section: 'Statistiques', roles: ['super_admin', 'consultation', 'moderateur'] },
-  { to: '/stats-journal', label: 'Journal de statistiques', icon: IconTrendUp, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
+  { section: 'Paie Mensuelle', roles: ['super_admin', 'consultation', 'moderateur'] },
+  { to: '/stats-journal', label: 'Journal de paie', icon: IconTrendUp, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
+  { to: '/journal-rma', label: 'Journal RMA', icon: IconClipboardList, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
+  { to: '/parametres-codification', label: 'Paramètres & Codification', icon: IconSettings, end: true, roles: ['super_admin'] },
   { section: 'Horaires', roles: ['super_admin', 'consultation', 'moderateur'] },
   { to: '/horaires', label: 'Horaires de travail', icon: IconClock, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
   { to: '/presence', label: 'Pointages & présences', icon: IconUserClock, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
+  { to: '/notification-absences', label: "Notification d'Absences", icon: IconBellAlert, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
   { section: 'Maladie', roles: ['super_admin', 'moderateur'] },
   { to: '/maladie/nouvel-arret', label: 'Nouvel arrêt maladie', icon: IconStethoscope, end: true, roles: ['super_admin', 'moderateur'], module: 'maladie' },
   { to: '/maladie/instance', label: 'Arrêts en instance', icon: IconClipboardCheck, end: true, roles: ['super_admin', 'moderateur'], module: 'maladie' },
@@ -50,6 +61,10 @@ const NAV = [
   { to: '/comptes', label: 'Gestion des comptes', icon: IconUserCog, end: true, roles: ['super_admin'] },
   { to: '/mouchard', label: 'Mouchard (activité)', icon: IconActivity, end: true, roles: ['super_admin'] },
   { to: '/maintenance', label: 'Sauvegarde & données', icon: IconShieldCheck, end: true, roles: ['super_admin'] },
+  { section: 'Application Web', roles: ['super_admin'] },
+  { to: '/application/telecharger', label: 'Télécharger l\'application', icon: IconDownloadApp, end: true, roles: ['super_admin'] },
+  { to: '/application/appareils', label: 'Appareils connectés', icon: IconMonitor, end: true, roles: ['super_admin'] },
+  { to: '/application/chat', label: 'Chat en direct', icon: IconChat, end: true, roles: ['super_admin'] },
 ];
 
 const ROLE_LABELS = {
@@ -88,6 +103,33 @@ export default function Layout() {
 
   // Ferme le menu mobile à chaque changement de route
   useEffect(() => { setMenuOuvert(false); }, [location.pathname]);
+
+  // ---- Tracking de session (Application Web) : heartbeat 60 s + beacon de fermeture ----
+  useEffect(() => {
+    if (!getToken()) return;
+    const battement = setInterval(() => {
+      const sid = getSessionId();
+      if (!sid) return;
+      api.appareilsHeartbeat(sid).catch(() => {});
+    }, 60 * 1000);
+    const fermeture = () => {
+      try {
+        const token = getToken();
+        if (!token) return;
+        navigator.sendBeacon(
+          '/api/auth/logout-beacon',
+          new Blob([JSON.stringify({ token })], { type: 'application/json' })
+        );
+      } catch { /* best effort */ }
+    };
+    window.addEventListener('beforeunload', fermeture);
+    window.addEventListener('pagehide', fermeture);
+    return () => {
+      clearInterval(battement);
+      window.removeEventListener('beforeunload', fermeture);
+      window.removeEventListener('pagehide', fermeture);
+    };
+  }, []);
 
   const deconnexion = () => {
     logout();
@@ -194,6 +236,7 @@ export default function Layout() {
         </main>
       </div>
       <PwaInstall />
+      <ChatWidget user={user} />
     </div>
   );
 }

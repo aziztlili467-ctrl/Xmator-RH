@@ -72,7 +72,7 @@ function requireAuth(req, res, next) {
     const payload = jwt.verify(header.slice(7), JWT_SECRET);
     const c = db.prepare('SELECT id, login, role, employe_id, actif, permissions FROM utilisateurs WHERE id = ?').get(payload.id);
     if (!c || !c.actif) return res.status(401).json({ error: 'Session expirée ou compte désactivé.' });
-    req.user = { id: c.id, login: c.login, role: c.role, employe_id: c.employe_id, actif: c.actif, permissions: c.permissions };
+    req.user = { id: c.id, login: c.login, role: c.role, employe_id: c.employe_id, actif: c.actif, permissions: c.permissions, session_id: payload.session_id || null };
     return next();
   } catch {
     return res.status(401).json({ error: 'Session expirée ou invalide.' });

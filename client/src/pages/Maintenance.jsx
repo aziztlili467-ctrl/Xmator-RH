@@ -138,8 +138,12 @@ export default function Maintenance() {
       {/* Sauvegarde */}
       <div className="card p-6">
         <h3 className="mb-1 text-sm font-bold uppercase tracking-wide text-slate-500">Créer une sauvegarde</h3>
-        <p className="mb-4 text-xs text-slate-400">
-          Le fichier est horodaté automatiquement (ex. amicale_2026-08-15_14h30.db), copié sur le serveur dans data/backups/ puis téléchargé sur votre PC. Il contient <b>toutes les données de toutes les rubriques</b> : employés, catégories, comptes, soldes &amp; mouvements, demandes de congé, arrêts maladie, présences &amp; pointages, horaires de travail, calendrier de l'année, journal d'activité et photos. La sauvegarde est prise <b>à la dernière minute</b> (toutes les écritures en attente sont incluses).
+        <p className="mb-2 text-xs text-slate-400">
+          Le fichier est horodaté automatiquement (ex. amicale_2026-08-15_14h30.db), copié sur le serveur dans data/backups/ puis téléchargé sur votre PC. Il contient <b>toutes les données de toutes les rubriques</b> : employés, catégories, comptes, soldes &amp; mouvements, demandes de congé, arrêts maladie, présences &amp; pointages, horaires de travail, calendrier de l'année, journal d'activité et photos. La sauvegarde est prise <b>à la dernière minute</b> (toutes les écritures en attente sont incluses) et son intégrité est <b>vérifiée automatiquement</b>.
+        </p>
+        <p className="mb-4 rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-800 ring-1 ring-sky-200">
+          <b>Sauvegarde automatique :</b> chaque mise à jour d'une rubrique ou de données (ajout, modification, suppression, import) déclenche une sauvegarde complète <b>45&nbsp;s après la dernière écriture</b>. Les fichiers <span className="font-mono">auto_…</span> apparaissent dans la liste ci-dessous (les 24 plus récents sont conservés). Avant chaque restauration ou réinitialisation, un <b>snapshot de sécurité</b> de l'état actuel est aussi créé automatiquement.
+          {' '}⚠️ Si l'application est hébergée en ligne sur un disque éphémère (ex. Render), <b>toute donnée restaurée en ligne est effacée au redéploiement/redémarrage</b> : téléchargez toujours la sauvegarde sur votre PC et conservez-la hors du serveur.
         </p>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="flex-1">
@@ -177,7 +181,10 @@ export default function Maintenance() {
                 <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-400">Aucune sauvegarde pour le moment.</td></tr>
               ) : backups.map((b) => (
                 <tr key={b.nom} className="border-b border-slate-100 hover:bg-slate-50">
-                  <td className="px-4 py-2.5 font-mono text-xs text-slate-800">{b.nom}</td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-slate-800">
+                    {b.nom}
+                    {b.auto && <span className="ms-2 rounded-full bg-sky-100 px-2 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wide text-sky-700">auto</span>}
+                  </td>
                   <td className="px-4 py-2.5 text-slate-600">{fmtDateHeure(b.date)}</td>
                   <td className="px-4 py-2.5 text-slate-600">{fmtTaille(b.taille)}</td>
                   <td className="px-4 py-2.5 text-end">

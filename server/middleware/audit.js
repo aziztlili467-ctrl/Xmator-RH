@@ -13,6 +13,10 @@ const MODULES = {
   horaires: 'Horaires de travail',
   presence: 'Présence & pointages',
   calendrier: 'Calendrier de l\'année',
+  application_web: 'Application Web',
+  paie: 'Paie mensuelle & codification',
+  rma: "Journal RMA (repos · maladie · absence)",
+  notif_absence: "Notification d'absences",
 };
 
 function modulePourPath(path) {
@@ -32,6 +36,11 @@ function modulePourPath(path) {
     ['/horaires', 'horaires'],
     ['/presence', 'presence'],
     ['/calendrier', 'calendrier'],
+    ['/codes-paie', 'paie'],
+    ['/journal-rma', 'rma'],
+    ['/notifications-absence', 'notif_absence'],
+    ['/chat', 'application_web'],
+    ['/appareils', 'application_web'],
   ];
   for (const [pref, mod] of tab) if (p.startsWith(pref)) return mod;
   return null;
@@ -43,6 +52,7 @@ function actionPourRequete(req) {
   if (path.includes('/generer-identifiants')) return 'ajouter';
   if (path.includes('/horaires/import')) return 'ajouter';
   if (path.includes('/presence/import')) return 'ajouter';
+  if (path.includes('/journal-rma/import')) return 'ajouter';
   if (path.includes('/import-rh')) return 'ajouter';
   if (path.includes('/jours-feries') && req.method === 'POST') return 'ajouter';
   if (req.method === 'GET') return 'lire';

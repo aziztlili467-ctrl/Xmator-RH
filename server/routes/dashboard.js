@@ -554,8 +554,29 @@ router.get('/audit', (req, res) => {
   // Calendrier jour par jour (pour l'employé filtré uniquement) : présence / congé / maladie / absence / repos
   // + heures travaillées du jour : durée horaires_travail, sinon repli sur les badges bruts (dernier − premier badgeage)
   // → chaque journée badgée (verte) affiche ses heures travaillées
+  // + codifications complémentaires du Journal RMA (A1, CA, MA, R3, RP…) fusionnées avec P1 — affichées par couleur
   const travailFiltre = ids.length === 1 ? (travailEmp[ids[0]] || {}) : null;
   const badgesFiltre = ids.length === 1 ? (badgesEmp[ids[0]] || {}) : null;
+  // Codes RMA importés pour l'employé filtré (une ligne par code, groupés par date comme dans le Journal de paie)
+  let rmaMap = {};
+  let rmaDemiMap = {};
+  let couleurRma = {};
+  if (employe_id || matricule) {
+    const empIdFiltre = ids[0];
+    const rmaRows = db.prepare(
+      'SELECT date, code, demi_journee FROM codes_importes WHERE employe_id = ? AND date >= ? AND date <= ? ORDER BY date, code'
+    ).all(empIdFiltre, debut, fin);
+    const tmp = {};
+    const tmpDemi = {};
+    for (const r of rmaRows) {
+      if (!tmp[r.date]) tmp[r.date] = [];
+      tmp[r.date].push(r.code);
+      if (r.demi_journee && r.code === 'CA') tmpDemi[r.date] = true;
+    }
+    for (const [d, arr] of Object.entries(tmp)) rmaMap[d] = arr.join('/');
+    for (const [d] of Object.entries(tmpDemi)) rmaDemiMap[d] = true;
+    for (const c of db.prepare('SELECT code, couleur FROM codes_paie').all()) couleurRma[c.code] = c.couleur || '#64748b';
+  }
   const calendrier = (employe_id || matricule) ? jours.map((d) => {
     const pj = pointagesJour[d];
     // Ouvrable = jour PRÉVU au calendrier (heures > 0) : week-ends et fériés payés exclus
@@ -565,9 +586,13 @@ router.get('/audit', (req, res) => {
     const conge = jourConge[d] || 0;
     const maladie = jourMaladie[d] || 0;
     const absence = Math.max(0, ouvrable * ids.length - present - conge - maladie);
+    const rma = rmaMap[d] || null;
+    const isRmaDemiCA = rma && rmaDemiMap[d] && rma.split('/').includes('CA');
+    const rma_couleur = rma ? (isRmaDemiCA ? '#000000' : (couleurRma[rma.split('/')[0]] || '#64748b')) : null;
     return {
       date: d, ouvrable, heures: legalMap[d] || 0, badge, present, conge, maladie, absence, demi: jourDemi[d] || 0,
       travaille_secondes: (travailFiltre && travailFiltre[d] ? Math.round(travailFiltre[d] * 3600) : 0) || (badgesFiltre ? badgesFiltre[d] || 0 : 0),
+      rma_code: rma, rma_couleur, rma_demi: isRmaDemiCA ? 1 : 0,
     };
   }) : [];
 

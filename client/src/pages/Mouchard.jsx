@@ -13,6 +13,9 @@ const MODULES = [
   { key: 'comptes', label: 'Comptes' },
   { key: 'administration', label: 'Sauvegarde & import' },
   { key: 'horaires', label: 'Horaires de travail' },
+  { key: 'paie', label: 'Paie & codification' },
+  { key: 'rma', label: 'Journal RMA' },
+  { key: 'notif_absence', label: "Notification d'absences" },
 ];
 
 const ACTION_LABELS = {

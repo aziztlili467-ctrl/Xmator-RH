@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { api, setToken, getToken } from './api';
+import { api, setToken, getToken, setSessionId, getAppareilId } from './api';
 
 const AuthContext = createContext(null);
 
@@ -19,8 +19,9 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = async (login, password) => {
-    const r = await api.auth.login(login, password);
+    const r = await api.auth.login(login, password, getAppareilId());
     setToken(r.token);
+    setSessionId(r.session_id); // tracking des appareils connectés (Application Web)
     setUser(r.user);
     return r.user;
   };
@@ -60,10 +61,11 @@ export function canAccess(role, pathname) {
   if (pathname === '/mon-espace') return role === 'employe' || role === 'super_admin';
   if (role === 'super_admin') return true;
   if (role === 'consultation') {
-    return pathname === '/' || pathname === '/stats-journal' || pathname === '/horaires' || pathname === '/presence';
+    return pathname === '/' || pathname === '/stats-journal' || pathname === '/journal-rma' || pathname === '/horaires' || pathname === '/presence' || pathname === '/notification-absences';
   }
   if (role === 'moderateur') {
-    if (pathname === '/mon-espace' || pathname === '/comptes' || pathname === '/maintenance' || pathname === '/mouchard') return false;
+    if (pathname === '/mon-espace' || pathname === '/comptes' || pathname === '/maintenance' || pathname === '/mouchard' || pathname === '/parametres-codification') return false;
+    if (pathname.startsWith('/application')) return false;
     return true;
   }
   return false;

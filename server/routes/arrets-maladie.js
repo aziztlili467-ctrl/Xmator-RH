@@ -111,11 +111,39 @@ router.post('/', (req, res) => {
   res.status(201).json(created);
 });
 
+function datesEntre(debut, fin) {
+  const out = [];
+  const cur = new Date(debut + 'T00:00:00');
+  const end = new Date(fin + 'T00:00:00');
+  while (cur <= end) {
+    out.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`);
+    cur.setDate(cur.getDate() + 1);
+  }
+  return out;
+}
+function syncRmaCodes(arret, code) {
+  const jours = datesEntre(arret.date_debut, arret.date_fin);
+  const ins = db.prepare('INSERT INTO codes_importes (employe_id, matricule, date, code) VALUES (?,?,?,?) ON CONFLICT(employe_id, date, code) DO NOTHING');
+  for (const j of jours) ins.run(arret.employe_id, arret.matricule, j, code);
+}
+function clearRmaCodes(arret, code) {
+  db.prepare('DELETE FROM codes_importes WHERE employe_id = ? AND date >= ? AND date <= ? AND code = ?').run(arret.employe_id, arret.date_debut, arret.date_fin, code);
+}
+function restituerSoldeMaladie(arret) {
+  const mouvs = db.prepare("SELECT id FROM mouvements WHERE arret_id = ? AND type_operation = 'maladie' AND solde_type = 'maladie'").all(arret.id);
+  if (mouvs.length) {
+    for (const m of mouvs) db.prepare('DELETE FROM mouvements WHERE id = ?').run(m.id);
+  }
+}
+
 router.post('/:id/valider', (req, res) => {
   const a = db.prepare('SELECT * FROM arrets_maladie WHERE id = ?').get(req.params.id);
   if (!a) return res.status(404).json({ error: 'Arrêt maladie introuvable.' });
-  if (a.statut !== 'en_instance') {
-    return res.status(400).json({ error: `Seuls les arrêts en instance peuvent être validés (statut actuel : ${a.statut}).` });
+  if (a.statut === 'valide') {
+    return res.status(400).json({ error: `Cet arrêt est déjà validé (N°${String(a.numero_sequentiel).padStart(3, '0')}).` });
+  }
+  if (!['en_instance', 'rejete'].includes(a.statut)) {
+    return res.status(400).json({ error: `Statut incompatible pour validation (actuel : ${a.statut}).` });
   }
 
   const soldeMaladieActuel = soldeEmploye(a.employe_id, 'maladie');
@@ -127,6 +155,12 @@ router.post('/:id/valider', (req, res) => {
 
   try {
     const tx = db.transaction(() => {
+      // Si l'arrêt était rejeté, on nettoie l'absence et le code A1 avant de valider
+      if (a.statut === 'rejete') {
+        db.prepare("DELETE FROM mouvements WHERE arret_id = ? AND type_operation = 'absence'").run(a.id);
+        clearRmaCodes(a, 'A1');
+        db.prepare(`UPDATE arrets_maladie SET motif_rejet = NULL WHERE id = ?`).run(a.id);
+      }
       insertMouvement({
         employe_id: a.employe_id,
         type_operation: 'maladie',
@@ -136,6 +170,7 @@ router.post('/:id/valider', (req, res) => {
         solde_type: 'maladie',
         arret_id: a.id,
       });
+      syncRmaCodes(a, 'MA');
       db.prepare(`UPDATE arrets_maladie SET statut = 'valide', date_decision = datetime('now','localtime') WHERE id = ?`).run(a.id);
     });
     tx();
@@ -150,12 +185,18 @@ router.post('/:id/rejeter', (req, res) => {
   const { motif_rejet } = req.body || {};
   const a = db.prepare('SELECT * FROM arrets_maladie WHERE id = ?').get(req.params.id);
   if (!a) return res.status(404).json({ error: 'Arrêt maladie introuvable.' });
-  if (a.statut !== 'en_instance') {
-    return res.status(400).json({ error: `Seuls les arrêts en instance peuvent être rejetés (statut actuel : ${a.statut}).` });
+  // Accepté puis refusé : on restitue le solde et on bascule MA → A1
+  if (a.statut !== 'en_instance' && a.statut !== 'valide') {
+    return res.status(400).json({ error: `Seuls les arrêts en instance ou validés peuvent être rejetés (statut actuel : ${a.statut}).` });
   }
 
   try {
     const tx = db.transaction(() => {
+      if (a.statut === 'valide') {
+        restituerSoldeMaladie(a);
+        clearRmaCodes(a, 'MA');
+      }
+      // Absence neutralisée (journal) + A1 dans le Journal RMA
       insertMouvement({
         employe_id: a.employe_id,
         type_operation: 'absence',
@@ -164,6 +205,7 @@ router.post('/:id/rejeter', (req, res) => {
         motif: `Absence (arrêt maladie rejeté) — Bulletin ${a.numero_bulletin}`,
         arret_id: a.id,
       });
+      syncRmaCodes(a, 'A1');
       db.prepare(`UPDATE arrets_maladie SET statut = 'rejete', date_decision = datetime('now','localtime'), motif_rejet = ? WHERE id = ?`)
         .run(motif_rejet ? String(motif_rejet).trim() : null, a.id);
     });
@@ -173,6 +215,30 @@ router.post('/:id/rejeter', (req, res) => {
   }
 
   res.json(db.prepare(BASE + ' WHERE a.id = ?').get(a.id));
+});
+
+router.delete('/:id', (req, res) => {
+  const a = db.prepare('SELECT * FROM arrets_maladie WHERE id = ?').get(req.params.id);
+  if (!a) return res.status(404).json({ error: 'Arrêt maladie introuvable.' });
+  try {
+    const tx = db.transaction(() => {
+      if (a.statut === 'valide') {
+        restituerSoldeMaladie(a);
+        clearRmaCodes(a, 'MA');
+      } else if (a.statut === 'rejete') {
+        db.prepare("DELETE FROM mouvements WHERE arret_id = ? AND type_operation = 'absence'").run(a.id);
+        clearRmaCodes(a, 'A1');
+      }
+      // En instance : rien à restituer, juste supprimer
+      db.prepare('DELETE FROM codes_importes WHERE employe_id = ? AND date >= ? AND date <= ? AND code IN (?,?)')
+        .run(a.employe_id, a.date_debut, a.date_fin, 'MA', 'A1');
+      db.prepare('DELETE FROM arrets_maladie WHERE id = ?').run(a.id);
+    });
+    tx();
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+  res.json({ ok: true });
 });
 
 module.exports = router;

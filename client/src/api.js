@@ -19,6 +19,7 @@ export function mediaSrc(path) {
 }
 
 export const TOKEN_KEY = 'amicale_token';
+export const SESSION_KEY = 'amicale_session';
 
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY);
@@ -27,6 +28,27 @@ export function getToken() {
 export function setToken(token) {
   if (token) localStorage.setItem(TOKEN_KEY, token);
   else localStorage.removeItem(TOKEN_KEY);
+}
+
+export function getSessionId() {
+  return localStorage.getItem(SESSION_KEY);
+}
+
+export function setSessionId(id) {
+  if (id) localStorage.setItem(SESSION_KEY, String(id));
+  else localStorage.removeItem(SESSION_KEY);
+}
+
+// Identifiant unique de l'appareil (équivalent web de l'adresse MAC) :
+// UUID généré une seule fois par navigateur/application installée, envoyé à chaque login.
+const APPAREIL_KEY = 'amicale_appareil_id';
+export function getAppareilId() {
+  let id = localStorage.getItem(APPAREIL_KEY);
+  if (!id) {
+    id = crypto.randomUUID ? crypto.randomUUID() : `dev-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    localStorage.setItem(APPAREIL_KEY, id);
+  }
+  return id;
 }
 
 async function request(path, options = {}) {
@@ -104,9 +126,48 @@ async function downloadFichier(path, nom) {
   URL.revokeObjectURL(url);
 }
 
+// Récupère un PDF protégé (token Bearer) et ouvre directement la boîte d'impression du navigateur
+async function printPdf(path) {
+  const token = getToken();
+  const res = await fetch(BASE + path, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    const err = new Error(data.error || 'Génération du PDF impossible.');
+    err.status = res.status;
+    throw err;
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '1px';
+  iframe.style.height = '1px';
+  iframe.style.opacity = '0';
+  iframe.style.border = '0';
+  iframe.src = url;
+  iframe.onload = () => {
+    try {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    } catch (e) {
+      window.open(url, '_blank');
+    }
+    setTimeout(() => {
+      if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+      URL.revokeObjectURL(url);
+    }, 60000);
+  };
+  document.body.appendChild(iframe);
+}
+
 export const api = {
   auth: {
-    login: (login, password) => request('/auth/login', { method: 'POST', body: JSON.stringify({ login, password }) }),
+    login: (login, password, device_id) => request('/auth/login', { method: 'POST', body: JSON.stringify({ login, password, device_id }) }),
     logout: () => request('/auth/logout', { method: 'POST' }),
     me: () => request('/auth/me'),
   },
@@ -186,19 +247,41 @@ export const api = {
   createArretMaladie: (body) => request('/arrets-maladie', { method: 'POST', body: JSON.stringify(body) }),
   validerArretMaladie: (id) => request(`/arrets-maladie/${id}/valider`, { method: 'POST' }),
   rejeterArretMaladie: (id, motif) => request(`/arrets-maladie/${id}/rejeter`, { method: 'POST', body: JSON.stringify({ motif_rejet: motif }) }),
+  supprimerArretMaladie: (id) => request(`/arrets-maladie/${id}`, { method: 'DELETE' }),
 
   journalMaladie: (params = {}) => request('/journal-maladie' + buildQuery(params)),
   statsJournal: (params = {}) => request('/stats-journal' + buildQuery(params)),
+
+  codesPaie: () => request('/codes-paie'),
+  createCodePaie: (body) => request('/codes-paie', { method: 'POST', body: JSON.stringify(body) }),
+  updateCodePaie: (id, body) => request(`/codes-paie/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteCodePaie: (id) => request(`/codes-paie/${id}`, { method: 'DELETE' }),
+
+  // Journal RMA (Repos · Maladie · Absence) — codifications importées fusionnées au journal de paie
+  journalRma: (params = {}) => request('/journal-rma' + buildQuery(params)),
+  importCodesRma: (texte, periode = {}) => request('/journal-rma/import', { method: 'POST', body: JSON.stringify({ texte, ...periode }) }),
+  deleteCodesRma: (params = {}) => request('/journal-rma' + buildQuery(params), { method: 'DELETE' }),
+
+  // Rubrique Horaires › Notification d'Absences : formulaire du supérieur hiérarchique / responsable RH,
+  // calcul des jours ouvrables hors repos hebdomadaires et fériés payés, impression PDF, journal
+  notificationsAbsence: (params = {}) => request('/notifications-absence' + buildQuery(params)),
+  joursOuvrablesAbsence: (params = {}) => request('/notifications-absence/jours' + buildQuery(params)),
+  notifierAbsence: (body) => request('/notifications-absence', { method: 'POST', body: JSON.stringify(body) }),
+  supprimerNotificationAbsence: (id) => request(`/notifications-absence/${id}`, { method: 'DELETE' }),
+  printNotificationAbsence: (id) => printPdf(`/notifications-absence/${id}/pdf`),
 
   demandesConge: (params = {}) => request('/demandes-conge' + buildQuery(params)),
   demandeConge: (id) => request(`/demandes-conge/${id}`),
   createDemandeConge: (body) => request('/demandes-conge', { method: 'POST', body: JSON.stringify(body) }),
   accepterDemande: (id) => request(`/demandes-conge/${id}/accepter`, { method: 'POST' }),
   rejeterDemande: (id, motif) => request(`/demandes-conge/${id}/rejeter`, { method: 'POST', body: JSON.stringify({ motif_rejet: motif }) }),
+  supprimerDemande: (id) => request(`/demandes-conge/${id}`, { method: 'DELETE' }),
 
   // PDF protégés : récupérés en blob avec l'en-tête Authorization puis ouverts dans un nouvel onglet
   // (un simple <a href> / window.open n'envoie pas le token → 401 « Non authentifié. »)
   statsJournalPdf: (params = {}) => openPdf(`/stats-journal/pdf` + buildQuery(params)),
+  statsJournalPrint: (params = {}) => printPdf(`/stats-journal/pdf` + buildQuery(params)),
+  statsJournalXls: (params = {}) => downloadFichier(`/stats-journal/xls` + buildQuery(params), `journal-paie_${params.debut}_${params.fin}.xls`),
   demandePdf: (id) => openPdf(`/demandes-conge/${id}/pdf`),
 
   dashboard: () => request('/dashboard'),
@@ -310,4 +393,15 @@ export const api = {
     }
     return data;
   },
+
+  // ---- Application Web ----
+  appareilsConnectes: (params = {}) => request('/appareils-connectes' + buildQuery(params)),
+  appareilsHeartbeat: (session_id) => request('/appareils/heartbeat', { method: 'POST', body: JSON.stringify({ session_id }) }),
+  appareilsSupprimerHistorique: (params = {}) => request('/appareils-connectes' + buildQuery(params), { method: 'DELETE' }),
+  appareilsPdf: (params = {}) => openPdf('/appareils/pdf' + buildQuery(params)),
+
+  chatConversations: () => request('/chat/conversations'),
+  chatMessages: (utilisateurId) => request('/chat/messages' + buildQuery({ utilisateur_id: utilisateurId })),
+  chatEnvoyer: (payload) => request('/chat/envoyer', { method: 'POST', body: JSON.stringify(payload) }),
+  chatMarquerLu: (utilisateurId) => request('/chat/marquer-lu', { method: 'PUT', body: JSON.stringify({ utilisateur_id: utilisateurId }) }),
 };

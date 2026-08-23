@@ -1,21 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
-import { today, downloadFile } from '../utils';
-import { IconDownload, IconFileText } from '../components/icons';
-
-const COLS = [
-  { key: 'ca', abbr: 'CA', label: 'Congé légal' },
-  { key: 'ce', abbr: 'CE', label: 'Congé exceptionnel' },
-  { key: 'ma', abbr: 'MA', label: 'Arrêt maladie' },
-  { key: 'abs', abbr: 'ABS', label: 'Absence injustifiée' },
-];
-
-const CODE_STYLE = {
-  CA: 'bg-sky-100 text-sky-700 ring-sky-200',
-  CE: 'bg-emerald-100 text-emerald-700 ring-emerald-200',
-  MA: 'bg-rose-100 text-rose-700 ring-rose-200',
-  ABS: 'bg-slate-200 text-slate-600 ring-slate-300',
-};
+import { today, debutMois, downloadFile } from '../utils';
+import { IconDownload, IconFileText, IconPrinter } from '../components/icons';
 
 const isWeekend = (iso) => {
   const wd = new Date(iso + 'T00:00:00').getDay();
@@ -33,15 +19,30 @@ const fmtFR = (iso) => {
 };
 
 export default function StatsJournal() {
-  const [debut, setDebut] = useState('2026-01-01');
+  const [debut, setDebut] = useState(debutMois());
   const [fin, setFin] = useState(today());
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Métadonnées des codes (couleur + libellé) renvoyées par l'API — visibles par tous les rôles en lecture
+  const metaCodes = {};
+  if (data && Array.isArray(data.codes)) {
+    for (const c of data.codes) metaCodes[c.code] = c;
+  }
+
+  // Une case peut cumuler plusieurs codes (ex. « P1/CA ») — couleur du premier code, noir si CA demi-journée
+  const badgeStyle = (cellule, isDemiCA) => {
+    if (isDemiCA) return { backgroundColor: '#00000014', color: '#000000', boxShadow: 'inset 0 0 0 1px #00000033' };
+    const meta = metaCodes[String(cellule || '').split('/')[0]];
+    if (!meta || !meta.couleur) return undefined;
+    return { backgroundColor: meta.couleur + '1f', color: meta.couleur, boxShadow: 'inset 0 0 0 1px ' + meta.couleur + '55' };
+  };
+
   const load = (d, f) => {
     if (!d || !f) return;
     if (f < d) return setError('La date de fin doit être postérieure ou égale à la date de début.');
+    if (new Date(f) - new Date(d) > 370 * 86400000) return setError('Période trop longue (maximum 12 mois) — resserrez le filtre.');
     setLoading(true);
     setError('');
     api.statsJournal({ debut: d, fin: f })
@@ -75,7 +76,7 @@ export default function StatsJournal() {
       [e.nom + ' ' + e.prenom, e.matricule, ...data.dates.map((iso) => (data.jours[e.id] ? data.jours[e.id][iso] || '' : ''))].join(';')
     );
     const totalLine = ['Total employés', '', ...data.dates.map(countDate)].join(';');
-    downloadFile(`journal-statistiques_${debut}_${fin}.csv`, [header, ...lines, totalLine].join('\n'));
+    downloadFile(`journal-paie_${debut}_${fin}.csv`, [header, ...lines, totalLine].join('\n'));
   };
 
   const exportPdf = async () => {
@@ -88,19 +89,48 @@ export default function StatsJournal() {
     }
   };
 
+  const imprimer = async () => {
+    if (!data) return;
+    setError('');
+    try {
+      await api.statsJournalPrint({ debut, fin });
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const exportXls = async () => {
+    if (!data) return;
+    setError('');
+    try {
+      await api.statsJournalXls({ debut, fin });
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Journal de statistiques</h2>
-          <p className="text-sm text-slate-500">Matrice quotidienne : chaque ligne est un employé, chaque colonne une date, chaque case un code (CA / CE / MA / ABS).</p>
+          <h2 className="text-lg font-bold text-slate-900">Journal de paie</h2>
+          <p className="text-sm text-slate-500">
+            Matrice quotidienne : chaque ligne est un employé, chaque colonne une date. P1 = journée présente (pointage badgeuse),
+            complétée par les codifications importées du Journal RMA (A1, CA, MA, R3, RP…).
+          </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-primary" onClick={imprimer} disabled={!data}>
+            <IconPrinter /> Imprimer
+          </button>
+          <button className="btn-secondary" onClick={exportPdf} disabled={!data}>
+            <IconFileText /> Exporter PDF
+          </button>
+          <button className="btn-secondary" onClick={exportXls} disabled={!data}>
+            <IconDownload /> Exporter XLS
+          </button>
           <button className="btn-secondary" onClick={exportCsv} disabled={!data}>
             <IconDownload /> Exporter CSV
-          </button>
-          <button className="btn-primary" onClick={exportPdf} disabled={!data}>
-            <IconFileText /> Exporter PDF
           </button>
         </div>
       </div>
@@ -116,11 +146,11 @@ export default function StatsJournal() {
             <input type="date" className="input" value={fin} onChange={(e) => changeFin(e.target.value)} />
           </div>
         </div>
-        <p className="text-xs text-slate-400">
-          {COLS.map((c) => (
-            <span key={c.key} className="me-3 inline-flex items-center gap-1">
-              <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-bold ring-1 ${CODE_STYLE[c.abbr]}`}>{c.abbr}</span>
-              = {c.label}
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+          {Object.values(metaCodes).map((c) => (
+            <span key={c.code} className="inline-flex items-center gap-1">
+              <span className="inline-flex items-center rounded px-1.5 py-0.5 font-mono text-[11px] font-bold" style={{ backgroundColor: (c.couleur || '#64748b') + '1f', color: c.couleur || '#64748b' }}>{c.code}</span>
+              = {c.libelle}
             </span>
           ))}
         </p>
@@ -128,15 +158,16 @@ export default function StatsJournal() {
 
       {data && (
         <>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            {COLS.map((c) => (
-              <div key={c.key} className="card p-4">
-                <p className="text-[11px] font-semibold uppercase text-slate-400">{c.abbr} — {c.label}</p>
-                <p className={`text-2xl font-bold ${c.abbr === 'CA' ? 'text-sky-700' : c.abbr === 'CE' ? 'text-emerald-700' : c.abbr === 'MA' ? 'text-rose-700' : 'text-slate-600'}`}>
-                  {data.totaux[c.key]} j
-                </p>
-              </div>
-            ))}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {Object.keys(data.totaux.par_code || {}).sort().map((code) => {
+              const meta = metaCodes[code] || {};
+              return (
+                <div key={code} className="card p-4">
+                  <p className="text-[11px] font-semibold uppercase text-slate-400">{code} — {meta.libelle || ''}</p>
+                  <p className="text-2xl font-bold" style={{ color: meta.couleur || '#334155' }}>{data.totaux.par_code[code]} j</p>
+                </div>
+              );
+            })}
             <div className="card p-4">
               <p className="text-[11px] font-semibold uppercase text-slate-400">Total période</p>
               <p className="text-2xl font-bold text-slate-800">{data.totaux.total} j</p>
@@ -170,10 +201,11 @@ export default function StatsJournal() {
                         {data.dates.map((iso) => {
                           const code = data.jours[e.id] ? data.jours[e.id][iso] : null;
                           const we = isWeekend(iso);
+                          const isDemiCA = !!(data.joursDemi && data.joursDemi[e.id] && data.joursDemi[e.id][iso]);
                           return (
                             <td key={iso} className={`px-2 py-2 text-center ${we ? 'bg-slate-100/70' : ''}`}>
                               {code && (
-                                <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-bold ring-1 ${CODE_STYLE[code.split('/')[0]] || 'bg-slate-100 text-slate-600'}`}>
+                                <span className="inline-flex items-center rounded-md px-1.5 py-0.5 font-mono text-[11px] font-bold" style={badgeStyle(code, isDemiCA) || { backgroundColor: '#dbeafe', color: '#1d4ed8' }}>
                                   {code}
                                 </span>
                               )}

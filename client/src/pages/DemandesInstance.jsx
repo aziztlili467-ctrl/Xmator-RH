@@ -2,9 +2,12 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { fmtDate, fmtJours } from '../utils';
 import BadgeStatut from '../components/BadgeStatut';
-import { IconDownload, IconAlert } from '../components/icons';
+import { IconDownload, IconAlert, IconTrash, IconEdit } from '../components/icons';
+import { useAuth } from '../AuthContext';
 
 export default function DemandesInstance() {
+  const { user } = useAuth();
+  const estAdmin = user?.role === 'super_admin';
   const [demandes, setDemandes] = useState([]);
   const [categories, setCategories] = useState([]);
   const [filters, setFilters] = useState({ statut: '', employe: '', categorie: '', debut: '', fin: '', search: '' });
@@ -16,6 +19,9 @@ export default function DemandesInstance() {
   const [motifRejet, setMotifRejet] = useState('');
   const [decisionError, setDecisionError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const [aSupprimer, setASupprimer] = useState(null);
+  const [suppression, setSuppression] = useState(false);
 
   useEffect(() => {
     api.categories().then(setCategories).catch(() => {});
@@ -56,7 +62,8 @@ export default function DemandesInstance() {
         setSuccess(`Demande N°${String(decision.demande.numero_sequentiel).padStart(3, '0')} acceptée. ${fmtJours(decision.demande.nombre_jours)} j déduits du solde et journalisés.`);
       } else {
         await api.rejeterDemande(decision.demande.id, motifRejet);
-        setSuccess(`Demande N°${String(decision.demande.numero_sequentiel).padStart(3, '0')} rejetée. Aucune déduction effectuée.`);
+        const restauration = decision.demande.statut === 'acceptee' ? ` Solde restauré de ${fmtJours(decision.demande.nombre_jours)} j.` : ' Aucune déduction effectuée.';
+        setSuccess(`Demande N°${String(decision.demande.numero_sequentiel).padStart(3, '0')} rejetée.${restauration}`);
       }
       setDecision(null);
       load();
@@ -64,6 +71,23 @@ export default function DemandesInstance() {
       setDecisionError(err.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const confirmerSuppression = async () => {
+    setSuppression(true);
+    setError('');
+    try {
+      await api.supprimerDemande(aSupprimer.id);
+      const msgRestauration = aSupprimer.statut === 'acceptee' ? ` Solde restauré de ${fmtJours(aSupprimer.nombre_jours)} j.` : '';
+      setSuccess(`Demande N°${String(aSupprimer.numero_sequentiel).padStart(3, '0')} supprimée.${msgRestauration}`);
+      setASupprimer(null);
+      load();
+    } catch (e) {
+      setError(e.message);
+      setASupprimer(null);
+    } finally {
+      setSuppression(false);
     }
   };
 
@@ -165,6 +189,31 @@ export default function DemandesInstance() {
                             </button>
                           </>
                         )}
+                        {d.statut === 'acceptee' && (
+                          <button
+                            className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-amber-700"
+                            onClick={() => openDecision('rejeter', d)}
+                            title="Modifier : repasser en rejetée (restaure le solde)"
+                          >
+                            <IconEdit /> Modifier
+                          </button>
+                        )}
+                        {d.statut === 'rejetee' && (
+                          <button
+                            className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+                            onClick={() => openDecision('accepter', d)}
+                            title="Modifier : repasser en acceptée"
+                          >
+                            <IconEdit /> Modifier
+                          </button>
+                        )}
+                        <button
+                          className="rounded-md p-1.5 text-red-500 transition hover:bg-red-50"
+                          onClick={() => setASupprimer(d)}
+                          title="Supprimer cette demande"
+                        >
+                          <IconTrash />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -180,7 +229,9 @@ export default function DemandesInstance() {
           <div className="card max-h-[90vh] w-full max-w-md overflow-auto p-6" onMouseDown={(e) => e.stopPropagation()}>
             <div className={`mb-4 flex items-center justify-between ${decision.type === 'rejeter' ? 'text-red-700' : 'text-slate-900'}`}>
               <h3 className="text-base font-bold">
-                {decision.type === 'accepter' ? "Accepter la demande" : "Rejeter la demande"}
+                {decision.type === 'accepter'
+                  ? (decision.demande.statut === 'rejetee' ? 'Modifier : accepter la demande' : 'Accepter la demande')
+                  : (decision.demande.statut === 'acceptee' ? 'Modifier : rejeter la demande' : 'Rejeter la demande')}
               </h3>
               <button onClick={() => setDecision(null)} className="text-slate-400 hover:text-slate-600">✕</button>
             </div>
@@ -188,20 +239,31 @@ export default function DemandesInstance() {
             <div className="space-y-4">
               <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
                 N° {String(decision.demande.numero_sequentiel).padStart(3, '0')} — {decision.demande.nom_prenom} · {fmtJours(decision.demande.nombre_jours)} jour(s)
+                {decision.demande.statut !== 'en_instance' && (
+                  <span className="ml-1 text-xs text-slate-400">(actuellement : {decision.demande.statut === 'acceptee' ? 'acceptée' : 'rejetée'})</span>
+                )}
               </p>
 
               {decision.type === 'accepter' ? (
                 <div className="flex items-start gap-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">
                   <span className="mt-0.5 shrink-0"><IconAlert /></span>
                   <p>
-                    L'acceptation déduira {fmtJours(decision.demande.nombre_jours)} j du solde de l'agent et créera automatiquement une ligne dans le journal des mouvements. Le solde affiché se mettra à jour immédiatement.
+                    {decision.demande.statut === 'rejetee'
+                      ? `Cette demande est actuellement rejetée : l'acceptation déduira ${fmtJours(decision.demande.nombre_jours)} j du solde et créera une ligne au journal.`
+                      : `L'acceptation déduira ${fmtJours(decision.demande.nombre_jours)} j du solde de l'agent et créera automatiquement une ligne dans le journal des mouvements.`}
                   </p>
                 </div>
               ) : (
                 <div>
+                  {decision.demande.statut === 'acceptee' && (
+                    <div className="mb-3 flex items-start gap-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-700">
+                      <span className="mt-0.5 shrink-0"><IconAlert /></span>
+                      <p>Cette demande est actuellement <strong>acceptée</strong> ({fmtJours(decision.demande.nombre_jours)} j déjà déduits) : le rejet <strong>restaurera {fmtJours(decision.demande.nombre_jours)} j</strong> au solde de l'agent.</p>
+                    </div>
+                  )}
                   <label className="label">Motif du rejet (optionnel)</label>
                   <textarea className="input" rows={2} value={motifRejet} onChange={(e) => setMotifRejet(e.target.value)} placeholder="Ex. Solde insuffisant, motif non couvert…" />
-                  <p className="mt-2 text-xs text-slate-400">Aucune déduction ne sera effectuée sur le solde.</p>
+                  {decision.demande.statut !== 'acceptee' && <p className="mt-2 text-xs text-slate-400">Aucune déduction ne sera effectuée sur le solde.</p>}
                 </div>
               )}
 
@@ -214,9 +276,35 @@ export default function DemandesInstance() {
                   disabled={saving}
                   onClick={submitDecision}
                 >
-                  {saving ? 'Traitement…' : decision.type === 'accepter' ? "Confirmer l'acceptation" : 'Confirmer le rejet'}
+                  {saving ? 'Traitement…' : decision.type === 'accepter' ? (decision.demande.statut === 'rejetee' ? "Confirmer la modification" : "Confirmer l'acceptation") : (decision.demande.statut === 'acceptee' ? 'Confirmer la modification' : 'Confirmer le rejet')}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {aSupprimer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !suppression && setASupprimer(null)}>
+          <div className="card w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-slate-900">Supprimer la demande N° {String(aSupprimer.numero_sequentiel).padStart(3, '0')} ?</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Demande de <strong>{aSupprimer.nom_prenom}</strong> ({aSupprimer.matricule}) du {fmtDate(aSupprimer.date_debut)} au {fmtDate(aSupprimer.date_fin)} — {fmtJours(aSupprimer.nombre_jours)} jour(s), statut : <strong>{aSupprimer.statut}</strong>.
+              {aSupprimer.statut === 'acceptee' && (
+                <span className="mt-2 block rounded bg-amber-50 px-2 py-1 text-amber-700">Le solde de l'agent sera restauré de {fmtJours(aSupprimer.nombre_jours)} j.</span>
+              )}
+              Cette action est définitive.
+            </p>
+            {!estAdmin && <p className="mt-2 text-xs text-red-600">La suppression est réservée au super admin.</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <button className="btn-secondary" onClick={() => setASupprimer(null)} disabled={suppression}>Annuler</button>
+              <button
+                className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
+                onClick={confirmerSuppression}
+                disabled={suppression}
+              >
+                <IconTrash /> {suppression ? 'Suppression…' : 'Supprimer'}
+              </button>
             </div>
           </div>
         </div>

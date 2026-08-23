@@ -23,11 +23,17 @@ const ArretsMaladieInstance = lazy(() => import('./pages/ArretsMaladieInstance')
 const AjoutSoldeMaladie = lazy(() => import('./pages/AjoutSoldeMaladie'));
 const JournalMaladie = lazy(() => import('./pages/JournalMaladie'));
 const StatsJournal = lazy(() => import('./pages/StatsJournal'));
+const ParametresCodification = lazy(() => import('./pages/ParametresCodification'));
+const JournalRMA = lazy(() => import('./pages/JournalRMA'));
+const NotificationAbsences = lazy(() => import('./pages/NotificationAbsences'));
 const Maintenance = lazy(() => import('./pages/Maintenance'));
 const Mouchard = lazy(() => import('./pages/Mouchard'));
 const Horaires = lazy(() => import('./pages/Horaires'));
 const Presence = lazy(() => import('./pages/Presence'));
 const CalendrierAnnee = lazy(() => import('./pages/CalendrierAnnee'));
+const TelechargerApp = lazy(() => import('./pages/TelechargerApp'));
+const AppareilsConnectes = lazy(() => import('./pages/AppareilsConnectes'));
+const ChatDirectAdmin = lazy(() => import('./pages/ChatDirectAdmin'));
 
 function Chargement() {
   return (
@@ -90,6 +96,9 @@ function AppRoutes() {
         <Route path="/presence" element={<Presence />} />
         <Route path="/calendrier" element={<CalendrierAnnee />} />
         <Route path="/maintenance" element={<Maintenance />} />
+                <Route path="/application/telecharger" element={<TelechargerApp />} />
+                <Route path="/application/appareils" element={<AppareilsConnectes />} />
+                <Route path="/application/chat" element={<ChatDirectAdmin />} />
         <Route path="/" element={<Dashboard />} />
         <Route path="/employes" element={<Employes />} />
         <Route path="/employes/:id" element={<EmployeDetail />} />
@@ -98,6 +107,9 @@ function AppRoutes() {
         <Route path="/ajout-annuel" element={<AjoutAnnuel />} />
         <Route path="/journal" element={<Journal />} />
         <Route path="/stats-journal" element={<StatsJournal />} />
+        <Route path="/parametres-codification" element={<ParametresCodification />} />
+        <Route path="/journal-rma" element={<JournalRMA />} />
+        <Route path="/notification-absences" element={<NotificationAbsences />} />
         <Route path="/categories" element={<Categories />} />
         <Route path="/demandes/nouvelle" element={<NouvelleDemande />} />
         <Route path="/demandes/instance" element={<DemandesInstance />} />
