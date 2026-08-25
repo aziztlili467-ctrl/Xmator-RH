@@ -25,9 +25,6 @@ export default function GrilleSalaire() {
   const [importBusy, setImportBusy] = useState(false);
   const importRef = useRef(null);
 
-  // Suppression totale
-  const [delAllBusy, setDelAllBusy] = useState(false);
-
   const load = () => api.grilleSalaire().then(setLignes).catch((e) => setError(e.message));
   useEffect(() => { load(); }, []);
 
@@ -126,21 +123,6 @@ export default function GrilleSalaire() {
     catch (err) { setError(err.message); }
   };
 
-  const supprimerTout = async () => {
-    if (lignes.length === 0) return setError('La grille est déjà vide.');
-    const ok = window.confirm(
-      `Supprimer les ${lignes.length} lignes de la grille de salaire ?\n\nCette action est IRRÉVERSIBLE.`
-    );
-    if (!ok) return;
-    setDelAllBusy(true); setError(''); setSuccess('');
-    try {
-      const r = await api.grilleSalaireSupprimerTout();
-      setSuccess(r.message);
-      load();
-    } catch (err) { setError(err.message); }
-    finally { setDelAllBusy(false); }
-  };
-
   // Grouper par rubrique pour affichage
   const parRubrique = {};
   lignes.forEach((l) => {
@@ -175,17 +157,10 @@ export default function GrilleSalaire() {
             onClick={() => importRef.current?.click()}
             disabled={importBusy}
           >
-            <IconUpload /> {importBusy ? 'Import…' : 'Importer CSV/TXT'}
+            <IconUpload /> {importBusy ? 'Import…' : 'Importer les lignes (CSV ou TXT)'}
           </button>
           <button className="btn-secondary" onClick={telecharger}>
-            <IconDownload /> Télécharger CSV
-          </button>
-          <button
-            className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={supprimerTout}
-            disabled={delAllBusy}
-          >
-            <IconTrash /> {delAllBusy ? 'Suppression…' : 'Supprimer la grille'}
+            <IconDownload /> Télécharger les lignes (CSV)
           </button>
           <button className="btn-primary" onClick={ouvrirCreation}>
             <IconSettings /> Nouvelle ligne
