@@ -271,6 +271,18 @@ router.delete('/backups', (req, res) => {
   res.json({ ok: true, supprimees, message: `${supprimees} sauvegarde(s) supprimée(s) définitivement.` });
 });
 
+// ---- Suppression d'une sauvegarde spécifique ----
+router.delete('/backup/:nom', (req, res) => {
+  const nom = path.basename(String(req.params.nom || ''));
+  if (!nom.toLowerCase().endsWith('.db') || nom.startsWith('_')) {
+    return res.status(400).json({ error: 'Nom de sauvegarde invalide.' });
+  }
+  const chemin = path.join(BACKUP_DIR, nom);
+  if (!fs.existsSync(chemin)) return res.status(404).json({ error: 'Sauvegarde introuvable.' });
+  try { fs.unlinkSync(chemin); } catch {}
+  res.json({ ok: true, message: `Sauvegarde « ${nom} » supprimée.` });
+});
+
 // ---- Téléchargement d'une sauvegarde ----
 router.get('/backups/:nom', (req, res) => {
   const nom = path.basename(String(req.params.nom || ''));

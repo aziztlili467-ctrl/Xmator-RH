@@ -76,6 +76,30 @@ export default function Maintenance() {
     try { await api.maintenance.backupTelecharger(nom); } catch (err) { setError(err.message); }
   };
 
+  const supprimerAnciennesBackups = async (nom) => {
+    const ok = window.confirm(`Supprimer la sauvegarde ancienne « ${nom} » ?\n\nCette action est irréversible.`);
+    if (!ok) return;
+    setBusy(true); setError(''); setMsg('');
+    try {
+      await api.maintenance.backupSupprimerAncienne(nom);
+      setMsg(`Sauvegarde « ${nom} » supprimée.`);
+      loadBackups();
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  };
+
+  const supprimerToutesBackups = async () => {
+    const ok = window.confirm('Supprimer TOUTES les sauvegardes du serveur ?\n\nCette action est irréversible et supprime définitivement tous les fichiers .db dans data/backups/.');
+    if (!ok) return;
+    setBusy(true); setError(''); setMsg('');
+    try {
+      await api.maintenance.backupSupprimerToutes();
+      setMsg('Toutes les sauvegardes ont été supprimées.');
+      loadBackups();
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  };
+
   const restaurerListe = async (nom) => {
     const ok = window.confirm(`Restaurer depuis « ${nom} » ?\n\nATTENTION : toutes les données actuelles seront REMPLACÉES par le contenu de cette sauvegarde.`);
     if (!ok) return;
@@ -194,9 +218,23 @@ export default function Maintenance() {
                     <button className="text-xs font-semibold text-amber-600 hover:underline" onClick={() => restaurerListe(b.nom)}>
                       Restaurer
                     </button>
+                    {b.auto && (
+                      <button className="text-xs font-semibold text-red-600 hover:underline ml-2" onClick={() => supprimerAnciennesBackups(b.nom)}>
+                        Supprimer cette ancienne
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
+              {backups.length > 0 && (
+                <tr className="border-t border-slate-200 bg-slate-50 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <td colSpan={4} className="px-4 py-3">
+                    <button className="w-full text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 py-2 rounded-md" onClick={supprimerToutesBackups}>
+                      Supprimer TOUTES les sauvegardes (confirmation requise)
+                    </button>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
