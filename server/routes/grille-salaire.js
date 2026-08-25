@@ -142,7 +142,7 @@ router.get('/export', (req, res) => {
   if (!lignes.length) return res.status(404).json({ error: 'Grille vide — rien à télécharger.' });
 
   const header = 'Rubrique;Grade;Classe;Echelon;Valeur';
-  const csv = [header, ...lignes.map((l) => `${l.rubrique};${l.grade};${l.classe};${l.echelon};${l.valeur}`)].join('\n');
+  const csv = [header, ...lignes.map((l) => `${l.rubrique};${l.grade};${l.classe};${l.echelon};${Number(l.valeur).toFixed(3)}`)].join('\n');
   const buf = Buffer.from(csv, 'utf-8');
 
   const d = new Date();

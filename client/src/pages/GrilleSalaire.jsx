@@ -150,7 +150,7 @@ export default function GrilleSalaire() {
 
   const fmtValeur = (v) => {
     if (v == null) return '—';
-    return Number(v).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return Number(v).toLocaleString('fr-FR', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
   };
 
   return (
@@ -260,15 +260,15 @@ export default function GrilleSalaire() {
               </datalist>
             </div>
             <div>
-              <label className="label">Valeur (DA)</label>
+              <label className="label">Valeur (DT)</label>
               <input
                 className="input"
                 type="number"
-                step="0.01"
+                step="0.001"
                 min="0"
                 value={fValeur}
                 onChange={(e) => setFValeur(e.target.value)}
-                placeholder="0.00"
+                placeholder="0.000"
                 required
               />
             </div>
@@ -304,7 +304,7 @@ export default function GrilleSalaire() {
                   <th className="px-4 py-3">Grade</th>
                   <th className="px-4 py-3">Classe</th>
                   <th className="px-4 py-3">Echelon</th>
-                  <th className="px-4 py-3 text-end">Valeur (DA)</th>
+                  <th className="px-4 py-3 text-end">Valeur (DT)</th>
                   <th className="px-4 py-3 text-end">Actions</th>
                 </tr>
               </thead>
@@ -356,7 +356,7 @@ export default function GrilleSalaire() {
               <div>
                 <h3 className="text-lg font-bold text-red-700">Supprimer cette ligne</h3>
                 <p className="text-sm text-slate-700">
-                  <strong>{delTarget.rubrique}</strong> / {delTarget.grade} / {delTarget.classe} / {delTarget.echelon} — {fmtValeur(delTarget.valeur)} DA
+                  <strong>{delTarget.rubrique}</strong> / {delTarget.grade} / {delTarget.classe} / {delTarget.echelon} — {fmtValeur(delTarget.valeur)} DT
                 </p>
               </div>
             </div>
