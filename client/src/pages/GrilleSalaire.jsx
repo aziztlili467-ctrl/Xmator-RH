@@ -17,22 +17,49 @@ export default function GrilleSalaire() {
   const [fValeur, setFValeur] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Suppression
+  // Suppression ligne
   const [delTarget, setDelTarget] = useState(null);
   const [delSaving, setDelSaving] = useState(false);
+
+  // Suppression totale
+  const [delAllOpen, setDelAllOpen] = useState(false);
+  const [delAllBusy, setDelAllBusy] = useState(false);
 
   // Import
   const [importBusy, setImportBusy] = useState(false);
   const importRef = useRef(null);
 
+  // Filtres
+  const [filRubrique, setFilRubrique] = useState('');
+  const [filGrade, setFilGrade] = useState('');
+  const [filClasse, setFilClasse] = useState('');
+  const [filEchelon, setFilEchelon] = useState('');
+  const [filValeur, setFilValeur] = useState('');
+
   const load = () => api.grilleSalaire().then(setLignes).catch((e) => setError(e.message));
   useEffect(() => { load(); }, []);
 
-  // --- Valeurs uniques pour suggestions ---
+  // --- Valeurs uniques pour datalist & filtres ---
   const rubriques = [...new Set(lignes.map((l) => l.rubrique))].sort();
   const grades = [...new Set(lignes.map((l) => l.grade))].sort();
   const classes = [...new Set(lignes.map((l) => l.classe))].sort();
   const echelons = [...new Set(lignes.map((l) => l.echelon))].sort();
+
+  // --- Filtrage ---
+  const lignesFiltrees = lignes.filter((l) => {
+    if (filRubrique && l.rubrique !== filRubrique) return false;
+    if (filGrade && l.grade !== filGrade) return false;
+    if (filClasse && l.classe !== filClasse) return false;
+    if (filEchelon && l.echelon !== filEchelon) return false;
+    if (filValeur && !String(l.valeur).includes(filValeur)) return false;
+    return true;
+  });
+
+  const hasFiltres = filRubrique || filGrade || filClasse || filEchelon || filValeur;
+
+  const clearFiltres = () => {
+    setFilRubrique(''); setFilGrade(''); setFilClasse(''); setFilEchelon(''); setFilValeur('');
+  };
 
   // --- Helpers ---
   const resetForm = () => {
@@ -92,6 +119,17 @@ export default function GrilleSalaire() {
       load();
     } catch (err) { setError(err.message); }
     finally { setDelSaving(false); }
+  };
+
+  const supprimerTout = async () => {
+    setDelAllBusy(true); setError(''); setSuccess('');
+    try {
+      const r = await api.grilleSalaireSupprimerTout();
+      setSuccess(r.message);
+      setDelAllOpen(false);
+      load();
+    } catch (err) { setError(err.message); }
+    finally { setDelAllBusy(false); }
   };
 
   const gererImport = async (e) => {
@@ -158,10 +196,17 @@ export default function GrilleSalaire() {
           <button className="btn-primary" onClick={ouvrirCreation}>
             <IconSettings /> Nouvelle ligne
           </button>
+          <button
+            className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => setDelAllOpen(true)}
+            disabled={lignes.length === 0}
+          >
+            <IconTrash /> Supprimer toutes les lignes
+          </button>
         </div>
       </div>
 
-      {error && <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-200">{error}</p>}
+      {error && <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-200 whitespace-pre-line">{error}</p>}
       {success && <p className="rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700 ring-1 ring-emerald-200">{success}</p>}
 
       {/* Formulaire création / édition */}
@@ -252,22 +297,80 @@ export default function GrilleSalaire() {
         </div>
       )}
 
+      {/* Filtres */}
+      {lignes.length > 0 && (
+        <div className="card p-4">
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Filtrer par colonne</h3>
+            {hasFiltres && (
+              <button onClick={clearFiltres} className="text-xs font-semibold text-blue-600 hover:underline">
+                Effacer les filtres
+              </button>
+            )}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-5">
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold uppercase text-slate-400">Rubrique</label>
+              <select className="input text-sm" value={filRubrique} onChange={(e) => setFilRubrique(e.target.value)}>
+                <option value="">Toutes</option>
+                {rubriques.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold uppercase text-slate-400">Grade</label>
+              <select className="input text-sm" value={filGrade} onChange={(e) => setFilGrade(e.target.value)}>
+                <option value="">Tous</option>
+                {grades.map((g) => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold uppercase text-slate-400">Classe</label>
+              <select className="input text-sm" value={filClasse} onChange={(e) => setFilClasse(e.target.value)}>
+                <option value="">Toutes</option>
+                {classes.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold uppercase text-slate-400">Echelon</label>
+              <select className="input text-sm" value={filEchelon} onChange={(e) => setFilEchelon(e.target.value)}>
+                <option value="">Tous</option>
+                {echelons.map((e) => <option key={e} value={e}>{e}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold uppercase text-slate-400">Valeur (DT)</label>
+              <input
+                className="input text-sm"
+                placeholder="Rechercher…"
+                value={filValeur}
+                onChange={(e) => setFilValeur(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tableau des lignes enregistrées */}
       <div className="card overflow-hidden">
         <div className="border-b border-slate-200 px-6 py-4">
           <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">
-            Lignes enregistrées ({lignes.length})
+            Lignes enregistrées ({lignesFiltrees.length}{hasFiltres ? ` / ${lignes.length}` : ''})
           </h3>
         </div>
         {lignes.length === 0 ? (
           <div className="px-6 py-12 text-center text-sm text-slate-400">
             Aucune ligne de grille de salaire pour le moment. Cliquez sur « Nouvelle ligne » pour commencer.
           </div>
+        ) : lignesFiltrees.length === 0 ? (
+          <div className="px-6 py-12 text-center text-sm text-slate-400">
+            Aucun résultat ne correspond aux filtres sélectionnés.
+          </div>
         ) : (
           <div className="table-wrap">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="px-4 py-3 w-16">Id</th>
                   <th className="px-4 py-3">Rubrique</th>
                   <th className="px-4 py-3">Grade</th>
                   <th className="px-4 py-3">Classe</th>
@@ -277,8 +380,9 @@ export default function GrilleSalaire() {
                 </tr>
               </thead>
               <tbody>
-                {lignes.map((l) => (
+                {lignesFiltrees.map((l) => (
                     <tr key={l.id} className="border-b border-slate-100 hover:bg-slate-50">
+                      <td className="px-4 py-2.5 text-xs font-mono text-slate-400">{l.id}</td>
                       <td className="px-4 py-2.5 font-semibold text-slate-800">{l.rubrique}</td>
                       <td className="px-4 py-2.5 text-slate-700">{l.grade}</td>
                       <td className="px-4 py-2.5 text-slate-700">{l.classe}</td>
@@ -306,7 +410,7 @@ export default function GrilleSalaire() {
         )}
       </div>
 
-      {/* Boîte de confirmation suppression */}
+      {/* Boîte de confirmation suppression ligne */}
       {delTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
           <div className="w-full max-w-md rounded-xl border border-red-200 bg-white p-6 shadow-xl">
@@ -330,6 +434,36 @@ export default function GrilleSalaire() {
                 disabled={delSaving}
               >
                 {delSaving ? 'Suppression…' : 'Confirmer la suppression'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Boîte de confirmation suppression totale */}
+      {delAllOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-md rounded-xl border border-red-200 bg-white p-6 shadow-xl">
+            <div className="mb-3 flex items-start gap-3">
+              <span className="mt-0.5 text-red-600"><IconTrash /></span>
+              <div>
+                <h3 className="text-lg font-bold text-red-700">Supprimer toutes les lignes</h3>
+                <p className="text-sm text-slate-700">
+                  Vous êtes sur le point de supprimer <strong>{lignes.length} ligne(s)</strong> de la grille de salaire.
+                </p>
+              </div>
+            </div>
+            <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-200">
+              Cette action est <b>irréversible</b>. Toutes les lignes seront définitivement supprimées.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button className="btn-secondary" onClick={() => setDelAllOpen(false)} disabled={delAllBusy}>Annuler</button>
+              <button
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={supprimerTout}
+                disabled={delAllBusy}
+              >
+                {delAllBusy ? 'Suppression…' : 'Supprimer tout'}
               </button>
             </div>
           </div>
