@@ -123,13 +123,6 @@ export default function GrilleSalaire() {
     catch (err) { setError(err.message); }
   };
 
-  // Grouper par rubrique pour affichage
-  const parRubrique = {};
-  lignes.forEach((l) => {
-    if (!parRubrique[l.rubrique]) parRubrique[l.rubrique] = [];
-    parRubrique[l.rubrique].push(l);
-  });
-
   const fmtValeur = (v) => {
     if (v == null) return '—';
     return Number(v).toLocaleString('fr-FR', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
@@ -284,17 +277,9 @@ export default function GrilleSalaire() {
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(parRubrique).map(([rub, items]) => (
-                  items.map((l, idx) => (
+                {lignes.map((l) => (
                     <tr key={l.id} className="border-b border-slate-100 hover:bg-slate-50">
-                      {idx === 0 ? (
-                        <td
-                          className="px-4 py-2.5 font-semibold text-slate-800 align-top"
-                          rowSpan={items.length}
-                        >
-                          {l.rubrique}
-                        </td>
-                      ) : null}
+                      <td className="px-4 py-2.5 font-semibold text-slate-800">{l.rubrique}</td>
                       <td className="px-4 py-2.5 text-slate-700">{l.grade}</td>
                       <td className="px-4 py-2.5 text-slate-700">{l.classe}</td>
                       <td className="px-4 py-2.5 text-slate-700">{l.echelon}</td>
@@ -314,7 +299,6 @@ export default function GrilleSalaire() {
                         </button>
                       </td>
                     </tr>
-                  ))
                 ))}
               </tbody>
             </table>
