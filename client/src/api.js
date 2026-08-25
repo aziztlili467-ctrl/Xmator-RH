@@ -262,6 +262,24 @@ export const api = {
   grilleSalaireModifier: (id, body) => request(`/grille-salaire/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   grilleSalaireSupprimer: (id) => request(`/grille-salaire/${id}`, { method: 'DELETE' }),
   grilleSalaireSupprimerRubrique: (rubrique) => request(`/grille-salaire/rubrique/${encodeURIComponent(rubrique)}`, { method: 'DELETE' }),
+  grilleSalaireSupprimerTout: () => request('/grille-salaire/all', { method: 'DELETE' }),
+  grilleSalaireExporter: async () => {
+    const token = getToken();
+    const res = await fetch(BASE + '/grille-salaire/export', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Export impossible.');
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = res.headers.get('Content-Disposition')?.match(/filename="?([^";\n]+)"?/)?.[1] || 'grille_salaire.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  },
   grilleSalaireImporter: async (fichier) => {
     const fd = new FormData();
     fd.append('fichier', fichier);

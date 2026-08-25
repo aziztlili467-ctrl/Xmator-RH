@@ -336,15 +336,14 @@ export default function Dashboard() {
     };
   }), [data]);
 
-  // Donut répartition globale — « Congé légal » = congés pris (demi-journées incluses) + solde restant
+  // Donut répartition globale — synchronisé Journal : uniquement la période (pas de solde restant)
   const donutData = useMemo(() => {
     const k = data?.kpis;
     if (!k) return [];
-    const congeTotal = (k.jours_conge || 0) + (k.solde_conge || 0);
-    const tot = k.jours_presence + congeTotal + k.jours_maladie + k.jours_absence;
+    const tot = k.jours_presence + k.jours_conge + k.jours_maladie + k.jours_absence;
     return [
       { name: 'Présence', value: k.jours_presence, color: STACK_COLORS['Présence'] },
-      { name: 'Congé légal', value: congeTotal, color: STACK_COLORS['Congé légal'] },
+      { name: 'Congé légal', value: k.jours_conge, color: STACK_COLORS['Congé légal'] },
       { name: 'Maladie', value: k.jours_maladie, color: STACK_COLORS.Maladie },
       { name: 'Absence', value: k.jours_absence, color: STACK_COLORS.Absence },
     ].filter((d) => d.value > 0).map((d) => ({ ...d, pct: tot > 0 ? Math.round((d.value / tot) * 1000) / 10 : 0 }));
@@ -588,9 +587,9 @@ export default function Dashboard() {
               chip={k.jours_absence_pct !== null ? { label: fmtPct(k.jours_absence_pct), bg: '#ffedd5', text: '#9a3412' } : undefined}
             />
             <KpiCard
-              title="Congés consommés"
-              value={`${fmtJours(k.consomme_conge)} j`}
-              sub={`sur ${fmtJours(k.accorde_conge)} j accordés`}
+              title="Congés sur période"
+              value={`${fmtJours(k.jours_conge)} j`}
+              sub={`${fmtJours(k.jours_conge_demi)} j en demi-journée · ${k.jours_ouvrables * k.effectif} j ouvrables`}
               icon={<IconCalendarCheck />}
               accent={{ from: '#f43f5e', to: '#ec4899' }}
             />
@@ -613,8 +612,8 @@ export default function Dashboard() {
             <Barometre pct={data.barometres.presence} label="Présence (heures)" sub={`${fmtHeures(k.heures_travaillees)} / ${fmtHeures(k.heures_legales)}`} color="#10b981" />
             <Barometre pct={data.barometres.jours_presence} label="Jours présents" sub={`${k.jours_presents} / ${k.jours_ouvrables * k.effectif} jours légaux`} color="#0d9488" />
             <Barometre pct={data.barometres.absence_jours} label="Jours d'absence" sub={`${k.jours_absence} jour(s) sans badge ni couverture`} color="#f59e0b" />
-            <Barometre pct={data.barometres.conge} label="Congés utilisés" sub={`${fmtJours(k.consomme_conge)} / ${fmtJours(k.accorde_conge)} j`} color="#3860ea" />
-            <Barometre pct={data.barometres.maladie} label="Maladie utilisée" sub={`${fmtJours(k.consomme_maladie)} / ${fmtJours(k.accorde_maladie)} j`} color="#f43f5e" />
+            <Barometre pct={data.barometres.conge} label="Congés sur période" sub={`${fmtJours(k.jours_conge)} j / ${k.jours_ouvrables * k.effectif} j ouvrables`} color="#3860ea" />
+            <Barometre pct={data.barometres.maladie} label="Maladie sur période" sub={`${fmtJours(k.jours_maladie)} j / ${k.jours_ouvrables * k.effectif} j ouvrables`} color="#f43f5e" />
             <Barometre pct={data.barometres.ponctualite} label="Ponctualité globale" sub={`${k.journees_presence - k.retards} / ${k.journees_presence} journée(s) sans retard`} color="#8b5cf6" />
           </div>
 

@@ -675,8 +675,11 @@ router.get('/audit', (req, res) => {
     },
     barometres: {
       presence: presence_pct,
-      conge: soldeAgg.accorde_conge ? Math.round((soldeAgg.consomme_conge / soldeAgg.accorde_conge) * 1000) / 10 : null,
-      maladie: soldeAgg.accorde_maladie ? Math.round((soldeAgg.consomme_maladie / soldeAgg.accorde_maladie) * 1000) / 10 : null,
+      // Synchronisés avec le Journal de paie : % sur la période filtrée (jours ouvrables)
+      conge: joursLegauxTotaux ? Math.round((totConge / joursLegauxTotaux) * 1000) / 10 : null,
+      maladie: joursLegauxTotaux ? Math.round((totMaladie / joursLegauxTotaux) * 1000) / 10 : null,
+      conge_annuel: soldeAgg.accorde_conge ? Math.round((soldeAgg.consomme_conge / soldeAgg.accorde_conge) * 1000) / 10 : null,
+      maladie_annuel: soldeAgg.accorde_maladie ? Math.round((soldeAgg.consomme_maladie / soldeAgg.accorde_maladie) * 1000) / 10 : null,
       absence: jours_absence_pct,
       jours_presence: jours_presents_pct,
       absence_jours: jours_absence_pct,

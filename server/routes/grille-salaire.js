@@ -130,4 +130,28 @@ router.delete('/rubrique/:rubrique', (req, res) => {
   res.json({ ok: true, supprimees: r.changes, message: `${r.changes} ligne(s) supprimée(s) pour « ${rubrique} ».` });
 });
 
+// ---- Supprimer TOUTE la grille ----
+router.delete('/all', (req, res) => {
+  const r = db.prepare('DELETE FROM grille_salaire').run();
+  res.json({ ok: true, supprimees: r.changes, message: `${r.changes} ligne(s) supprimée(s). La grille est vide.` });
+});
+
+// ---- Télécharger la grille en CSV (;) ----
+router.get('/export', (req, res) => {
+  const lignes = db.prepare('SELECT rubrique, grade, classe, echelon, valeur FROM grille_salaire ORDER BY rubrique, grade, classe, echelon').all();
+  if (!lignes.length) return res.status(404).json({ error: 'Grille vide — rien à télécharger.' });
+
+  const header = 'Rubrique;Grade;Classe;Echelon;Valeur';
+  const csv = [header, ...lignes.map((l) => `${l.rubrique};${l.grade};${l.classe};${l.echelon};${l.valeur}`)].join('\n');
+  const buf = Buffer.from(csv, 'utf-8');
+
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  const nom = `grille_salaire_${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}.csv`;
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${nom}"`);
+  res.send(buf);
+});
+
 module.exports = router;
