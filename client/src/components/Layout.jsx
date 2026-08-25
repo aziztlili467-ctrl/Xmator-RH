@@ -33,6 +33,7 @@ import ChatWidget from './ChatWidget';
 
 const NAV = [
   { to: '/', label: 'Tableau de bord', icon: IconDashboard, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
+  { section: 'Renseignements RH', roles: ['super_admin', 'moderateur'] },
   { to: '/employes', label: 'Employés', icon: IconUsers, end: false, roles: ['super_admin', 'moderateur'], module: 'employes' },
   { to: '/categories', label: 'Catégories', icon: IconTags, end: true, roles: ['super_admin', 'moderateur'], module: 'categories' },
   { section: 'Demandes de congé', roles: ['super_admin', 'moderateur'] },
