@@ -1,7 +1,78 @@
 const { Router } = require('express');
+const multer = require('multer');
 const { db } = require('../db');
 
 const router = Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+// ---- Import CSV / TXT (séparateur ;) ----
+router.post('/import', upload.single('fichier'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Aucun fichier reçu.' });
+
+  const raw = req.file.buffer.toString('utf-8');
+  const lignes = raw.split(/\r?\n/).filter((l) => l.trim());
+  if (!lignes.length) return res.status(400).json({ error: 'Fichier vide.' });
+
+  // Détection de l'en-tête : si la 1re ligne contient « Rubrique » (insensible casse), on la saute
+  const premiereLigne = lignes[0];
+  const headerRe = /^\s*rubrique\s*[;,.\t|\-]\s*grade/i;
+  const startIdx = headerRe.test(premiereLigne) ? 1 : 0;
+
+  let importees = 0;
+  let erreurs = [];
+  const ins = db.prepare(
+    'INSERT INTO grille_salaire (rubrique, grade, classe, echelon, valeur) VALUES (?, ?, ?, ?, ?)'
+  );
+
+  const runImport = db.transaction(() => {
+    for (let i = startIdx; i < lignes.length; i++) {
+      const raw = lignes[i].trim();
+      if (!raw || raw.startsWith('#') || raw.startsWith('//')) continue; // commentaires
+
+      // Détection auto du séparateur (; > , > tab > |)
+      let sep = ';';
+      if (!raw.includes(';')) {
+        if (raw.includes(',')) sep = ',';
+        else if (raw.includes('\t')) sep = '\t';
+        else if (raw.includes('|')) sep = '|';
+      }
+
+      const parts = raw.split(sep).map((s) => s.trim());
+      if (parts.length < 5) {
+        erreurs.push({ ligne: i + 1, contenu: raw, erreur: `Moins de 5 colonnes (${parts.length})` });
+        continue;
+      }
+
+      const [rubrique, grade, classe, echelon, valeurStr] = parts;
+      if (!rubrique || !grade || !classe || !echelon) {
+        erreurs.push({ ligne: i + 1, contenu: raw, erreur: 'Champ vide (Rubrique/Grade/Classe/Echelon)' });
+        continue;
+      }
+
+      const valeur = parseFloat(valeurStr.replace(/\s/g, '').replace(',', '.'));
+      if (isNaN(valeur)) {
+        erreurs.push({ ligne: i + 1, contenu: raw, erreur: `Valeur invalide : « ${valeurStr} »` });
+        continue;
+      }
+
+      ins.run(rubrique, grade, classe, echelon, valeur);
+      importees++;
+    }
+  });
+
+  runImport();
+  const total = db.prepare('SELECT COUNT(*) AS n FROM grille_salaire').get().n;
+  res.json({
+    ok: true,
+    importees,
+    erreurs: erreurs.length,
+    detailsErreurs: erreurs,
+    total,
+    message: importees > 0
+      ? `${importees} ligne(s) importée(s). ${erreurs.length ? `${erreurs.length} erreur(s) ignorée(s). ` : ''}Total en base : ${total}.`
+      : `Aucune ligne importée. ${erreurs.length} erreur(s).`,
+  });
+});
 
 // ---- Liste complète ----
 router.get('/', (req, res) => {

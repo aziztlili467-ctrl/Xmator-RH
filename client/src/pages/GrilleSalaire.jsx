@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { api } from '../api';
-import { IconSettings, IconTrash, IconEdit } from '../components/icons';
+import { IconSettings, IconTrash, IconEdit, IconUpload } from '../components/icons';
 
 export default function GrilleSalaire() {
   const [lignes, setLignes] = useState([]);
@@ -20,6 +20,10 @@ export default function GrilleSalaire() {
   // Suppression
   const [delTarget, setDelTarget] = useState(null);
   const [delSaving, setDelSaving] = useState(false);
+
+  // Import
+  const [importBusy, setImportBusy] = useState(false);
+  const importRef = useRef(null);
 
   const load = () => api.grilleSalaire().then(setLignes).catch((e) => setError(e.message));
   useEffect(() => { load(); }, []);
@@ -90,6 +94,30 @@ export default function GrilleSalaire() {
     finally { setDelSaving(false); }
   };
 
+  const gererImport = async (e) => {
+    const fichier = e.target.files[0];
+    if (!fichier) return;
+    const ok = window.confirm(
+      `Importer le fichier « ${fichier.name} » ?\n\n` +
+      'Format attendu (séparateur ;) :\n' +
+      'Rubrique;Grade;Classe;Echelon;Valeur\n' +
+      'Personnel;Cadre;A;1;150000\n\n' +
+      'Les lignes existantes ne sont PAS supprimées. Les doublons sont ajoutés en double.'
+    );
+    if (!ok) { e.target.value = ''; return; }
+    setImportBusy(true); setError(''); setSuccess('');
+    try {
+      const r = await api.grilleSalaireImporter(fichier);
+      setSuccess(r.message);
+      if (r.erreurs > 0) {
+        const details = r.detailsErreurs.slice(0, 5).map((e) => `Ligne ${e.ligne} : ${e.erreur}`).join('\n');
+        setError(`${r.erreurs} erreur(s) ignorée(s) :\n${details}${r.erreurs > 5 ? `\n… et ${r.erreurs - 5} autre(s).` : ''}`);
+      }
+      load();
+    } catch (err) { setError(err.message); }
+    finally { setImportBusy(false); e.target.value = ''; }
+  };
+
   // Grouper par rubrique pour affichage
   const parRubrique = {};
   lignes.forEach((l) => {
@@ -104,16 +132,32 @@ export default function GrilleSalaire() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between">
         <div>
           <h2 className="text-lg font-bold text-slate-900">Grille de Salaire</h2>
           <p className="text-sm text-slate-500">
             Paramétrez la grille salariale par Rubrique, Grade, Classe, Echelon et Valeur. Chaque ligne est enregistrée en base et consultable par tous les super_admin.
           </p>
         </div>
-        <button className="btn-primary" onClick={ouvrirCreation}>
-          <IconSettings /> Nouvelle ligne
-        </button>
+        <div className="flex items-center gap-2">
+          <input
+            ref={importRef}
+            type="file"
+            accept=".csv,.txt,.tsv"
+            className="hidden"
+            onChange={gererImport}
+          />
+          <button
+            className="btn-secondary"
+            onClick={() => importRef.current?.click()}
+            disabled={importBusy}
+          >
+            <IconUpload /> {importBusy ? 'Import…' : 'Importer CSV/TXT'}
+          </button>
+          <button className="btn-primary" onClick={ouvrirCreation}>
+            <IconSettings /> Nouvelle ligne
+          </button>
+        </div>
       </div>
 
       {error && <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-200">{error}</p>}

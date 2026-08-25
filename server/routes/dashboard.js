@@ -262,6 +262,39 @@ router.get('/audit', (req, res) => {
   for (const c of conges) if (idsSet.has(c.employe_id)) marquer(jourConge, empConge, c.employe_id, c.date_debut, c.date_fin, !!c.demi_journee || !Number.isInteger(Number(c.nombre_jours)));
   for (const a of arrets) if (idsSet.has(a.employe_id)) marquer(jourMaladie, empMaladie, a.employe_id, a.date_debut, a.date_fin, false, empMaladieJours);
 
+  // ---- Complément RMA manuel : CA/MA importés manuellement (sans demande/arrêt) ----
+  // Évite le double comptage : ne compte que les dates ouvrables non déjà couvertes par une demande/arrêt
+  const couvreConge = new Set();
+  const couvreMaladie = new Set();
+  for (const c of conges) if (idsSet.has(c.employe_id)) {
+    const s = c.date_debut > debut ? c.date_debut : debut;
+    const e = c.date_fin < fin ? c.date_fin : fin;
+    const cur = new Date(s+'T00:00:00'); const end = new Date(e+'T00:00:00');
+    while (cur<=end) { const d=iso(cur); if (joursSet.has(d) && (legalMap[d]||0)>0) couvreConge.add(c.employe_id+'|'+d); cur.setDate(cur.getDate()+1); }
+  }
+  for (const a of arrets) if (idsSet.has(a.employe_id)) {
+    const s = a.date_debut > debut ? a.date_debut : debut;
+    const e = a.date_fin < fin ? a.date_fin : fin;
+    const cur = new Date(s+'T00:00:00'); const end = new Date(e+'T00:00:00');
+    while (cur<=end) { const d=iso(cur); if (joursSet.has(d) && (legalMap[d]||0)>0) couvreMaladie.add(a.employe_id+'|'+d); cur.setDate(cur.getDate()+1); }
+  }
+  const rmaRows = db.prepare(`SELECT employe_id, date, code, demi_journee FROM codes_importes WHERE date >= ? AND date <= ? AND code IN ('CA','MA')`).all(debut, fin);
+  for (const r of rmaRows) {
+    if (!idsSet.has(r.employe_id) || !joursSet.has(r.date) || (legalMap[r.date]||0)<=0) continue;
+    const key = r.employe_id+'|'+r.date;
+    const inc = (r.code==='CA' && r.demi_journee) ? 0.5 : 1;
+    if (r.code==='CA' && !couvreConge.has(key)) {
+      jourConge[r.date]=(jourConge[r.date]||0)+inc;
+      empConge[r.employe_id]=(empConge[r.employe_id]||0)+inc;
+      if (inc===0.5) { jourDemi[r.date]=1; jourCongeDemi[r.date]=(jourCongeDemi[r.date]||0)+0.5; }
+    } else if (r.code==='MA' && !couvreMaladie.has(key)) {
+      jourMaladie[r.date]=(jourMaladie[r.date]||0)+inc;
+      empMaladie[r.employe_id]=(empMaladie[r.employe_id]||0)+inc;
+      if (!empMaladieJours[r.employe_id]) empMaladieJours[r.employe_id]={};
+      empMaladieJours[r.employe_id][r.date]=(empMaladieJours[r.employe_id][r.date]||0)+inc;
+    }
+  }
+
   // --- Présence & ponctualité (depuis les pointages bruts) ---
   const ramadanByAnnee = {};
   for (const c of db.prepare('SELECT annee, ramadan_debut, ramadan_fin FROM config_annees').all()) {

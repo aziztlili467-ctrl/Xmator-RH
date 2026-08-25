@@ -262,6 +262,19 @@ export const api = {
   grilleSalaireModifier: (id, body) => request(`/grille-salaire/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   grilleSalaireSupprimer: (id) => request(`/grille-salaire/${id}`, { method: 'DELETE' }),
   grilleSalaireSupprimerRubrique: (rubrique) => request(`/grille-salaire/rubrique/${encodeURIComponent(rubrique)}`, { method: 'DELETE' }),
+  grilleSalaireImporter: async (fichier) => {
+    const fd = new FormData();
+    fd.append('fichier', fichier);
+    const token = getToken();
+    const res = await fetch(BASE + '/grille-salaire/import', {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: fd,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Erreur lors de l\'import.');
+    return data;
+  },
 
   // Journal RMA (Repos · Maladie · Absence) — codifications importées fusionnées au journal de paie
   journalRma: (params = {}) => request('/journal-rma' + buildQuery(params)),
