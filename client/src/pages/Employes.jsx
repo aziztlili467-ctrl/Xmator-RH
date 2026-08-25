@@ -5,7 +5,7 @@ import { fmtJours, downloadFile } from '../utils';
 import SoldeJauge from '../components/SoldeJauge';
 import { IconUsers, IconDownload, IconUpload, IconAlert } from '../components/icons';
 
-const CSV_TEMPLATE = 'matricule;nom;prenom;categorie\n46;Tlili;Mohamed Aziz;Cadre administratif';
+const CSV_TEMPLATE = 'matricule;nom;prenom;categorie;rubrique;grade;classe;echelon\n46;Tlili;Mohamed Aziz;Cadre administratif;DIRECTION;CASA;1;1';
 const RH_CSV_TEMPLATE = 'matricule;date_naissance;date_embauche\n46;01/02/1980;02/03/2005';
 
 export default function Employes() {
@@ -22,7 +22,7 @@ export default function Employes() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(location.state?.msg || '');
 
-  const [form, setForm] = useState({ matricule: '', nom: '', prenom: '', categorie_id: '', actif: true });
+  const [form, setForm] = useState({ matricule: '', nom: '', prenom: '', categorie_id: '', rubrique: '', grade: '', classe: '', echelon: '', actif: true });
   const [csvText, setCsvText] = useState('');
   const [importResult, setImportResult] = useState(null);
   const [importing, setImporting] = useState(false);
@@ -79,7 +79,7 @@ export default function Employes() {
     setError('');
     try {
       await api.createEmploye({ ...form, categorie_id: Number(form.categorie_id) });
-      setForm({ matricule: '', nom: '', prenom: '', categorie_id: '', actif: true });
+      setForm({ matricule: '', nom: '', prenom: '', categorie_id: '', rubrique: '', grade: '', classe: '', echelon: '', actif: true });
       setShowCreate(false);
       setSuccess('Employé créé avec succès.');
       load();
@@ -112,8 +112,8 @@ export default function Employes() {
   };
 
   const exportCsv = () => {
-    const header = 'Matricule;Nom;Prénom;Catégorie;Date naissance;Date embauche;Solde courant';
-    const lines = sorted.map((e) => [e.matricule, e.nom, e.prenom, e.categorie, e.date_naissance || '', e.date_embauche || '', fmtJours(e.solde)].join(';'));
+    const header = 'Matricule;Nom;Prénom;Catégorie;Rubrique;Grade;Classe;Echelon;Date naissance;Date embauche;Solde courant';
+    const lines = sorted.map((e) => [e.matricule, e.nom, e.prenom, e.categorie, e.rubrique || '', e.grade || '', e.classe || '', e.echelon || '', e.date_naissance || '', e.date_embauche || '', fmtJours(e.solde)].join(';'));
     downloadFile('employes.csv', [header, ...lines].join('\n'), 'text/csv;charset=utf-8');
   };
 
@@ -142,7 +142,7 @@ export default function Employes() {
 
   const openEdit = (e) => {
     setEditTarget(e);
-    setEditForm({ matricule: e.matricule, nom: e.nom, prenom: e.prenom, categorie_id: e.categorie_id, actif: !!e.actif });
+    setEditForm({ matricule: e.matricule, nom: e.nom, prenom: e.prenom, categorie_id: e.categorie_id, rubrique: e.rubrique || '', grade: e.grade || '', classe: e.classe || '', echelon: e.echelon || '', actif: !!e.actif });
     setEditError('');
   };
 
@@ -156,6 +156,10 @@ export default function Employes() {
         nom: editForm.nom,
         prenom: editForm.prenom,
         categorie_id: Number(editForm.categorie_id),
+        rubrique: editForm.rubrique,
+        grade: editForm.grade,
+        classe: editForm.classe,
+        echelon: editForm.echelon,
         actif: editForm.actif,
       });
       setEditTarget(null);
@@ -241,6 +245,10 @@ export default function Employes() {
                 <Th label="Matricule" k="matricule" />
                 <Th label="Nom et prénom" k="nom" />
                 <Th label="Catégorie" k="categorie" />
+                <Th label="Rubrique" k="rubrique" />
+                <Th label="Grade" k="grade" />
+                <Th label="Classe" k="classe" />
+                <Th label="Echelon" k="echelon" />
                 <Th label="Solde restant" k="solde" />
                 <th className="px-5 py-3 font-semibold uppercase tracking-wide text-slate-500">Actions</th>
               </tr>
@@ -257,6 +265,10 @@ export default function Employes() {
                   <td className="px-5 py-3">
                     <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">{e.categorie}</span>
                   </td>
+                  <td className="px-5 py-3 text-xs text-slate-600">{e.rubrique || '—'}</td>
+                  <td className="px-5 py-3 text-xs text-slate-600">{e.grade || '—'}</td>
+                  <td className="px-5 py-3 text-xs text-slate-600">{e.classe || '—'}</td>
+                  <td className="px-5 py-3 text-xs text-slate-600">{e.echelon || '—'}</td>
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-3">
                       <span className={`w-14 shrink-0 text-end font-bold ${e.solde < 0 ? 'text-red-600' : e.solde < 5 ? 'text-amber-600' : 'text-slate-700'}`}>
@@ -285,7 +297,7 @@ export default function Employes() {
                 </tr>
               ))}
               {sorted.length === 0 && (
-                <tr><td colSpan={5} className="px-5 py-10 text-center text-slate-500">Aucun employé trouvé.</td></tr>
+                <tr><td colSpan={9} className="px-5 py-10 text-center text-slate-500">Aucun employé trouvé.</td></tr>
               )}
             </tbody>
           </table>
@@ -315,6 +327,24 @@ export default function Employes() {
                 <option value="">Sélectionner…</option>
                 {categories.map((c) => <option key={c.id} value={c.id}>{c.libelle}</option>)}
               </select>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+              <div>
+                <label className="label">Rubrique</label>
+                <input className="input" value={form.rubrique} onChange={(e) => setForm({ ...form, rubrique: e.target.value })} placeholder="ex. DIRECTION" />
+              </div>
+              <div>
+                <label className="label">Grade</label>
+                <input className="input" value={form.grade} onChange={(e) => setForm({ ...form, grade: e.target.value })} placeholder="ex. CASA" />
+              </div>
+              <div>
+                <label className="label">Classe</label>
+                <input className="input" value={form.classe} onChange={(e) => setForm({ ...form, classe: e.target.value })} placeholder="ex. 1" />
+              </div>
+              <div>
+                <label className="label">Echelon</label>
+                <input className="input" value={form.echelon} onChange={(e) => setForm({ ...form, echelon: e.target.value })} placeholder="ex. 1" />
+              </div>
             </div>
             <label className="flex items-center gap-2 text-sm text-slate-600">
               <input type="checkbox" checked={form.actif} onChange={(e) => setForm({ ...form, actif: e.target.checked })} />
@@ -459,6 +489,24 @@ export default function Employes() {
                 <option value="">Sélectionner…</option>
                 {categories.map((c) => <option key={c.id} value={c.id}>{c.libelle}</option>)}
               </select>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+              <div>
+                <label className="label">Rubrique</label>
+                <input className="input" value={editForm.rubrique} onChange={(e) => setEditForm({ ...editForm, rubrique: e.target.value })} placeholder="ex. DIRECTION" />
+              </div>
+              <div>
+                <label className="label">Grade</label>
+                <input className="input" value={editForm.grade} onChange={(e) => setEditForm({ ...editForm, grade: e.target.value })} placeholder="ex. CASA" />
+              </div>
+              <div>
+                <label className="label">Classe</label>
+                <input className="input" value={editForm.classe} onChange={(e) => setEditForm({ ...editForm, classe: e.target.value })} placeholder="ex. 1" />
+              </div>
+              <div>
+                <label className="label">Echelon</label>
+                <input className="input" value={editForm.echelon} onChange={(e) => setEditForm({ ...editForm, echelon: e.target.value })} placeholder="ex. 1" />
+              </div>
             </div>
             <label className="flex items-center gap-2 text-sm text-slate-600">
               <input type="checkbox" checked={editForm.actif} onChange={(e) => setEditForm({ ...editForm, actif: e.target.checked })} />

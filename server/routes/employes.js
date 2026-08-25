@@ -12,6 +12,7 @@ const lecture = requireRole('super_admin', 'consultation', 'moderateur');
 const BASE = `
   SELECT e.id, e.matricule, e.nom, e.prenom, e.actif, e.categorie_id,
          e.date_naissance, e.date_embauche, e.photo_url,
+         e.rubrique, e.grade, e.classe, e.echelon,
          c.libelle AS categorie
   FROM employes e
   JOIN categories c ON c.id = e.categorie_id
@@ -71,7 +72,7 @@ router.get('/:id', lecture, (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { matricule, nom, prenom, categorie_id, actif } = req.body || {};
+  const { matricule, nom, prenom, categorie_id, rubrique, grade, classe, echelon, actif } = req.body || {};
   if (!matricule || !nom || !prenom || !categorie_id) {
     return res.status(400).json({ error: 'Matricule, nom, prénom et catégorie sont obligatoires.' });
   }
@@ -81,8 +82,10 @@ router.post('/', (req, res) => {
   const cat = db.prepare('SELECT id FROM categories WHERE id = ?').get(Number(categorie_id));
   if (!cat) return res.status(400).json({ error: 'Catégorie inconnue.' });
   try {
-    const r = db.prepare('INSERT INTO employes (matricule, nom, prenom, categorie_id, actif) VALUES (?,?,?,?,?)')
-      .run(mat, String(nom).trim(), String(prenom).trim(), Number(categorie_id), actif === false ? 0 : 1);
+    const r = db.prepare('INSERT INTO employes (matricule, nom, prenom, categorie_id, rubrique, grade, classe, echelon, actif) VALUES (?,?,?,?,?,?,?,?,?)')
+      .run(mat, String(nom).trim(), String(prenom).trim(), Number(categorie_id),
+        String(rubrique || '').trim(), String(grade || '').trim(), String(classe || '').trim(), String(echelon || '').trim(),
+        actif === false ? 0 : 1);
     res.status(201).json({ id: r.lastInsertRowid });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -174,7 +177,7 @@ router.post('/import-rh', (req, res) => {
 });
 
 router.put('/:id', (req, res) => {
-  const { matricule, nom, prenom, categorie_id, actif } = req.body || {};
+  const { matricule, nom, prenom, categorie_id, rubrique, grade, classe, echelon, actif } = req.body || {};
   const id = Number(req.params.id);
   const e = db.prepare('SELECT id, matricule FROM employes WHERE id = ?').get(id);
   if (!e) return res.status(404).json({ error: 'Employé introuvable.' });
@@ -197,6 +200,10 @@ router.put('/:id', (req, res) => {
       nom = COALESCE(?, nom),
       prenom = COALESCE(?, prenom),
       categorie_id = COALESCE(?, categorie_id),
+      rubrique = COALESCE(?, rubrique),
+      grade = COALESCE(?, grade),
+      classe = COALESCE(?, classe),
+      echelon = COALESCE(?, echelon),
       actif = COALESCE(?, actif)
     WHERE id = ?
   `).run(
@@ -204,6 +211,10 @@ router.put('/:id', (req, res) => {
     nom !== undefined ? String(nom).trim() : null,
     prenom !== undefined ? String(prenom).trim() : null,
     categorie_id !== undefined ? Number(categorie_id) : null,
+    rubrique !== undefined ? String(rubrique).trim() : null,
+    grade !== undefined ? String(grade).trim() : null,
+    classe !== undefined ? String(classe).trim() : null,
+    echelon !== undefined ? String(echelon).trim() : null,
     actif !== undefined ? (actif ? 1 : 0) : null,
     id
   );

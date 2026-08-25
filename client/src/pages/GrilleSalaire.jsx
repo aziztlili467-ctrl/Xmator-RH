@@ -35,6 +35,7 @@ export default function GrilleSalaire() {
   const [filClasse, setFilClasse] = useState('');
   const [filEchelon, setFilEchelon] = useState('');
   const [filValeur, setFilValeur] = useState('');
+  const [triValeur, setTriValeur] = useState(null); // null | 'asc' | 'desc'
 
   const load = () => api.grilleSalaire().then(setLignes).catch((e) => setError(e.message));
   useEffect(() => { load(); }, []);
@@ -45,8 +46,8 @@ export default function GrilleSalaire() {
   const classes = [...new Set(lignes.map((l) => l.classe))].sort();
   const echelons = [...new Set(lignes.map((l) => l.echelon))].sort();
 
-  // --- Filtrage ---
-  const lignesFiltrees = lignes.filter((l) => {
+  // --- Filtrage + tri ---
+  const lignesFiltreesBase = lignes.filter((l) => {
     if (filRubrique && l.rubrique !== filRubrique) return false;
     if (filGrade && l.grade !== filGrade) return false;
     if (filClasse && l.classe !== filClasse) return false;
@@ -54,11 +55,18 @@ export default function GrilleSalaire() {
     if (filValeur && !String(l.valeur).includes(filValeur)) return false;
     return true;
   });
+  const lignesFiltrees = triValeur
+    ? [...lignesFiltreesBase].sort((a, b) => triValeur === 'asc' ? Number(a.valeur) - Number(b.valeur) : Number(b.valeur) - Number(a.valeur))
+    : lignesFiltreesBase;
 
   const hasFiltres = filRubrique || filGrade || filClasse || filEchelon || filValeur;
 
   const clearFiltres = () => {
-    setFilRubrique(''); setFilGrade(''); setFilClasse(''); setFilEchelon(''); setFilValeur('');
+    setFilRubrique(''); setFilGrade(''); setFilClasse(''); setFilEchelon(''); setFilValeur(''); setTriValeur(null);
+  };
+
+  const toggleTriValeur = () => {
+    setTriValeur((c) => (c === null ? 'asc' : c === 'asc' ? 'desc' : null));
   };
 
   // --- Helpers ---
@@ -339,12 +347,22 @@ export default function GrilleSalaire() {
             </div>
             <div>
               <label className="mb-1 block text-[10px] font-semibold uppercase text-slate-400">Valeur (DT)</label>
-              <input
-                className="input text-sm"
-                placeholder="Rechercher…"
-                value={filValeur}
-                onChange={(e) => setFilValeur(e.target.value)}
-              />
+              <div className="flex gap-1">
+                <input
+                  className="input text-sm flex-1"
+                  placeholder="Rechercher…"
+                  value={filValeur}
+                  onChange={(e) => setFilValeur(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={toggleTriValeur}
+                  title={triValeur === null ? 'Trier par valeur' : triValeur === 'asc' ? 'Tri croissant — cliquer pour décroissant' : 'Tri décroissant — cliquer pour annuler'}
+                  className={`shrink-0 rounded-lg border px-2 py-1 text-xs font-bold transition ${triValeur ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}
+                >
+                  {triValeur === null ? '↕' : triValeur === 'asc' ? '↑ Croissant' : '↓ Décroissant'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -375,7 +393,11 @@ export default function GrilleSalaire() {
                   <th className="px-4 py-3">Grade</th>
                   <th className="px-4 py-3">Classe</th>
                   <th className="px-4 py-3">Echelon</th>
-                  <th className="px-4 py-3 text-end">Valeur (DT)</th>
+                  <th className="px-4 py-3 text-end">
+                    <button type="button" onClick={toggleTriValeur} className="inline-flex items-center gap-1 hover:text-blue-600">
+                      Valeur (DT) <span className={`text-[10px] ${triValeur ? 'text-blue-600' : 'text-slate-300'}`}>{triValeur === 'asc' ? '▲' : triValeur === 'desc' ? '▼' : '↕'}</span>
+                    </button>
+                  </th>
                   <th className="px-4 py-3 text-end">Actions</th>
                 </tr>
               </thead>

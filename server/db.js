@@ -24,6 +24,10 @@ CREATE TABLE IF NOT EXISTS employes (
   nom          TEXT NOT NULL,
   prenom       TEXT NOT NULL,
   categorie_id INTEGER NOT NULL REFERENCES categories(id),
+  rubrique     TEXT NOT NULL DEFAULT '',
+  grade        TEXT NOT NULL DEFAULT '',
+  classe       TEXT NOT NULL DEFAULT '',
+  echelon      TEXT NOT NULL DEFAULT '',
   actif        INTEGER NOT NULL DEFAULT 1,
   created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
@@ -319,6 +323,10 @@ function migrate() {
   if (!empCols.includes('date_naissance')) db.exec('ALTER TABLE employes ADD COLUMN date_naissance TEXT');
   if (!empCols.includes('date_embauche')) db.exec('ALTER TABLE employes ADD COLUMN date_embauche TEXT');
   if (!empCols.includes('photo_url')) db.exec('ALTER TABLE employes ADD COLUMN photo_url TEXT');
+  if (!empCols.includes('rubrique')) db.exec("ALTER TABLE employes ADD COLUMN rubrique TEXT NOT NULL DEFAULT ''");
+  if (!empCols.includes('grade')) db.exec("ALTER TABLE employes ADD COLUMN grade TEXT NOT NULL DEFAULT ''");
+  if (!empCols.includes('classe')) db.exec("ALTER TABLE employes ADD COLUMN classe TEXT NOT NULL DEFAULT ''");
+  if (!empCols.includes('echelon')) db.exec("ALTER TABLE employes ADD COLUMN echelon TEXT NOT NULL DEFAULT ''");
 
   // Jours fériés : colonne `automatique` (jours fériés auto-gérés, ex. les 2 jours de l'Aïd el-Fitr)
   const jfCols = db.prepare('PRAGMA table_info(jours_feries)').all().map((c) => c.name);
