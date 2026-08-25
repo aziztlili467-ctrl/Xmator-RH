@@ -17,6 +17,13 @@ function nbJours(debut, fin) {
   const d1 = new Date(debut + 'T00:00:00');
   const d2 = new Date(fin + 'T00:00:00');
   if (isNaN(d1) || isNaN(d2) || d2 < d1) return null;
+  // Source unique : calendrier administratif (jours_travail.heures > 0)
+  // Si le calendrier n'est pas renseigné pour la période, fallback lun-ven
+  const hasCal = db.prepare('SELECT 1 FROM jours_travail WHERE date >= ? AND date <= ? LIMIT 1').get(debut, fin);
+  if (hasCal) {
+    const r = db.prepare("SELECT COUNT(*) AS c FROM jours_travail WHERE date >= ? AND date <= ? AND heures > 0").get(debut, fin);
+    return r.c;
+  }
   let count = 0;
   const cur = new Date(d1);
   while (cur <= d2) {
@@ -35,10 +42,12 @@ function insererRMAForDemande(d) {
   const cur = new Date(d.date_debut + 'T00:00:00');
   const end = new Date(d.date_fin + 'T00:00:00');
   const ins = db.prepare('INSERT INTO codes_importes (employe_id, matricule, date, code, demi_journee) VALUES (?,?,?,?,?) ON CONFLICT(employe_id, date, code) DO UPDATE SET demi_journee = excluded.demi_journee');
+  const legalSet = new Set(db.prepare("SELECT date FROM jours_travail WHERE date >= ? AND date <= ? AND heures > 0").all(d.date_debut, d.date_fin).map(r=>r.date));
+  const hasCal = legalSet.size > 0 || db.prepare('SELECT 1 FROM jours_travail WHERE date >= ? AND date <= ? LIMIT 1').get(d.date_debut, d.date_fin);
   while (cur <= end) {
-    const wd = cur.getDay();
-    if (wd !== 0 && wd !== 6) {
-      const iso = `${cur.getFullYear()}-${pad2(cur.getMonth() + 1)}-${pad2(cur.getDate())}`;
+    const iso = `${cur.getFullYear()}-${pad2(cur.getMonth() + 1)}-${pad2(cur.getDate())}`;
+    const ouvrable = hasCal ? legalSet.has(iso) : (cur.getDay() !== 0 && cur.getDay() !== 6);
+    if (ouvrable) {
       const demi = d.demi_journee && iso === d.date_fin ? 1 : 0;
       ins.run(d.employe_id, d.matricule, iso, CODE_RMA_CONGE, demi);
     }

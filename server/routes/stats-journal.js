@@ -58,9 +58,19 @@ function computeStats(debut, fin) {
   `).all();
 
   const dates = listDates(debut, fin);
+  // Calendrier administratif : jours ouvrables (heures > 0)
+  const legalRows = db.prepare("SELECT date, heures FROM jours_travail WHERE date >= ? AND date <= ?").all(debut, fin);
+  const legalMap = {};
+  for (const r of legalRows) legalMap[r.date] = Number(r.heures) || 0;
+  const hasCal = legalRows.length > 0;
+  const isOuvrable = (iso) => {
+    if (!hasCal) { const wd = new Date(iso + 'T00:00:00').getDay(); return wd !== 0 && wd !== 6; }
+    return (legalMap[iso] || 0) > 0;
+  };
+
   const jours = {};
 
-  // P1 (présent) : journée avec au moins un pointage (badgeuse) dans la période sélectionnée
+  // P1 (présent) : journée avec au moins un pointage (badgeuse) — seulement jours ouvrables comptent dans totaux
   const presences = db.prepare(`
     SELECT employe_id, date FROM pointages
     WHERE date >= ? AND date <= ?
@@ -68,10 +78,11 @@ function computeStats(debut, fin) {
   `).all(debut, fin);
   for (const p of presences) {
     if (!jours[p.employe_id]) jours[p.employe_id] = {};
+    // Toujours afficher P1 dans la matrice (y compris WE), mais les totaux filtreront plus bas
     jours[p.employe_id][p.date] = 'P1';
   }
 
-  // Codifications importées (Journal RMA) : fusionnées par matricule et date
+  // Codifications importées (Journal RMA) : fusionnées par matricule et date — affichage toujours, totaux filtrés
   const imports = db.prepare(`
     SELECT employe_id, date AS jour, code, demi_journee FROM codes_importes
     WHERE date >= ? AND date <= ?
@@ -88,16 +99,27 @@ function computeStats(debut, fin) {
     }
   }
 
+  // Totaux synchronisés avec le dashboard : seulement les jours ouvrables comptent.
+  // Demi-journée CA = 0.5 (même règle dashboard) ; P1 sur férié/WE = 0.
   const parCode = {};
   let total = 0;
-  for (const j of Object.values(jours)) {
-    for (const cell of Object.values(j)) {
+  for (const [empId, jmap] of Object.entries(jours)) {
+    for (const [iso, cell] of Object.entries(jmap)) {
+      if (!isOuvrable(iso)) continue;
       for (const c of String(cell).split('/')) {
-        parCode[c] = (parCode[c] || 0) + 1;
-        total += 1;
+        if (c === 'CA' && joursDemi[empId] && joursDemi[empId][iso]) {
+          parCode[c] = (parCode[c] || 0) + 0.5;
+          total += 0.5;
+        } else {
+          parCode[c] = (parCode[c] || 0) + 1;
+          total += 1;
+        }
       }
     }
   }
+  // Arrondi à 0.5 près
+  for (const k of Object.keys(parCode)) parCode[k] = Math.round(parCode[k] * 2) / 2;
+  total = Math.round(total * 2) / 2;
   return { debut, fin, dates, employes, jours, joursDemi, totaux: { par_code: parCode, p1: parCode.P1 || 0, total } };
 }
 
@@ -199,7 +221,22 @@ router.get('/pdf', (req, res) => {
     return `${e.nom.toUpperCase()} ${initials}.`;
   };
 
-  const totalJours = (id) => (jours[id] ? Object.values(jours[id]).reduce((s, c) => s + c.split('/').length, 0) : 0);
+  // Total par employé synchronisé dashboard : uniquement jours ouvrables, CA demi = 0.5
+  const legalMapPdf = {};
+  for (const r of db.prepare("SELECT date, heures FROM jours_travail WHERE date >= ? AND date <= ?").all(debut, fin)) legalMapPdf[r.date] = Number(r.heures)||0;
+  const hasCalPdf = Object.keys(legalMapPdf).length>0;
+  const isOuvPdf = (iso) => hasCalPdf ? (legalMapPdf[iso]||0)>0 : (new Date(iso+'T00:00:00').getDay()!==0 && new Date(iso+'T00:00:00').getDay()!==6);
+  const totalJours = (id) => {
+    if (!jours[id]) return 0;
+    let s = 0;
+    for (const [iso, cell] of Object.entries(jours[id])) {
+      if (!isOuvPdf(iso)) continue;
+      for (const c of String(cell).split('/')) {
+        if (c==='CA' && joursDemi && joursDemi[id] && joursDemi[id][iso]) s+=0.5; else s+=1;
+      }
+    }
+    return Math.round(s*2)/2;
+  };
 
   const headerRow = (dc, y) => {
     doc.rect(L, y, empColW, headerH).fill('#1e293b');
@@ -246,7 +283,18 @@ router.get('/pdf', (req, res) => {
   };
 
   const totalsRow = (dc, y) => {
-    const countDate = (iso) => employes.reduce((s, e) => s + (jours[e.id] && jours[e.id][iso] ? 1 : 0), 0);
+    const countDate = (iso) => {
+      if (!isOuvPdf(iso)) return 0;
+      let s=0;
+      for (const e of employes) {
+        const cell = jours[e.id] ? jours[e.id][iso] : null;
+        if (!cell) continue;
+        for (const c of String(cell).split('/')) {
+          if (c==='CA' && joursDemi && joursDemi[e.id] && joursDemi[e.id][iso]) s+=0.5; else s+=1;
+        }
+      }
+      return Math.round(s*2)/2;
+    };
     doc.rect(L, y, empColW, headerH).fill('#cbd5e1');
     doc.fillColor('#0f172a').font('Helvetica-Bold').fontSize(7.5)
       .text('Total employés', L, y + 8, { width: empColW, align: 'center', lineBreak: false });
@@ -338,8 +386,30 @@ router.get('/xls', (req, res) => {
   // Styles générés par code présent dans la période (cellules colorées selon la codification)
   const codesUtilises = Object.keys(stats.totaux.par_code || {}).sort();
 
-  const totalJoursEmp = (id) => (jours[id] ? Object.values(jours[id]).reduce((s, c) => s + c.split('/').length, 0) : 0);
-  const countDate = (iso) => employes.reduce((s, e) => s + (jours[e.id] && jours[e.id][iso] ? 1 : 0), 0);
+  // Totaux XLS synchronisés dashboard : ouvrables uniquement, CA demi = 0.5
+  const legalMapXls = {};
+  for (const r of db.prepare("SELECT date, heures FROM jours_travail WHERE date >= ? AND date <= ?").all(debut, fin)) legalMapXls[r.date]=Number(r.heures)||0;
+  const hasCalXls = Object.keys(legalMapXls).length>0;
+  const isOuvXls = (iso) => hasCalXls ? (legalMapXls[iso]||0)>0 : (new Date(iso+'T00:00:00').getDay()!==0 && new Date(iso+'T00:00:00').getDay()!==6);
+  const totalJoursEmp = (id) => {
+    if (!jours[id]) return 0;
+    let s=0;
+    for (const [iso,cell] of Object.entries(jours[id])) {
+      if (!isOuvXls(iso)) continue;
+      for (const c of String(cell).split('/')) { if (c==='CA' && joursDemi[id] && joursDemi[id][iso]) s+=0.5; else s+=1; }
+    }
+    return Math.round(s*2)/2;
+  };
+  const countDate = (iso) => {
+    if (!isOuvXls(iso)) return 0;
+    let s=0;
+    for (const e of employes) {
+      const cell=jours[e.id]?jours[e.id][iso]:null;
+      if (!cell) continue;
+      for (const c of String(cell).split('/')) { if (c==='CA' && joursDemi[e.id] && joursDemi[e.id][iso]) s+=0.5; else s+=1; }
+    }
+    return Math.round(s*2)/2;
+  };
 
   const styleCode = (code) => {
     const meta = codesMeta[code] || {};

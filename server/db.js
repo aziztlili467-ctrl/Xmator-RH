@@ -290,6 +290,20 @@ CREATE TABLE IF NOT EXISTS notifications_absence (
 );
 CREATE INDEX IF NOT EXISTS idx_notif_abs_emp   ON notifications_absence(employe_id);
 CREATE INDEX IF NOT EXISTS idx_notif_abs_dates ON notifications_absence(date_debut, date_fin);
+
+-- Paie mensuelle : Grille de Salaire (paramétrage par Rubrique / Grade / Classe / Echelon / Valeur)
+CREATE TABLE IF NOT EXISTS grille_salaire (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  rubrique    TEXT NOT NULL,
+  grade       TEXT NOT NULL,
+  classe      TEXT NOT NULL,
+  echelon     TEXT NOT NULL,
+  valeur      REAL NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  updated_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_grille_rubrique ON grille_salaire(rubrique);
+CREATE INDEX IF NOT EXISTS idx_grille_grade    ON grille_salaire(grade);
 `);
 
 // ---- Migration d'une base existante ----

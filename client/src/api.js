@@ -257,6 +257,12 @@ export const api = {
   updateCodePaie: (id, body) => request(`/codes-paie/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteCodePaie: (id) => request(`/codes-paie/${id}`, { method: 'DELETE' }),
 
+  grilleSalaire: () => request('/grille-salaire'),
+  grilleSalaireCreer: (body) => request('/grille-salaire', { method: 'POST', body: JSON.stringify(body) }),
+  grilleSalaireModifier: (id, body) => request(`/grille-salaire/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  grilleSalaireSupprimer: (id) => request(`/grille-salaire/${id}`, { method: 'DELETE' }),
+  grilleSalaireSupprimerRubrique: (rubrique) => request(`/grille-salaire/rubrique/${encodeURIComponent(rubrique)}`, { method: 'DELETE' }),
+
   // Journal RMA (Repos · Maladie · Absence) — codifications importées fusionnées au journal de paie
   journalRma: (params = {}) => request('/journal-rma' + buildQuery(params)),
   importCodesRma: (texte, periode = {}) => request('/journal-rma/import', { method: 'POST', body: JSON.stringify({ texte, ...periode }) }),

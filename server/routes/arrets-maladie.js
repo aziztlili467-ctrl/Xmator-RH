@@ -19,6 +19,11 @@ function nbJours(debut, fin) {
   const d1 = new Date(debut + 'T00:00:00');
   const d2 = new Date(fin + 'T00:00:00');
   if (isNaN(d1) || isNaN(d2) || d2 < d1) return null;
+  const hasCal = db.prepare('SELECT 1 FROM jours_travail WHERE date >= ? AND date <= ? LIMIT 1').get(debut, fin);
+  if (hasCal) {
+    const r = db.prepare("SELECT COUNT(*) AS c FROM jours_travail WHERE date >= ? AND date <= ? AND heures > 0").get(debut, fin);
+    return r.c || 1; // au moins 1 si période couverte mais tous fériés → 1 pour garder cohérence solde
+  }
   let count = 0;
   const cur = new Date(d1);
   while (cur <= d2) {
@@ -123,8 +128,14 @@ function datesEntre(debut, fin) {
 }
 function syncRmaCodes(arret, code) {
   const jours = datesEntre(arret.date_debut, arret.date_fin);
+  const legalSet = new Set(db.prepare("SELECT date FROM jours_travail WHERE date >= ? AND date <= ? AND heures > 0").all(arret.date_debut, arret.date_fin).map(r=>r.date));
+  const hasCal = legalSet.size > 0 || db.prepare('SELECT 1 FROM jours_travail WHERE date >= ? AND date <= ? LIMIT 1').get(arret.date_debut, arret.date_fin);
   const ins = db.prepare('INSERT INTO codes_importes (employe_id, matricule, date, code) VALUES (?,?,?,?) ON CONFLICT(employe_id, date, code) DO NOTHING');
-  for (const j of jours) ins.run(arret.employe_id, arret.matricule, j, code);
+  for (const j of jours) {
+    const ouvrable = hasCal ? legalSet.has(j) : true;
+    if (!ouvrable) continue;
+    ins.run(arret.employe_id, arret.matricule, j, code);
+  }
 }
 function clearRmaCodes(arret, code) {
   db.prepare('DELETE FROM codes_importes WHERE employe_id = ? AND date >= ? AND date <= ? AND code = ?').run(arret.employe_id, arret.date_debut, arret.date_fin, code);

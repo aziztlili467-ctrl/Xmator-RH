@@ -33,6 +33,7 @@ app.use('/api/maintenance', requireRole('super_admin'), require('./routes/mainte
 app.use('/api/import', requireRole('super_admin'), require('./routes/import'));
 app.use('/api/calendrier', requireRole('super_admin'), require('./routes/calendrier'));
 app.use('/api/codes-paie', requireRole('super_admin'), require('./routes/codes-paie'));
+app.use('/api/grille-salaire', requireRole('super_admin'), require('./routes/grille-salaire'));
 
 // Workflow congés / arrêts : écritures et décisions selon les permissions du modérateur
 app.use('/api/demandes-conge', requireModule('demandes'), require('./routes/demandes-conge'));

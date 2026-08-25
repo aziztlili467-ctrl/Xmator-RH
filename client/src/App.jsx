@@ -24,6 +24,7 @@ const AjoutSoldeMaladie = lazy(() => import('./pages/AjoutSoldeMaladie'));
 const JournalMaladie = lazy(() => import('./pages/JournalMaladie'));
 const StatsJournal = lazy(() => import('./pages/StatsJournal'));
 const ParametresCodification = lazy(() => import('./pages/ParametresCodification'));
+const GrilleSalaire = lazy(() => import('./pages/GrilleSalaire'));
 const JournalRMA = lazy(() => import('./pages/JournalRMA'));
 const NotificationAbsences = lazy(() => import('./pages/NotificationAbsences'));
 const Maintenance = lazy(() => import('./pages/Maintenance'));
@@ -108,6 +109,7 @@ function AppRoutes() {
         <Route path="/journal" element={<Journal />} />
         <Route path="/stats-journal" element={<StatsJournal />} />
         <Route path="/parametres-codification" element={<ParametresCodification />} />
+        <Route path="/grille-salaire" element={<GrilleSalaire />} />
         <Route path="/journal-rma" element={<JournalRMA />} />
         <Route path="/notification-absences" element={<NotificationAbsences />} />
         <Route path="/categories" element={<Categories />} />
