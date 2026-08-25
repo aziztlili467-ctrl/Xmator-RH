@@ -100,6 +100,26 @@ export default function Maintenance() {
     finally { setBusy(false); }
   };
 
+  const resetDb = async () => {
+    const ok = window.confirm(
+      'Réinitialiser toutes les bases DB obsolètes ?\n\n' +
+      'Cette action supprime définitivement :\n' +
+      '• Toutes les sauvegardes dans data/backups/ (.db, .db-shm, .db-wal, .db-journal)\n' +
+      '• Tout fichier .db orphelin dans data/ (hors la base active)\n' +
+      '• server/amicale.db (obsolète)\n\n' +
+      'La base ACTIVE « data/amicale.db » n\'est PAS touchée.\n\n' +
+      'Cette action est IRRÉVERSIBLE. Confirmez ?'
+    );
+    if (!ok) return;
+    setBusy(true); setError(''); setMsg('');
+    try {
+      const r = await api.maintenance.resetDb();
+      setMsg(r.message || `${r.supprimees} fichier(s) supprimé(s) — ${r.tailleMo} Mo récupérés.`);
+      loadBackups();
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  };
+
   const restaurerListe = async (nom) => {
     const ok = window.confirm(`Restaurer depuis « ${nom} » ?\n\nATTENTION : toutes les données actuelles seront REMPLACÉES par le contenu de cette sauvegarde.`);
     if (!ok) return;
@@ -255,6 +275,25 @@ export default function Maintenance() {
         <p className="mt-3 text-xs text-amber-600">
           ⚠️ La restauration REMPLACE toutes les données actuelles de toutes les rubriques (employés, soldes, demandes, arrêts, comptes, présences &amp; pointages, horaires, calendrier, journal d'activité, photos) par le contenu du fichier.
         </p>
+      </div>
+
+      {/* Nettoyage des bases DB obsolètes */}
+      <div className="card border-amber-200 p-6">
+        <h3 className="mb-1 text-sm font-bold uppercase tracking-wide text-amber-600">Réinitialiser les Bases DB</h3>
+        <p className="mb-3 text-xs text-slate-400">
+          Supprime <b>toutes les sauvegardes obsolètes</b> du dossier <span className="font-mono">data/backups/</span> ainsi que tout fichier <span className="font-mono">.db</span> orphelin trouvé sur le serveur. La base active « <span className="font-mono">amicale.db</span> » n'est <b>jamais</b> touchée. Cette action permet de libérer de l'espace disque et d'accélérer le SaaS quand de nombreuses sauvegardes s'accumulent.
+        </p>
+        <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-200">
+          ⚠️ <b>Irréversible :</b> toutes les sauvegardes seront supprimées définitivement. Créez une sauvegarde sur votre PC avant de confirmer si vous souhaitez en conserver une copie.
+        </p>
+        <button
+          onClick={resetDb}
+          disabled={busy}
+          className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <span className="text-amber-600">🗑️</span>
+          {busy ? 'Nettoyage en cours…' : 'Réinitialiser les Bases DB (supprimer les fichiers obsolètes)'}
+        </button>
       </div>
 
       {/* Réinitialisation */}

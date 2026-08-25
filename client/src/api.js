@@ -315,6 +315,7 @@ export const api = {
     restaurerDepuisSauvegarde: (nom) => request(`/maintenance/restaurer/${encodeURIComponent(nom)}`, { method: 'POST' }),
     backupSupprimerAncienne: (nom) => request(`/maintenance/backup/${encodeURIComponent(nom)}`, { method: 'DELETE' }),
     backupSupprimerToutes: () => request('/maintenance/backups', { method: 'DELETE' }),
+    resetDb: () => request('/maintenance/reset-db', { method: 'DELETE' }),
     backupTelecharger: async (nom) => {
       const token = getToken();
       const res = await fetch(BASE + `/maintenance/backups/${encodeURIComponent(nom)}`, {

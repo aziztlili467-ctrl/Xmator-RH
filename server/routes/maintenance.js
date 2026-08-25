@@ -391,4 +391,65 @@ router.post('/reset/journal', async (req, res) => {
   res.json({ ok: true, message: `Journal des statistiques vidé (${r.mouvements} mouvement(s), ${r.demandes_conge} demande(s), ${r.arrets_maladie} arrêt(s) supprimés). Snapshot de sécurité créé.` });
 });
 
+// ---- Réinitialiser les bases DB obsolètes ----
+// Supprime TOUTES les sauvegardes .db du dossier backups/ (+ fichiers .db-shm, .db-wal, .db-journal
+// associés) ainsi que tout fichier .db obsolète trouvé ailleurs (ex. server/amicale.db).
+// La base ACTIVE (data/amicale.db) et ses WAL sont JAMAIS touchés.
+router.delete('/reset-db', (req, res) => {
+  const ACTIVE_DB = path.resolve(__dirname, '..', '..', 'data', 'amicale.db');
+
+  const extensionsDB = ['.db', '.db-shm', '.db-wal', '.db-journal'];
+  let supprimees = 0;
+  let tailleTotale = 0;
+  const fichiers = [];
+
+  // 1) Parcourir data/backups/ — tout y est supprimible
+  if (fs.existsSync(BACKUP_DIR)) {
+    for (const f of fs.readdirSync(BACKUP_DIR)) {
+      if (extensionsDB.some((ext) => f.toLowerCase().endsWith(ext))) {
+        const chemin = path.join(BACKUP_DIR, f);
+        const st = fs.statSync(chemin);
+        tailleTotale += st.size;
+        fichiers.push({ nom: f, taille: st.size });
+        try { fs.unlinkSync(chemin); supprimees++; } catch {}
+      }
+    }
+  }
+
+  // 2) Chercher des .db orphelins à la racine data/ (hors amicale.db actif)
+  if (fs.existsSync(path.join(__dirname, '..', '..', 'data'))) {
+    for (const f of fs.readdirSync(path.join(__dirname, '..', '..', 'data'))) {
+      if (extensionsDB.some((ext) => f.toLowerCase().endsWith(ext))) {
+        const chemin = path.resolve(__dirname, '..', '..', 'data', f);
+        if (chemin === ACTIVE_DB) continue; // ne JAMAIS toucher à la base active
+        if (chemin === ACTIVE_DB + '-shm' || chemin === ACTIVE_DB + '-wal') continue;
+        if (chemin === ACTIVE_DB + '-journal') continue;
+        const st = fs.statSync(chemin);
+        tailleTotale += st.size;
+        fichiers.push({ nom: f, taille: st.size });
+        try { fs.unlinkSync(chemin); supprimees++; } catch {}
+      }
+    }
+  }
+
+  // 3) Chercher server/amicale.db (obsolète, 0 octet selon les notes techniques)
+  const serverDb = path.join(__dirname, '..', 'amicale.db');
+  if (fs.existsSync(serverDb)) {
+    const st = fs.statSync(serverDb);
+    tailleTotale += st.size;
+    fichiers.push({ nom: 'server/amicale.db', taille: st.size });
+    try { fs.unlinkSync(serverDb); supprimees++; } catch {}
+  }
+
+  const tailleMo = (tailleTotale / (1024 * 1024)).toFixed(2);
+  res.json({
+    ok: true,
+    supprimees,
+    tailleOctets: tailleTotale,
+    tailleMo,
+    fichiers,
+    message: `${supprimees} fichier(s) obsolète(s) supprimé(s) — ${tailleMo} Mo récupérés. La base active « amicale.db » est conservée.`,
+  });
+});
+
 module.exports = router;
