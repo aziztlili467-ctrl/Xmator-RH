@@ -8,28 +8,28 @@ const PRINT_STYLE_ID = 'journal-rma-print-css';
 
 const PRINT_CSS = `
 @media print {
-  @page { size: landscape; margin: 6mm 4mm 6mm 4mm; }
+  @page { size: landscape; margin: 5mm 4mm 5mm 4mm; }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-  body > *:not(#print-rma-root) { display: none !important; }
-  #print-rma-root { position: static !important; width: auto !important; height: auto !important; overflow: visible !important; background: #fff !important; }
-  .rma-print-container { display: block !important; }
-  .rma-screen-only { display: none !important; }
-  .rma-print-header { display: block !important; margin-bottom: 4px; }
-  .rma-print-header h2 { font-size: 11px; margin: 0 0 2px 0; }
-  .rma-print-header p { font-size: 8px; margin: 0; color: #666; }
-  table.rma-print-table { width: 100% !important; border-collapse: collapse !important; font-size: 7px !important; }
-  table.rma-print-table th,
-  table.rma-print-table td { padding: 1px 2px !important; border: 0.5px solid #999 !important; line-height: 1.2 !important; white-space: nowrap !important; }
-  table.rma-print-table thead th { font-size: 6.5px !important; padding: 1px 2px !important; background: #f1f5f9 !important; border-bottom: 1px solid #333 !important; }
-  table.rma-print-table tbody td { font-size: 6.5px !important; }
-  table.rma-print-table tbody tr { border-bottom: 0.3px solid #ccc !important; }
-  table.rma-print-table tfoot td { border-top: 1px solid #333 !important; font-size: 7px !important; padding: 1px 2px !important; }
-  .rma-print-badge { display: inline-block; padding: 0 1px !important; font-size: 6px !important; border-radius: 2px !important; line-height: 1.3 !important; }
-  .rma-print-total { font-weight: 700; text-align: center; }
-  .rma-print-footer { display: block !important; margin-top: 6px; font-size: 7px; color: #666; text-align: right; }
+  body.printing-rma > * { display: none !important; }
+  body.printing-rma #root { display: block !important; }
+  body.printing-rma #root > * { display: none !important; }
+  body.printing-rma .rma-print-container { display: block !important; position: static !important; width: 100% !important; height: auto !important; overflow: visible !important; background: #fff !important; padding: 0 !important; margin: 0 !important; }
+  body.printing-rma .rma-print-header { display: block !important; margin-bottom: 3px; }
+  body.printing-rma .rma-print-header h2 { font-size: 10px; margin: 0 0 1px 0; font-weight: 700; }
+  body.printing-rma .rma-print-header p { font-size: 7px; margin: 0; color: #555; }
+  body.printing-rma table.rma-print-table { width: 100% !important; border-collapse: collapse !important; font-size: 6.5px !important; table-layout: fixed !important; }
+  body.printing-rma table.rma-print-table th,
+  body.printing-rma table.rma-print-table td { padding: 0.5px 1.5px !important; border: 0.4px solid #888 !important; line-height: 1.15 !important; white-space: nowrap !important; overflow: hidden !important; }
+  body.printing-rma table.rma-print-table th { font-size: 6px !important; padding: 0.5px 1.5px !important; background: #eef2f7 !important; border-bottom: 0.8px solid #333 !important; font-weight: 700 !important; text-transform: uppercase !important; letter-spacing: 0 !important; }
+  body.printing-rma table.rma-print-table tbody td { font-size: 6px !important; }
+  body.printing-rma table.rma-print-table tbody tr { border-bottom: 0.3px solid #ccc !important; }
+  body.printing-rma table.rma-print-table tfoot td { border-top: 0.8px solid #333 !important; font-size: 6.5px !important; padding: 0.5px 1.5px !important; font-weight: 700 !important; background: #f8fafc !important; }
+  body.printing-rma .rma-print-badge { display: inline-block; padding: 0 1px !important; font-size: 5.5px !important; border-radius: 1px !important; line-height: 1.2 !important; }
+  body.printing-rma .rma-print-total { font-weight: 700; text-align: center; }
+  body.printing-rma .rma-print-footer { display: block !important; margin-top: 3px; font-size: 6px; color: #888; text-align: right; }
 }
 @media screen {
-  .rma-print-container, .rma-print-header, .rma-print-footer { display: none !important; }
+  .rma-print-container { display: none !important; }
 }
 `;
 
@@ -77,6 +77,10 @@ export default function JournalRMA() {
   const handlePrint = () => {
     injectPrintCSS();
     if (!data || !data.employes || data.employes.length === 0) return;
+    document.body.classList.add('printing-rma');
+    const cleanup = () => { document.body.classList.remove('printing-rma'); };
+    window.addEventListener('afterprint', cleanup, { once: true });
+    setTimeout(cleanup, 2000);
     window.print();
   };
 
