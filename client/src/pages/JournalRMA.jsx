@@ -2,7 +2,36 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { today, debutMois, fmtDate } from '../utils';
-import { IconUpload, IconTrash } from '../components/icons';
+import { IconUpload, IconTrash, IconPrinter } from '../components/icons';
+
+const PRINT_STYLE_ID = 'journal-rma-print-css';
+
+const PRINT_CSS = `
+@media print {
+  @page { size: landscape; margin: 6mm 4mm 6mm 4mm; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+  body > *:not(#print-rma-root) { display: none !important; }
+  #print-rma-root { position: static !important; width: auto !important; height: auto !important; overflow: visible !important; background: #fff !important; }
+  .rma-print-container { display: block !important; }
+  .rma-screen-only { display: none !important; }
+  .rma-print-header { display: block !important; margin-bottom: 4px; }
+  .rma-print-header h2 { font-size: 11px; margin: 0 0 2px 0; }
+  .rma-print-header p { font-size: 8px; margin: 0; color: #666; }
+  table.rma-print-table { width: 100% !important; border-collapse: collapse !important; font-size: 7px !important; }
+  table.rma-print-table th,
+  table.rma-print-table td { padding: 1px 2px !important; border: 0.5px solid #999 !important; line-height: 1.2 !important; white-space: nowrap !important; }
+  table.rma-print-table thead th { font-size: 6.5px !important; padding: 1px 2px !important; background: #f1f5f9 !important; border-bottom: 1px solid #333 !important; }
+  table.rma-print-table tbody td { font-size: 6.5px !important; }
+  table.rma-print-table tbody tr { border-bottom: 0.3px solid #ccc !important; }
+  table.rma-print-table tfoot td { border-top: 1px solid #333 !important; font-size: 7px !important; padding: 1px 2px !important; }
+  .rma-print-badge { display: inline-block; padding: 0 1px !important; font-size: 6px !important; border-radius: 2px !important; line-height: 1.3 !important; }
+  .rma-print-total { font-weight: 700; text-align: center; }
+  .rma-print-footer { display: block !important; margin-top: 6px; font-size: 7px; color: #666; text-align: right; }
+}
+@media screen {
+  .rma-print-container, .rma-print-header, .rma-print-footer { display: none !important; }
+}
+`;
 
 const isWeekend = (iso) => {
   const wd = new Date(iso + 'T00:00:00').getDay();
@@ -32,6 +61,24 @@ export default function JournalRMA() {
   // --- Suppression des données de la période (super_admin) ---
   const [suppressionOuverte, setSuppressionOuverte] = useState(false);
   const [suppression, setSuppression] = useState(false);
+
+  const printRef = useRef(null);
+
+  const injectPrintCSS = () => {
+    let el = document.getElementById(PRINT_STYLE_ID);
+    if (!el) {
+      el = document.createElement('style');
+      el.id = PRINT_STYLE_ID;
+      el.textContent = PRINT_CSS;
+      document.head.appendChild(el);
+    }
+  };
+
+  const handlePrint = () => {
+    injectPrintCSS();
+    if (!data || !data.employes || data.employes.length === 0) return;
+    window.print();
+  };
 
   // Métadonnées des codes (couleur/libellé) renvoyées par l'API — visibles par tous les rôles
   const metaCodes = {};
@@ -150,6 +197,15 @@ export default function JournalRMA() {
               </span>
             ))}
           </p>
+        )}
+        {data && codesUtilises.length > 0 && (
+          <button
+            className="rma-screen-only inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            onClick={handlePrint}
+            title="Imprimer / Exporter PDF"
+          >
+            <IconPrinter /> Imprimer PDF
+          </button>
         )}
       </div>
 
@@ -335,6 +391,68 @@ export default function JournalRMA() {
                 <IconTrash /> {suppression ? 'Suppression…' : 'Supprimer'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {data && codesUtilises.length > 0 && (
+        <div className="rma-print-container" ref={printRef} id="print-rma-root">
+          <div className="rma-print-header">
+            <h2>Journal RMA — Période : {fmtDate(debut)} → {fmtDate(fin)}</h2>
+            <p>
+              {(data.codes || []).map((c) => `${c.code}=${c.libelle}`).join(' · ')}
+              {' — '}Total : {data.totaux.total} jours codifiés
+            </p>
+          </div>
+          <table className="rma-print-table">
+            <thead>
+              <tr>
+                <th>Mat.</th>
+                <th>Nom / Prénom</th>
+                {data.dates.map((iso) => (
+                  <th key={iso} style={{ textAlign: 'center' }}>{fmtDateShort(iso)}</th>
+                ))}
+                <th style={{ textAlign: 'center' }}>Tot.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.employes.filter((e) => data.jours[e.id]).map((e) => (
+                <tr key={e.id}>
+                  <td>{e.matricule}</td>
+                  <td>{e.nom} {e.prenom}</td>
+                  {data.dates.map((iso) => {
+                    const cellule = data.jours[e.id] ? data.jours[e.id][iso] : null;
+                    const isDemiCA = !!(data.joursDemi && data.joursDemi[e.id] && data.joursDemi[e.id][iso]);
+                    const premier = String(cellule || '').split('/')[0];
+                    const meta = metaCodes[premier];
+                    const bg = isDemiCA ? '#00000014' : (meta?.couleur ? meta.couleur + '1f' : 'transparent');
+                    const fg = isDemiCA ? '#000' : (meta?.couleur || '#000');
+                    return (
+                      <td key={iso} style={{ textAlign: 'center' }}>
+                        {cellule ? (
+                          <span className="rma-print-badge" style={{ backgroundColor: bg, color: fg }}>
+                            {cellule}
+                          </span>
+                        ) : ''}
+                      </td>
+                    );
+                  })}
+                  <td className="rma-print-total">{totalJours(e.id)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colSpan={2}>Total employés</td>
+                {data.dates.map((iso) => (
+                  <td key={iso} className="rma-print-total">{countDate(iso)}</td>
+                ))}
+                <td className="rma-print-total">{data.totaux.total}</td>
+              </tr>
+            </tfoot>
+          </table>
+          <div className="rma-print-footer">
+            Imprimé le {new Date().toLocaleDateString('fr-FR')} — Amicale du Personnel BCT
           </div>
         </div>
       )}
