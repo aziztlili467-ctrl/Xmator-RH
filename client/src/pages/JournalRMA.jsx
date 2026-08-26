@@ -94,7 +94,7 @@ export default function JournalRMA() {
 <style>
 @page{size:landscape;margin:5mm 4mm 5mm 4mm}
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,Helvetica,sans-serif;background:#fff;padding:0;margin:0}
+body{font-family:Arial,Helvetica,sans-serif;background:#fff;padding:10px;margin:0}
 h2{font-size:10px;font-weight:700;margin:0 0 1px}
 p.sub{font-size:7px;color:#555;margin:0 0 3px}
 .legend{margin-bottom:3px}
@@ -105,7 +105,9 @@ tr:nth-child(even){background:#fafbfc}
 .tot{font-weight:700;text-align:center}
 tfoot td{border-top:0.8px solid #333;background:#f8fafc;font-weight:700}
 .footer{margin-top:3px;font-size:6px;color:#888;text-align:right}
+@media print{body{padding:0;margin:0}#printBtn{display:none!important}}
 </style></head><body>
+<div id="top"><button id="printBtn" onclick="window.print()" style="display:block;margin:0 0 6px;padding:6px 16px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid #2563eb;background:#2563eb;color:#fff;border-radius:6px">Imprimer / Enregistrer en PDF</button></div>
 <h2>Journal RMA — Période : ${fmtDate(debut)} → ${fmtDate(fin)}</h2>
 <p class="sub">${legends} — Total : ${data.totaux.total} jours codifiés</p>
 <table><thead><tr><th style="text-align:left">Mat.</th><th style="text-align:left">Nom / Prénom</th>${dateHeaders}<th style="text-align:center">Tot.</th></tr></thead><tbody>${rows}</tbody>
@@ -116,7 +118,6 @@ tfoot td{border-top:0.8px solid #333;background:#f8fafc;font-weight:700}
     if (!w) { alert('Popup bloqué — autorisez les popups pour ce site.'); return; }
     w.document.write(html);
     w.document.close();
-    setTimeout(() => { w.print(); }, 400);
   };
 
   const lireFichier = (e) => {
