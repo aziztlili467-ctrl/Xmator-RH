@@ -4,35 +4,6 @@ import { useAuth } from '../AuthContext';
 import { today, debutMois, fmtDate } from '../utils';
 import { IconUpload, IconTrash, IconPrinter } from '../components/icons';
 
-const PRINT_STYLE_ID = 'journal-rma-print-css';
-
-const PRINT_CSS = `
-@media print {
-  @page { size: landscape; margin: 5mm 4mm 5mm 4mm; }
-  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-  body.printing-rma > * { display: none !important; }
-  body.printing-rma #root { display: block !important; }
-  body.printing-rma #root > * { display: none !important; }
-  body.printing-rma .rma-print-container { display: block !important; position: static !important; width: 100% !important; height: auto !important; overflow: visible !important; background: #fff !important; padding: 0 !important; margin: 0 !important; }
-  body.printing-rma .rma-print-header { display: block !important; margin-bottom: 3px; }
-  body.printing-rma .rma-print-header h2 { font-size: 10px; margin: 0 0 1px 0; font-weight: 700; }
-  body.printing-rma .rma-print-header p { font-size: 7px; margin: 0; color: #555; }
-  body.printing-rma table.rma-print-table { width: 100% !important; border-collapse: collapse !important; font-size: 6.5px !important; table-layout: fixed !important; }
-  body.printing-rma table.rma-print-table th,
-  body.printing-rma table.rma-print-table td { padding: 0.5px 1.5px !important; border: 0.4px solid #888 !important; line-height: 1.15 !important; white-space: nowrap !important; overflow: hidden !important; }
-  body.printing-rma table.rma-print-table th { font-size: 6px !important; padding: 0.5px 1.5px !important; background: #eef2f7 !important; border-bottom: 0.8px solid #333 !important; font-weight: 700 !important; text-transform: uppercase !important; letter-spacing: 0 !important; }
-  body.printing-rma table.rma-print-table tbody td { font-size: 6px !important; }
-  body.printing-rma table.rma-print-table tbody tr { border-bottom: 0.3px solid #ccc !important; }
-  body.printing-rma table.rma-print-table tfoot td { border-top: 0.8px solid #333 !important; font-size: 6.5px !important; padding: 0.5px 1.5px !important; font-weight: 700 !important; background: #f8fafc !important; }
-  body.printing-rma .rma-print-badge { display: inline-block; padding: 0 1px !important; font-size: 5.5px !important; border-radius: 1px !important; line-height: 1.2 !important; }
-  body.printing-rma .rma-print-total { font-weight: 700; text-align: center; }
-  body.printing-rma .rma-print-footer { display: block !important; margin-top: 3px; font-size: 6px; color: #888; text-align: right; }
-}
-@media screen {
-  .rma-print-container { display: none !important; }
-}
-`;
-
 const isWeekend = (iso) => {
   const wd = new Date(iso + 'T00:00:00').getDay();
   return wd === 0 || wd === 6;
@@ -61,28 +32,6 @@ export default function JournalRMA() {
   // --- Suppression des données de la période (super_admin) ---
   const [suppressionOuverte, setSuppressionOuverte] = useState(false);
   const [suppression, setSuppression] = useState(false);
-
-  const printRef = useRef(null);
-
-  const injectPrintCSS = () => {
-    let el = document.getElementById(PRINT_STYLE_ID);
-    if (!el) {
-      el = document.createElement('style');
-      el.id = PRINT_STYLE_ID;
-      el.textContent = PRINT_CSS;
-      document.head.appendChild(el);
-    }
-  };
-
-  const handlePrint = () => {
-    injectPrintCSS();
-    if (!data || !data.employes || data.employes.length === 0) return;
-    document.body.classList.add('printing-rma');
-    const cleanup = () => { document.body.classList.remove('printing-rma'); };
-    window.addEventListener('afterprint', cleanup, { once: true });
-    setTimeout(cleanup, 2000);
-    window.print();
-  };
 
   // Métadonnées des codes (couleur/libellé) renvoyées par l'API — visibles par tous les rôles
   const metaCodes = {};
@@ -117,6 +66,58 @@ export default function JournalRMA() {
 
   const changeDebut = (v) => { setDebut(v); load(v, fin); };
   const changeFin = (v) => { setFin(v); load(debut, v); };
+
+  const handlePrint = () => {
+    if (!data || !data.employes || data.employes.length === 0) return;
+    const empFiltered = data.employes.filter((e) => data.jours[e.id]);
+    const legends = (data.codes || []).map((c) => `<span style="display:inline-block;margin-right:6px;font-size:8px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${c.couleur || '#666'};vertical-align:middle;margin-right:2px"></span>${c.code} = ${c.libelle}</span>`).join('');
+    const dateHeaders = data.dates.map((iso) => {
+      const we = isWeekend(iso);
+      return `<th style="padding:1px 2px;text-align:center;font-size:6px;background:${we ? '#e2e8f0' : '#eef2f7'};border:0.4px solid #888;white-space:nowrap">${fmtDateShort(iso)}</th>`;
+    }).join('');
+    const rows = empFiltered.map((e) => {
+      const cells = data.dates.map((iso) => {
+        const cellule = data.jours[e.id] ? data.jours[e.id][iso] : null;
+        const isDemiCA = !!(data.joursDemi && data.joursDemi[e.id] && data.joursDemi[e.id][iso]);
+        const premier = String(cellule || '').split('/')[0];
+        const meta = metaCodes[premier];
+        const bg = isDemiCA ? '#00000014' : (meta?.couleur ? meta.couleur + '1f' : 'transparent');
+        const fg = isDemiCA ? '#000' : (meta?.couleur || '#000');
+        const we = isWeekend(iso);
+        return `<td style="padding:0.5px 1.5px;text-align:center;border:0.4px solid #888;font-size:5.5px;background:${we ? '#f1f5f9' : 'transparent'}">${cellule ? `<span style="display:inline-block;padding:0 1px;background:${bg};color:${fg};border-radius:1px;font-size:5.5px;font-weight:700">${cellule}</span>` : ''}</td>`;
+      }).join('');
+      return `<tr><td style="padding:0.5px 1.5px;border:0.4px solid #888;font-size:5.5px;white-space:nowrap">${e.matricule}</td><td style="padding:0.5px 1.5px;border:0.4px solid #888;font-size:5.5px;white-space:nowrap">${e.nom} ${e.prenom}</td>${cells}<td style="padding:0.5px 1.5px;text-align:center;border:0.4px solid #888;font-size:6px;font-weight:700">${totalJours(e.id)}</td></tr>`;
+    }).join('');
+    const footerCells = data.dates.map((iso) => `<td style="padding:0.5px 1.5px;text-align:center;border:0.4px solid #888;font-size:6px;font-weight:700;background:#f8fafc">${countDate(iso)}</td>`).join('');
+    const now = new Date().toLocaleDateString('fr-FR');
+    const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Journal RMA ${fmtDate(debut)}-${fmtDate(fin)}</title>
+<style>
+@page{size:landscape;margin:5mm 4mm 5mm 4mm}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,Helvetica,sans-serif;background:#fff;padding:0;margin:0}
+h2{font-size:10px;font-weight:700;margin:0 0 1px}
+p.sub{font-size:7px;color:#555;margin:0 0 3px}
+.legend{margin-bottom:3px}
+table{width:100%;border-collapse:collapse;font-size:5.5px;table-layout:auto}
+th{padding:1px 2px;background:#eef2f7;border:0.4px solid #888;font-size:6px;font-weight:700;text-transform:uppercase;text-align:center;white-space:nowrap}
+td{padding:0.5px 1.5px;border:0.4px solid #888;white-space:nowrap}
+tr:nth-child(even){background:#fafbfc}
+.tot{font-weight:700;text-align:center}
+tfoot td{border-top:0.8px solid #333;background:#f8fafc;font-weight:700}
+.footer{margin-top:3px;font-size:6px;color:#888;text-align:right}
+</style></head><body>
+<h2>Journal RMA — Période : ${fmtDate(debut)} → ${fmtDate(fin)}</h2>
+<p class="sub">${legends} — Total : ${data.totaux.total} jours codifiés</p>
+<table><thead><tr><th style="text-align:left">Mat.</th><th style="text-align:left">Nom / Prénom</th>${dateHeaders}<th style="text-align:center">Tot.</th></tr></thead><tbody>${rows}</tbody>
+<tfoot><tr><td colspan="2">Total employés</td>${footerCells}<td class="tot">${data.totaux.total}</td></tr></tfoot></table>
+<div class="footer">Imprimé le ${now} — Amicale du Personnel BCT</div>
+</body></html>`;
+    const w = window.open('', '_blank', 'width=1200,height=800');
+    if (!w) { alert('Popup bloqué — autorisez les popups pour ce site.'); return; }
+    w.document.write(html);
+    w.document.close();
+    setTimeout(() => { w.print(); }, 400);
+  };
 
   const lireFichier = (e) => {
     const f = e.target.files && e.target.files[0];
@@ -395,68 +396,6 @@ export default function JournalRMA() {
                 <IconTrash /> {suppression ? 'Suppression…' : 'Supprimer'}
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {data && codesUtilises.length > 0 && (
-        <div className="rma-print-container" ref={printRef} id="print-rma-root">
-          <div className="rma-print-header">
-            <h2>Journal RMA — Période : {fmtDate(debut)} → {fmtDate(fin)}</h2>
-            <p>
-              {(data.codes || []).map((c) => `${c.code}=${c.libelle}`).join(' · ')}
-              {' — '}Total : {data.totaux.total} jours codifiés
-            </p>
-          </div>
-          <table className="rma-print-table">
-            <thead>
-              <tr>
-                <th>Mat.</th>
-                <th>Nom / Prénom</th>
-                {data.dates.map((iso) => (
-                  <th key={iso} style={{ textAlign: 'center' }}>{fmtDateShort(iso)}</th>
-                ))}
-                <th style={{ textAlign: 'center' }}>Tot.</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.employes.filter((e) => data.jours[e.id]).map((e) => (
-                <tr key={e.id}>
-                  <td>{e.matricule}</td>
-                  <td>{e.nom} {e.prenom}</td>
-                  {data.dates.map((iso) => {
-                    const cellule = data.jours[e.id] ? data.jours[e.id][iso] : null;
-                    const isDemiCA = !!(data.joursDemi && data.joursDemi[e.id] && data.joursDemi[e.id][iso]);
-                    const premier = String(cellule || '').split('/')[0];
-                    const meta = metaCodes[premier];
-                    const bg = isDemiCA ? '#00000014' : (meta?.couleur ? meta.couleur + '1f' : 'transparent');
-                    const fg = isDemiCA ? '#000' : (meta?.couleur || '#000');
-                    return (
-                      <td key={iso} style={{ textAlign: 'center' }}>
-                        {cellule ? (
-                          <span className="rma-print-badge" style={{ backgroundColor: bg, color: fg }}>
-                            {cellule}
-                          </span>
-                        ) : ''}
-                      </td>
-                    );
-                  })}
-                  <td className="rma-print-total">{totalJours(e.id)}</td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colSpan={2}>Total employés</td>
-                {data.dates.map((iso) => (
-                  <td key={iso} className="rma-print-total">{countDate(iso)}</td>
-                ))}
-                <td className="rma-print-total">{data.totaux.total}</td>
-              </tr>
-            </tfoot>
-          </table>
-          <div className="rma-print-footer">
-            Imprimé le {new Date().toLocaleDateString('fr-FR')} — Amicale du Personnel BCT
           </div>
         </div>
       )}
