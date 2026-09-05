@@ -8,8 +8,8 @@ import { IconEdit, IconTrash, IconPlus } from '../components/icons';
 
 function Modal({ title, children, onClose, danger }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={onClose}>
-      <div className="card max-h-[90vh] w-full max-w-lg overflow-auto p-6" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-slate-900/40 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:p-4" onMouseDown={onClose}>
+      <div className="card modal-shell w-full max-w-lg p-4 sm:p-6" onMouseDown={(e) => e.stopPropagation()}>
         <div className={`mb-4 flex items-center justify-between ${danger ? 'text-red-700' : 'text-slate-900'}`}>
           <h3 className="text-base font-bold">{title}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
@@ -320,7 +320,7 @@ export default function EditerSoldeConge() {
                           {nonDeduit && <span className="ml-1 text-[10px] font-normal" title="Jour férié / week-end hors calendrier de travail ou déjà couvert par une demande de congé acceptée : non déduit du solde, mais bien visible dans le journal RMA.">{fmtJours(m.jours)}j non déduit</span>}
                         </td>
                         <td className="px-5 py-3 text-end font-mono text-slate-700">{fmtJours(m.solde_apres)} j</td>
-                        <td className="max-w-[220px] truncate px-5 py-3 text-slate-500" title={m.motif}>{m.motif || '—'}</td>
+                        <td className="max-w-full sm:w-[220px] truncate px-5 py-3 text-slate-500" title={m.motif}>{m.motif || '—'}</td>
                         <td className="px-5 py-3">
                           <div className="flex items-center justify-end gap-2">
                             {m.source === 'mouvement' ? (

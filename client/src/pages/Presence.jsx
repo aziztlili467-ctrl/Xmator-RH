@@ -732,8 +732,8 @@ export default function Presence() {
       )}
 
       {suppressionOuverte && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-slate-900/50 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:p-4">
+          <div className="modal-shell w-full max-w-md rounded-xl bg-white p-4 shadow-xl sm:p-6">
             <h3 className="text-base font-bold text-slate-900">Supprimer les pointages ?</h3>
             <p className="mt-2 text-sm text-slate-600">
               Cette action supprimera définitivement les pointages{gDebut && <> du <span className="font-mono">{fmtDate(gDebut)}</span></>}
@@ -758,8 +758,8 @@ export default function Presence() {
       )}
 
       {edit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-slate-900/50 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:p-4">
+          <div className="modal-shell w-full max-w-lg rounded-xl bg-white p-4 shadow-xl sm:p-6">
             <h3 className="text-base font-bold text-slate-900">Corriger la ligne</h3>
             <p className="mt-1 text-sm text-slate-600">
               <span className="font-mono text-xs font-bold text-brand-600">{edit.matricule}</span> — {edit.nom} {edit.prenom} —{' '}

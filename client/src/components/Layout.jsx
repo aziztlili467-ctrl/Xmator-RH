@@ -197,6 +197,27 @@ export default function Layout() {
   useEffect(() => { if (activeGroupId) setSelectedGroup(activeGroupId); }, [activeGroupId]);
   useEffect(() => { setMenuOuvert(false); }, [location.pathname]);
 
+  // Tiroir mobile : bloque le défilement de la page en dessous et ferme sur Échap.
+  useEffect(() => {
+    if (!menuOuvert) return;
+    const overflowInitial = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const surEchap = (e) => { if (e.key === 'Escape') setMenuOuvert(false); };
+    window.addEventListener('keydown', surEchap);
+    return () => {
+      document.body.style.overflow = overflowInitial;
+      window.removeEventListener('keydown', surEchap);
+    };
+  }, [menuOuvert]);
+
+  // Referme automatiquement le tiroir au passage en affichage bureau (>= 1024px)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const surChangement = (e) => { if (e.matches) setMenuOuvert(false); };
+    mq.addEventListener('change', surChangement);
+    return () => mq.removeEventListener('change', surChangement);
+  }, []);
+
   useEffect(() => {
     if (!getToken()) return;
     const battement = setInterval(() => {
@@ -239,17 +260,30 @@ export default function Layout() {
       {menuOuvert && <div className="fixed inset-0 z-30 bg-black/40 backdrop-blur-[2px] lg:hidden" onClick={() => setMenuOuvert(false)} />}
 
       {/* Sidebar — couleur demandée #25447D */}
-      <aside className={`fixed inset-y-0 start-0 z-40 flex w-[72px] flex-col items-center gap-2 py-4 text-white transition-transform duration-200 ease-out lg:w-[290px] lg:items-stretch lg:gap-0 lg:py-0 xl:w-[290px] ${menuOuvert ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`} style={{ background: '#25447D', borderRight: `1px solid rgba(255,255,255,0.12)` }}>
-        <div className="hidden items-center gap-3 px-5 py-6 lg:flex">
+      <aside
+        id="menu-principal"
+        aria-label="Menu principal"
+        aria-hidden={!menuOuvert ? undefined : false}
+        className={`fixed inset-y-0 start-0 z-40 flex w-[min(84vw,300px)] max-w-[300px] flex-col items-stretch gap-0 overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom,0px)] pt-[env(safe-area-inset-top,0px)] text-white transition-transform duration-200 ease-out lg:w-[290px] lg:py-0 xl:w-[290px] ${menuOuvert ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'}`}
+        style={{ background: '#25447D', borderRight: `1px solid rgba(255,255,255,0.12)` }}
+      >
+        <div className="flex items-center gap-3 px-4 py-4 lg:px-5 lg:py-6">
           <div className="icon-badge shrink-0 text-white" style={{ background: 'var(--primary-600)' }}>A</div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-bold leading-tight text-white">Amicale du Personnel</p>
             <p className="truncate text-xs" style={{ color: 'var(--text-secondary)' }}>Banque Centrale — RH</p>
           </div>
+          <button
+            type="button"
+            onClick={() => setMenuOuvert(false)}
+            aria-label="Fermer le menu"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white/70 hover:bg-white/10 hover:text-white lg:hidden"
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+          </button>
         </div>
-        <div className="icon-badge flex h-10 w-10 items-center justify-center text-lg font-extrabold text-white lg:hidden" style={{ background: 'var(--primary-600)' }}>A</div>
 
-        <nav className="mt-2 flex flex-1 flex-col items-center gap-1.5 overflow-y-auto px-1.5 pb-4 lg:items-stretch lg:gap-1 lg:px-3 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.2)_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/20">
+        <nav className="mt-1 flex flex-1 flex-col items-stretch gap-1 overflow-y-auto px-2 pb-4 lg:gap-1 lg:px-3 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.2)_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/20">
           {groups.map((g) => {
             const isActive = selectedGroup === g.id;
             const GIcon = g.icon;
@@ -265,27 +299,33 @@ export default function Layout() {
                   handleGroupClick(g);
                 }}
                 title={g.label}
-                className={`group flex w-[56px] min-h-[56px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl px-1 py-2.5 text-center no-underline transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 lg:min-h-0 lg:w-auto lg:flex-row lg:gap-2.5 lg:rounded-lg lg:px-3 lg:py-2.5 lg:text-[13px] ${isActive ? 'shadow' : 'hover:translate-y-[-1px]'}`}
+                className={`group flex min-h-touch w-auto cursor-pointer flex-row items-center gap-2.5 rounded-lg px-3 py-2.5 text-start text-[13px] no-underline transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 lg:min-h-0 lg:py-2.5 ${isActive ? 'shadow' : 'hover:translate-y-[-1px]'}`}
                 style={isActive ? { background: 'var(--primary-50)', color: 'var(--primary-700)' } : { color: '#cbd5e1' }}
               >
                 <span className="icon-badge flex h-8 w-8 shrink-0 items-center justify-center border lg:h-9 lg:w-9" style={{ background: 'white', color: accent, borderColor: isActive ? accent : 'transparent', boxShadow: isActive ? 'var(--shadow-sm)' : 'none' }}>
                   <GIcon />
                 </span>
-                <span className="hidden flex-1 whitespace-normal break-words text-start text-[12.5px] font-semibold leading-[1.15] tracking-tight lg:block">{g.label}</span>
-                <span className="line-clamp-1 text-center leading-none lg:hidden">{g.label.split(' ')[0]}</span>
-                {g.items.length > 1 && <span className={`hidden rounded-full px-1.5 py-0.5 text-[10px] font-bold lg:ms-auto lg:block ${isActive ? 'bg-white text-slate-500' : 'bg-white/10 text-white/70'}`}>{g.items.length}</span>}
+                <span className="flex-1 whitespace-normal break-words text-start text-[12.5px] font-semibold leading-[1.15] tracking-tight">{g.label}</span>
+                {g.items.length > 1 && <span className={`ms-auto rounded-full px-1.5 py-0.5 text-[10px] font-bold ${isActive ? 'bg-white text-slate-500' : 'bg-white/10 text-white/70'}`}>{g.items.length}</span>}
               </a>
             );
           })}
         </nav>
-        <div className="hidden border-t border-white/10 px-5 py-4 text-xs lg:block" style={{ color: 'var(--text-secondary)' }}>Module congés — v1.1<br />Authentification par rôle · <span style={{ color: ROLE_ACCENT[role] }}>{ROLE_LABELS[role]}</span></div>
+        <div className="border-t border-white/10 px-5 py-4 text-xs" style={{ color: 'var(--text-secondary)' }}>Module congés — v1.1<br />Authentification par rôle · <span style={{ color: ROLE_ACCENT[role] }}>{ROLE_LABELS[role]}</span></div>
       </aside>
 
-      <div className="flex min-h-screen flex-1 flex-col ps-[72px] lg:ps-[290px] xl:ps-[290px]">
-        <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80">
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col ps-0 lg:ps-[290px] xl:ps-[290px]">
+        <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 pt-[env(safe-area-inset-top,0px)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
           <div className="flex items-center justify-between gap-3 px-3 py-2 sm:px-6 sm:py-3">
             <div className="flex min-w-0 items-center gap-2">
-              <button onClick={() => setMenuOuvert(true)} title="Ouvrir le menu" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden">
+              <button
+                onClick={() => setMenuOuvert(true)}
+                title="Ouvrir le menu"
+                aria-label="Ouvrir le menu"
+                aria-expanded={menuOuvert}
+                aria-controls="menu-principal"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 lg:hidden"
+              >
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
               </button>
               <div className="min-w-0">
@@ -301,14 +341,14 @@ export default function Layout() {
                   <p className="text-sm font-semibold leading-tight text-slate-800">{user?.login}</p>
                   <p className="text-xs text-slate-500">{ROLE_LABELS[role] || role}</p>
                 </div>
-                <button onClick={deconnexion} title="Se déconnecter" className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><IconLogout /></button>
+                <button onClick={deconnexion} title="Se déconnecter" aria-label="Se déconnecter" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"><IconLogout /></button>
               </div>
             </div>
           </div>
           {/* Sous-catégories — couleur demandée #8A210A */}
           {(subItems.length > 0 || subGroups.length > 0) && (
             <div className="border-t" style={{ background: '#8A210A', borderColor: '#7a1e09' }}>
-              <div className="flex flex-wrap items-center gap-2 px-2 py-2 sm:px-6">
+              <div className="flex items-center gap-2 overflow-x-auto px-2 py-2 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible sm:px-6 [&::-webkit-scrollbar]:hidden">
                 {subItems.length > 0 && (
                   <div className="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                     <span className="hidden shrink-0 text-[10px] font-bold uppercase tracking-widest text-white/70 sm:block">{activeGroup.label} :</span>
@@ -342,7 +382,7 @@ export default function Layout() {
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`transition-transform ${ficheOpen ? 'rotate-180' : ''}`}><path d="M6 9l6 6 6-6"/></svg>
                     </a>
                     {(ficheOpen) && (
-                      <div className="absolute start-0 top-full z-20 mt-1 flex min-w-[260px] flex-col gap-1 rounded-xl border border-white/20 bg-white p-1.5 shadow-xl">
+                      <div className="absolute start-0 top-full z-20 mt-1 flex w-[min(84vw,260px)] min-w-0 sm:min-w-[260px] flex-col gap-1 rounded-xl border border-white/20 bg-white p-1.5 shadow-xl">
                         {sg.items.map((it) => (
                           <NavLink key={it.to} to={it.to} end={it.end} onClick={() => setFicheOpen(false)} className={({ isActive }) => `flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition ${isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-700 hover:bg-slate-50'}`}>
                             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100" style={{ color: GROUP_ACCENT[activeGroup.id] || 'var(--primary-600)' }}><it.icon /></span>
@@ -357,7 +397,7 @@ export default function Layout() {
             </div>
           )}
         </header>
-        <main className="flex-1 px-3 py-4 sm:px-6 sm:py-6">
+        <main className="w-full min-w-0 max-w-full flex-1 overflow-x-hidden px-3 pb-24 pt-4 sm:px-6 sm:pb-6 sm:pt-6">
           <Outlet />
         </main>
       </div>

@@ -434,8 +434,8 @@ export default function GrilleSalaire() {
 
       {/* Boîte de confirmation suppression ligne */}
       {delTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-md rounded-xl border border-red-200 bg-white p-6 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-slate-900/50 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:p-4">
+          <div className="modal-shell w-full max-w-md rounded-xl border border-red-200 bg-white p-4 shadow-xl sm:p-6">
             <div className="mb-3 flex items-start gap-3">
               <span className="mt-0.5 text-red-600"><IconTrash /></span>
               <div>
@@ -464,8 +464,8 @@ export default function GrilleSalaire() {
 
       {/* Boîte de confirmation suppression totale */}
       {delAllOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-md rounded-xl border border-red-200 bg-white p-6 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-slate-900/50 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:p-4">
+          <div className="modal-shell w-full max-w-md rounded-xl border border-red-200 bg-white p-4 shadow-xl sm:p-6">
             <div className="mb-3 flex items-start gap-3">
               <span className="mt-0.5 text-red-600"><IconTrash /></span>
               <div>

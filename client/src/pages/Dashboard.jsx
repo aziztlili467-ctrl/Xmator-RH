@@ -431,7 +431,7 @@ export default function Dashboard() {
             <div className={`mt-4 space-y-4 ${filtresOuverts ? 'block' : 'hidden'} xl:block`}>
               <div>
                 <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Granularité</label>
-                <div className="grid grid-cols-3 overflow-hidden rounded-lg ring-1 ring-slate-200">
+                <div className="grid grid-cols-1 overflow-hidden rounded-lg ring-1 ring-slate-200 xs:grid-cols-3">
                   {[['jour', 'Jour'], ['mois', 'Mois'], ['annee', 'Année']].map(([v, l]) => (
                     <button
                       key={v}

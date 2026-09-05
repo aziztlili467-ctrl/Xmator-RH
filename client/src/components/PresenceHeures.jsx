@@ -251,7 +251,7 @@ export default function PresenceHeures({ matricule }) {
                 </select>
               )}
               <Barometre pct={baroPresence} />
-              <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+              <div className="mt-3 grid grid-cols-1 gap-2 text-center xs:grid-cols-3">
                 <div className="rounded-lg bg-white p-2 ring-1 ring-slate-200">
                   <p className="text-[10px] font-semibold uppercase text-slate-400">Légales</p>
                   <p className="text-sm font-bold text-slate-700">{fmtHeures(baroLegal)}</p>
@@ -319,8 +319,8 @@ export default function PresenceHeures({ matricule }) {
           </div>
 
           {/* Tableau détaillé (mois ou jours) */}
-          <div className="mt-4 max-h-80 overflow-auto rounded-xl ring-1 ring-slate-200">
-            <table className="w-full text-sm">
+          <div className="table-wrap mt-4 max-h-80 overflow-auto rounded-xl ring-1 ring-slate-200">
+            <table className="w-full min-w-[560px] text-sm">
               <thead className="sticky top-0 z-10 bg-slate-50">
                 <tr className="border-b border-slate-200 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <th className="px-4 py-3">{mode === 'mois' ? 'Mois' : 'Date'}</th>

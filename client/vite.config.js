@@ -123,10 +123,18 @@ function pwaGenerate() {
 export default defineConfig({
   plugins: [react(), pwaGenerate()],
   server: {
+    host: '0.0.0.0',
     port: 5173,
+    // Autorise les hôtes de prévisualisation distants (tunnels, sandbox, mobile sur le LAN)
+    allowedHosts: true,
     proxy: {
       '/api': 'http://localhost:4000',
       '/photos': 'http://localhost:4000',
     },
+  },
+  preview: {
+    host: '0.0.0.0',
+    port: 4173,
+    allowedHosts: true,
   },
 });

@@ -487,8 +487,8 @@ tfoot td{border-top:0.8px solid #333;background:#f8fafc;font-weight:700}
       )}
 
       {suppressionOuverte && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-slate-900/50 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:p-4">
+          <div className="modal-shell w-full max-w-md rounded-xl bg-white p-4 shadow-xl sm:p-6">
             <h3 className="text-base font-bold text-slate-900">Vider les codifications importées ?</h3>
             <p className="mt-2 text-sm text-slate-600">
               Cette action supprimera définitivement toutes les codifications importées du{' '}

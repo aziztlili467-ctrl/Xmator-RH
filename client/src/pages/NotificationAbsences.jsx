@@ -258,7 +258,7 @@ export default function NotificationAbsences() {
           </div>
         )}
 
-        <div className="mt-4 overflow-x-auto">
+        <div className="table-wrap mt-4">
           <table className="w-full min-w-[860px] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
@@ -322,8 +322,8 @@ export default function NotificationAbsences() {
       </div>
 
       {aSupprimer && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !suppression && setASupprimer(null)}>
-          <div className="card w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-black/40 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:p-4" onClick={() => !suppression && setASupprimer(null)}>
+          <div className="card modal-shell w-full max-w-md p-4 sm:p-5" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-sm font-bold text-slate-900">Supprimer la notification N° {String(aSupprimer.id).padStart(4, '0')} ?</h3>
             <p className="mt-2 text-sm text-slate-600">
               Absence de <strong>{aSupprimer.nom} {aSupprimer.prenom}</strong> du {fmtDate(aSupprimer.date_debut)} au{' '}

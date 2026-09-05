@@ -142,14 +142,14 @@ export default function ArretsMaladieInstance() {
                     <td className="px-5 py-3 font-semibold text-slate-800">{a.nom_prenom}</td>
                     <td className="px-5 py-3 text-slate-500">{a.categorie}</td>
                     <td className="px-5 py-3 font-mono text-xs text-slate-600">{a.numero_bulletin}</td>
-                    <td className="max-w-[160px] truncate px-5 py-3 text-slate-500" title={a.certificat}>{a.certificat || '—'}</td>
+                    <td className="max-w-full sm:w-[160px] truncate px-5 py-3 text-slate-500" title={a.certificat}>{a.certificat || '—'}</td>
                     <td className="px-5 py-3 text-slate-600">{fmtDate(a.date_debut)} → {fmtDate(a.date_fin)}</td>
                     <td className="px-5 py-3 text-end font-semibold text-rose-600">{fmtJours(a.nombre_jours)}</td>
                     <td className="px-5 py-3 text-end text-slate-600">{fmtJours(a.solde_maladie_a_la_demande)} j</td>
                     <td className="px-5 py-3">
                       <BadgeStatut statut={a.statut} />
                       {a.statut === 'rejete' && a.motif_rejet && (
-                        <p className="mt-1 max-w-[160px] text-[11px] text-slate-500" title={a.motif_rejet}>{a.motif_rejet}</p>
+                        <p className="mt-1 max-w-full sm:w-[160px] text-[11px] text-slate-500" title={a.motif_rejet}>{a.motif_rejet}</p>
                       )}
                     </td>
                     <td className="px-5 py-3">
@@ -200,8 +200,8 @@ export default function ArretsMaladieInstance() {
       </div>
 
       {decision && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={() => setDecision(null)}>
-          <div className="card max-h-[90vh] w-full max-w-md overflow-auto p-6" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-slate-900/40 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:p-4" onMouseDown={() => setDecision(null)}>
+          <div className="card modal-shell w-full max-w-md p-4 sm:p-6" onMouseDown={(e) => e.stopPropagation()}>
             <div className={`mb-4 flex items-center justify-between ${decision.type === 'rejeter' ? 'text-red-700' : 'text-slate-900'}`}>
               <h3 className="text-base font-bold">
                 {decision.type === 'valider'
@@ -264,8 +264,8 @@ export default function ArretsMaladieInstance() {
       )}
 
       {aSupprimer && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !suppression && setASupprimer(null)}>
-          <div className="card w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-black/40 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:p-4" onClick={() => !suppression && setASupprimer(null)}>
+          <div className="card modal-shell w-full max-w-md p-4 sm:p-5" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-sm font-bold text-slate-900">Supprimer l'arrêt N° {String(aSupprimer.numero_sequentiel).padStart(3, '0')} ?</h3>
             <p className="mt-2 text-sm text-slate-600">
               Arrêt de <strong>{aSupprimer.nom_prenom}</strong> ({aSupprimer.matricule}) du {fmtDate(aSupprimer.date_debut)} au {fmtDate(aSupprimer.date_fin)} — {fmtJours(aSupprimer.nombre_jours)} jour(s), statut : <strong>{aSupprimer.statut}</strong>, bulletin {aSupprimer.numero_bulletin}.

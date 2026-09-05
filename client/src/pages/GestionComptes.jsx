@@ -253,8 +253,8 @@ export default function GestionComptes() {
 
       {/* Formulaire création/modification */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <form onSubmit={save} className="card w-full max-w-md p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-slate-900/50 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:p-4">
+          <form onSubmit={save} className="card modal-shell w-full max-w-md p-4 sm:p-6">
             <h3 className="mb-4 text-lg font-bold text-slate-900">{form.id ? 'Modifier le compte' : 'Nouveau compte'}</h3>
             <div className="space-y-4">
               <div>
@@ -282,6 +282,7 @@ export default function GestionComptes() {
               {form.role === 'moderateur' && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3">
                   <label className="label">Droits d'accès par rubrique</label>
+                  <div className="table-wrap">
                   <table className="w-max-table text-xs">
                     <thead>
                       <tr>
@@ -322,6 +323,7 @@ export default function GestionComptes() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                   <p className="mt-2 text-[11px] text-slate-400">La suppression reste réservée au super admin.</p>
                 </div>
               )}
@@ -349,8 +351,8 @@ export default function GestionComptes() {
 
       {/* Génération d'identifiants */}
       {showGen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="card w-full max-w-2xl p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-slate-900/50 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:p-4">
+          <div className="card modal-shell w-full max-w-2xl p-4 sm:p-6">
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-lg font-bold text-slate-900">Générer des identifiants</h3>
               <button className="text-slate-400 hover:text-slate-600" onClick={() => setShowGen(false)}>✕</button>
@@ -385,7 +387,7 @@ export default function GestionComptes() {
                 <p className="mb-2 text-[11px] text-amber-600">
                   ⚠️ Identifiants affichés UNE FOIS en clair : transmettez-les à chaque employé, puis fermez cette fenêtre.
                 </p>
-                <div className="max-h-64 overflow-y-auto rounded-lg border border-slate-200">
+                <div className="table-wrap max-h-64 overflow-y-auto rounded-lg border border-slate-200">
                   <table className="w-max-table text-sm">
                     <thead className="sticky top-0 bg-slate-50 text-start text-xs uppercase text-slate-500">
                       <tr>

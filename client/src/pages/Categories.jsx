@@ -86,7 +86,7 @@ export default function Categories() {
       {success && <p className="rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700 ring-1 ring-emerald-200">{success}</p>}
       {error && <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-200">{error}</p>}
 
-      <div className="card overflow-hidden">
+      <div className="card table-wrap p-0">
         <table className="w-max-table text-sm">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -196,8 +196,8 @@ export default function Categories() {
 
 function Modal({ title, children, onClose, danger }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={onClose}>
-      <div className="card max-h-[90vh] w-full max-w-md overflow-auto p-6" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-slate-900/40 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:p-4" onMouseDown={onClose}>
+      <div className="card modal-shell w-full max-w-md p-4 sm:p-6" onMouseDown={(e) => e.stopPropagation()}>
         <div className={`mb-4 flex items-center justify-between ${danger ? 'text-red-700' : 'text-slate-900'}`}>
           <h3 className="text-base font-bold">{title}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>

@@ -124,7 +124,7 @@ export default function Journal() {
                       {m.type_operation === 'prelevement' || m.type_operation === 'maladie' ? '−' : m.type_operation === 'absence' ? '·' : '+'}{fmtJours(m.jours)}
                     </td>
                     <td className="px-5 py-3 text-end font-mono text-slate-700">{fmtJours(m.solde_apres)} j</td>
-                    <td className="max-w-[220px] truncate px-5 py-3 text-slate-500" title={m.motif}>{m.motif || '—'}</td>
+                    <td className="max-w-full sm:w-[220px] truncate px-5 py-3 text-slate-500" title={m.motif}>{m.motif || '—'}</td>
                   </tr>
                 ))
               )}
