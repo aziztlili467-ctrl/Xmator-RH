@@ -20,3 +20,6 @@ instructions2026.md
 
 # Scripts de débogage
 dbg*.js
+
+# Aperçu du système de design (outil interne)
+.design/

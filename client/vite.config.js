@@ -4,7 +4,7 @@ import { writeFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 // --- Génération du service worker PWA au build (sans dépendance) ---
-const SW_CACHE = 'xmator-rh-v5';
+const SW_CACHE = `xmator-rh-${Date.now().toString(36)}`;
 
 const SW_TEMPLATE = `const CACHE = '${SW_CACHE}';
 const PRECACHE = __PRECACHE_MANIFEST__;
@@ -22,6 +22,9 @@ self.addEventListener('activate', (e) => {
     caches.keys()
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
+      // Recharge les pages déjà ouvertes pour éviter d'afficher l'ancienne version
+      .then(() => self.clients.matchAll({ type: 'window' }))
+      .then((clients) => clients.forEach((c) => c.navigate(c.url)))
   );
 });
 
@@ -123,10 +126,18 @@ function pwaGenerate() {
 export default defineConfig({
   plugins: [react(), pwaGenerate()],
   server: {
+    host: '0.0.0.0',
     port: 5173,
+    // Autorise les hôtes de prévisualisation distants (tunnels, sandbox, mobile sur le LAN)
+    allowedHosts: true,
     proxy: {
       '/api': 'http://localhost:4000',
       '/photos': 'http://localhost:4000',
     },
+  },
+  preview: {
+    host: '0.0.0.0',
+    port: 4173,
+    allowedHosts: true,
   },
 });

@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build client + vérification serveur
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Installer les dépendances
+        run: npm run install:all
+
+      - name: Builder le client React
+        run: npm run build
+
+      - name: Vérifier la syntaxe du serveur
+        run: node --check server/index.js
+
+      - name: Démarrer le serveur et tester la sonde de santé
+        env:
+          NODE_ENV: production
+          JWT_SECRET: cle_de_test_ci_non_secrete_0123456789abcdef
+          ADMIN_PASSWORD: MotDePasseCI!123
+          PORT: 4000
+        run: |
+          node server/index.js &
+          SERVER_PID=$!
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:4000/api/health > /dev/null; then
+              echo "Serveur opérationnel."
+              curl -s http://localhost:4000/api/health
+              echo
+              # Vérifie que le client build est bien servi sur la même origine
+              curl -fsS http://localhost:4000/ | grep -q '<div id="root">' \
+                && echo "Client React servi correctement."
+              kill $SERVER_PID
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Le serveur n'a pas répondu dans le délai imparti."
+          kill $SERVER_PID 2>/dev/null
+          exit 1

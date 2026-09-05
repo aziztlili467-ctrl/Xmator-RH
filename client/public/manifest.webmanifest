@@ -5,9 +5,9 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#141b4f",
-  "theme_color": "#1c34cc",
+  "orientation": "any",
+  "background_color": "#16224a",
+  "theme_color": "#16224a",
   "lang": "fr",
   "categories": ["business", "productivity"],
   "icons": [

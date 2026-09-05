@@ -914,8 +914,8 @@ export default function FicheCreation() {
 
       {/* Modales du mode Paramètres */}
       {editSection !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setEditSection(null)}>
-          <div className="card w-full max-w-md p-5" style={{ borderTop: '4px solid var(--accent-amber)' }} onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-black/40 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:p-4" onClick={() => setEditSection(null)}>
+          <div className="card modal-shell w-full max-w-md p-4 sm:p-5" style={{ borderTop: '4px solid var(--accent-amber)' }} onClick={(e) => e.stopPropagation()}>
             <p className="mb-4 text-sm font-extrabold text-slate-800">Rubrique — Modifier (titre / icône)</p>
             <label className="label">Titre de la rubrique</label>
             <input className="input" value={tmpSection.title} onChange={(e) => setTmpSection({ ...tmpSection, title: e.target.value })} />
@@ -947,8 +947,8 @@ export default function FicheCreation() {
       )}
 
       {editChamp !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setEditChamp(null)}>
-        <div className="card w-full max-w-md p-5" style={{ borderTop: '4px solid var(--accent-amber)' }} onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-black/40 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:p-4" onClick={() => setEditChamp(null)}>
+        <div className="card modal-shell w-full max-w-md p-4 sm:p-5" style={{ borderTop: '4px solid var(--accent-amber)' }} onClick={(e) => e.stopPropagation()}>
           <p className="mb-4 text-sm font-extrabold text-slate-800">Champ — Modifier (titre / contenu)</p>
           <label className="label">Titre du champ</label>
           <input className="input" value={tmpChamp.label} onChange={(e) => setTmpChamp({ ...tmpChamp, label: e.target.value })} />
@@ -1003,8 +1003,8 @@ export default function FicheCreation() {
       )}
 
       {confirmDel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setConfirmDel(null)}>
-          <div className="card w-full max-w-sm p-5" style={{ borderTop: '4px solid #dc2626' }} onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-black/40 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:p-4" onClick={() => setConfirmDel(null)}>
+          <div className="card modal-shell w-full max-w-sm p-4 sm:p-5" style={{ borderTop: '4px solid #dc2626' }} onClick={(e) => e.stopPropagation()}>
             <p className="mb-4 flex items-center gap-2 text-sm font-extrabold text-slate-800"><FitIcon size={16} color="#dc2626"><IconTrash /></FitIcon> Confirmation</p>
             <p className="text-sm text-slate-600">
               {confirmDel.type === 'section' ? `Supprimer la rubrique « ${sections[confirmDel.si]?.title || ''} » et ses champs ?`
