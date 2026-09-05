@@ -86,13 +86,13 @@ function cartePresence(v) {
 function KpiCard({ title, value, sub, icon, chip, accent }) {
   return (
     <div className="panel">
-      <div className="flex items-start justify-between">
-        <div className="icon-badge" style={{ background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`, width: 40, height: 40, color: 'white' }}>{icon}</div>
-        {chip && <span className="badge" style={{ background: chip.bg, color: chip.text }}>{chip.label}</span>}
+      <div className="flex items-start justify-between gap-2">
+        <div className="icon-badge shrink-0 h-8 w-8 sm:h-10 sm:w-10" style={{ background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`, color: 'white' }}>{icon}</div>
+        {chip && <span className="badge shrink-0 !px-2 !py-0.5 text-[10px] leading-tight sm:!px-3 sm:text-xs" style={{ background: chip.bg, color: chip.text }}>{chip.label}</span>}
       </div>
-      <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--text-secondary)' }}>{title}</p>
-      <p className="mt-1 text-[28px] font-extrabold leading-none" style={{ color: 'var(--text-primary)' }}>{value}</p>
-      {sub && <p className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>{sub}</p>}
+      <p className="mt-2.5 text-[10px] font-semibold uppercase leading-tight tracking-[0.06em] sm:mt-4 sm:text-[11px] sm:tracking-[0.08em]" style={{ color: 'var(--text-secondary)' }}>{title}</p>
+      <p className="mt-1 text-[clamp(18px,5vw,28px)] font-extrabold leading-none [overflow-wrap:anywhere]" style={{ color: 'var(--text-primary)' }}>{value}</p>
+      {sub && <p className="mt-1 text-[11px] leading-snug sm:text-xs" style={{ color: 'var(--text-secondary)' }}>{sub}</p>}
     </div>
   );
 }
@@ -105,7 +105,7 @@ function Barometre({ pct, label, sub, color, compact }) {
   const angle = val / 100;
   return (
     <div className="panel flex items-center" style={{ filter: 'drop-shadow(0 4px 10px rgba(0,0,0,0.18))' }}>
-      <div className={`relative shrink-0 ${compact ? 'h-20 w-20' : 'h-24 w-24'}`} style={{ transform: 'rotateX(4deg)' }}>
+      <div className={`relative shrink-0 ${compact ? 'h-16 w-16 sm:h-20 sm:w-20' : 'h-16 w-16 sm:h-24 sm:w-24'}`} style={{ transform: 'rotateX(4deg)' }}>
         <div className="absolute inset-0 rounded-full" style={{ background: 'radial-gradient(ellipse at 30% 20%, rgba(255,255,255,0.25), transparent 55%)', pointerEvents: 'none' }} />
         <svg viewBox="0 0 84 84" className="h-full w-full">
           <circle cx="42" cy="42" r={R} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={compact ? 10 : 9} />
@@ -115,7 +115,7 @@ function Barometre({ pct, label, sub, color, compact }) {
           <span className={`${compact ? 'text-[11px]' : 'text-[14px]'} font-bold tracking-tight rounded-full bg-white px-1 py-0.5`} style={{ color: '#8A210A', fontFamily: "'Space Grotesk', Inter, sans-serif", fontWeight: 700, boxShadow: '0 1px 4px rgba(0,0,0,0.15)', lineHeight: 1 }}>{fmtPct(pct)}</span>
         </div>
       </div>
-      <div className="min-w-0 ml-3">
+      <div className="min-w-0 ms-2.5 sm:ms-3">
         <p className={`${compact ? 'text-xs' : 'text-sm'} font-semibold`} style={{ color: 'var(--text-primary)', fontFamily: "'Manrope', sans-serif", fontWeight: 600 }}>{label}</p>
         <p className="mt-0.5 text-[11px]" style={{ color: 'var(--text-secondary)', fontWeight: 400 }}>{sub}</p>
       </div>
@@ -615,7 +615,7 @@ export default function Dashboard() {
           {data && (
             <>
           {/* ===== Cartes KPI ===== */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2.5 sm:gap-4 xl:grid-cols-3">
             <KpiCard
               title="Effectif concerné"
               value={k.effectif}
@@ -692,7 +692,7 @@ export default function Dashboard() {
           )}
 
           {/* ===== Baromètres ===== */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2.5 xs:grid-cols-2 sm:gap-4 xl:grid-cols-3">
             <Barometre pct={data.barometres.presence} label="Présence (heures)" sub={`${fmtHeures(k.heures_travaillees)} / ${fmtHeures(k.heures_legales)}`} color="#10b981" />
             <Barometre pct={data.barometres.jours_presence} label="Jours présents" sub={`${k.jours_presents} / ${k.jours_ouvrables * k.effectif} jours légaux`} color="#0d9488" />
             <Barometre pct={data.barometres.absence_jours} label="Jours d'absence" sub={`${k.jours_absence} jour(s) sans badge ni couverture`} color="#f59e0b" />
@@ -715,7 +715,7 @@ export default function Dashboard() {
                   </span>
                 }
               />
-              <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2 sm:content-center">
+              <div className="grid flex-1 grid-cols-1 gap-2.5 xs:grid-cols-2 sm:gap-3 sm:content-center">
                 <Barometre compact pct={data.barometres.ponctualite} label="Ponctualité entrée" sub={`${k.journees_presence - k.retards} / ${k.journees_presence} journée(s) sans retard`} color="#f43f5e" />
                 <Barometre compact pct={data.barometres.sorties_conformes} label="Sorties conformes" sub={`${k.journees_presence - k.departs_anticipe} / ${k.journees_presence} sortie(s) régulière(s)`} color="#0ea5e9" />
                 <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4 shadow-sm">
@@ -866,7 +866,7 @@ export default function Dashboard() {
               <h2 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-amber-800">
                 <IconAlert /> Alertes de solde ({data.alertes.length})
               </h2>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-1 gap-2.5 xs:grid-cols-2 sm:gap-3 xl:grid-cols-3">
                 {data.alertes.map((e) => {
                   const det = data.employes.find((x) => x.id === e.id);
                   const solde = det ? det.solde_conge : 0;

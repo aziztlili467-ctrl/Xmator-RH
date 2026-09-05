@@ -66,5 +66,7 @@
   contain-intrinsic-size: 280px;
 }
 .panel:hover { border-color: var(--border-panel-glow); transform: translateY(-1px); }
-@media (max-width: 640px) { .panel { padding: 16px; } }
+@media (max-width: 640px) {
+  .panel { padding: 12px; border-radius: var(--radius-card, 12px); contain-intrinsic-size: 160px; }
+}
 body { font-family: 'Inter', system-ui, sans-serif; color: var(--text-primary); background: var(--bg-app); }

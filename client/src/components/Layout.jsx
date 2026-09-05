@@ -346,9 +346,9 @@ export default function Layout() {
             </div>
           </div>
           {/* Sous-catégories — couleur demandée #8A210A */}
-          {(subItems.length > 0 || subGroups.length > 0) && (
+          {(subItems.length > 1 || subGroups.length > 0) && (
             <div className="border-t" style={{ background: '#8A210A', borderColor: '#7a1e09' }}>
-              <div className="flex items-center gap-2 overflow-x-auto px-2 py-2 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible sm:px-6 [&::-webkit-scrollbar]:hidden">
+              <div className="flex items-center gap-2 overflow-x-auto px-2 py-1.5 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible sm:px-6 sm:py-2 [&::-webkit-scrollbar]:hidden">
                 {subItems.length > 0 && (
                   <div className="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                     <span className="hidden shrink-0 text-[10px] font-bold uppercase tracking-widest text-white/70 sm:block">{activeGroup.label} :</span>

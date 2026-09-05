@@ -138,7 +138,7 @@ export default function MonEspace() {
               <span className="text-[11px] text-slate-400">Photo (webp)</span>
             </div>
 
-            <dl className="grid flex-1 grid-cols-1 gap-4 sm:grid-cols-2">
+            <dl className="grid flex-1 grid-cols-1 gap-2.5 xs:grid-cols-2 sm:gap-4">
               <div className="rounded-lg bg-slate-50 p-4 ring-1 ring-slate-100">
                 <dt className="text-xs font-semibold uppercase text-slate-400">Nom</dt>
                 <dd className="mt-1 font-semibold text-slate-800">{fiche.nom}</dd>
