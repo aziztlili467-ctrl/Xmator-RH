@@ -24,6 +24,18 @@ const { auditLog } = require('./middleware/audit');
 const { db } = require('./db');
 const { notifyDataChanged } = require('./routes/dataSync');
 
+// Sonde de santé publique — utilisée par l'hébergeur (Render, Docker…) pour
+// vérifier que le service répond. Doit rester AVANT requireAuth, sinon elle
+// renvoie 401 et l'hébergeur considère le déploiement en échec.
+app.get('/api/health', (req, res) => {
+  try {
+    db.prepare('SELECT 1').get();
+    res.json({ status: 'ok', uptime: Math.round(process.uptime()) });
+  } catch (err) {
+    res.status(503).json({ status: 'error', error: 'base de données indisponible' });
+  }
+});
+
 // Auth publique (login) — /me et /logout sont protégés en interne
 app.use('/api/auth', require('./routes/auth'));
 

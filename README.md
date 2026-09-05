@@ -56,6 +56,35 @@ npm --prefix server run start
 
 Le serveur est accessible sur **http://localhost:4000** (client construit servi par le serveur).
 
+## Déploiement en ligne (Render)
+
+Le dépôt contient un blueprint `render.yaml` prêt à l'emploi. L'API Express et le
+client React sont servis sur la **même origine** : aucune configuration CORS n'est
+nécessaire.
+
+1. Sur [render.com](https://render.com) : **New → Blueprint**, connecter ce dépôt
+   et choisir la branche `arena/01a071df-xmator-rh`.
+2. Render lit `render.yaml` et propose le service. Renseigner la seule variable
+   marquée « sync: false » : **`ADMIN_PASSWORD`** (mot de passe du compte super
+   admin `Xmator`). `JWT_SECRET` est généré automatiquement.
+3. Lancer le déploiement. La sonde `/api/health` confirme la mise en ligne.
+
+> **Important — persistance des données.** La base SQLite et les photos sont
+> stockées dans `data/`. Le blueprint monte un disque persistant de 1 Go sur ce
+> dossier ; il requiert le plan **Starter** (payant). Sur le plan gratuit, Render
+> n'autorise pas de disque : le système de fichiers est éphémère et **toutes les
+> données sont perdues à chaque redéploiement ou mise en veille**. Le plan gratuit
+> ne convient donc qu'à une démonstration jetable.
+
+Un workflow GitHub Actions (`.github/workflows/ci.yml`) vérifie à chaque push que
+le client se build, que le serveur démarre et que `/api/health` répond.
+
+### Pourquoi pas GitHub Pages ?
+
+GitHub Pages ne sert que des fichiers statiques et ne peut pas exécuter le backend
+Node/SQLite (authentification, base de données, PDF, temps réel). Seul un
+hébergeur applicatif (Render, Fly.io, Railway, VPS…) convient.
+
 ## Comptes par défaut (démo)
 
 | Login | Rôle |

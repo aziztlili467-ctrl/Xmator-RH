@@ -1,0 +1,36 @@
+# Blueprint de déploiement Render — Xmator RH
+# Déploie l'API Express + le client React build, servis sur la MÊME origine.
+# Utilisation : Render → New → Blueprint → sélectionner ce dépôt et la branche.
+services:
+  - type: web
+    name: xmator-rh
+    runtime: node
+    plan: starter # « free » n'autorise pas de disque persistant (voir la note plus bas)
+    region: frankfurt
+    branch: arena/01a071df-xmator-rh
+    buildCommand: npm run install:all && npm run build
+    startCommand: node server/index.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+
+    # La base SQLite et les photos vivent dans data/ : sans disque persistant,
+    # TOUT est effacé à chaque redéploiement. Le disque est donc indispensable.
+    disk:
+      name: xmator-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: DB_PATH
+        value: /opt/render/project/src/data/amicale.db
+      # Généré automatiquement par Render, jamais stocké dans le dépôt
+      - key: JWT_SECRET
+        generateValue: true
+      # À définir manuellement dans le tableau de bord Render (mot de passe du
+      # compte super admin « Xmator » créé au premier démarrage si la base est vide)
+      - key: ADMIN_PASSWORD
+        sync: false
