@@ -1,0 +1,70 @@
+:root {
+  --primary-50: #eef2ff;
+  --primary-500: #6366f1;
+  --primary-600: #4f46e5;
+  --primary-700: #4338ca;
+  --accent-cyan: #06b6d4;
+  --accent-emerald: #10b981;
+  --accent-amber: #f59e0b;
+  --accent-rose: #f43f5e;
+  --accent-violet: #8b5cf6;
+  --accent-orange: #fb923c;
+  --status-approved: #10b981;
+  --status-pending: #f59e0b;
+  --status-rejected: #ef4444;
+  --status-draft: #94a3b8;
+  --bg-app: #f8fafc;
+  --bg-card: #ffffff;
+  --border: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #64748b;
+  --shadow-sm: 0 1px 2px rgba(15,23,42,0.06);
+  --shadow-md: 0 4px 12px rgba(15,23,42,0.08);
+  --shadow-lg: 0 12px 24px rgba(15,23,42,0.12);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-full: 999px;
+}
+:root[data-theme="dark-premium"] {
+  --bg-app: #0a0e17;
+  --bg-app-gradient: radial-gradient(circle at 20% 0%, #101728 0%, #0a0e17 60%);
+  --bg-panel: rgba(255, 255, 255, 0.03);
+  --bg-panel-hover: rgba(255, 255, 255, 0.06);
+  --border-panel: rgba(255, 255, 255, 0.08);
+  --border-panel-glow: rgba(56, 189, 248, 0.25);
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --accent-cyan: #22d3ee;
+  --accent-blue: #3b82f6;
+  --chart-1: #38bdf8;
+  --chart-2: #a78bfa;
+  --chart-3: #fb923c;
+  --chart-4: #f472b6;
+  --chart-5: #34d399;
+  --chart-6: #facc15;
+  --status-approved: #34d399;
+  --status-pending: #facc15;
+  --status-rejected: #f87171;
+  --glow-cyan: 0 0 24px rgba(34, 211, 238, 0.25);
+  --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.35);
+  --radius-panel: 16px;
+  --radius-card: 12px;
+  --radius-pill: 999px;
+}
+[data-theme="dark-premium"] body { font-family: 'Inter', 'Space Grotesk', system-ui, sans-serif; background: var(--bg-app); color: var(--text-primary); }
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-panel);
+  border-radius: var(--radius-panel, 16px);
+  box-shadow: var(--shadow-panel, 0 8px 32px rgba(0,0,0,0.35));
+  padding: 24px;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+  contain: paint;
+  content-visibility: auto;
+  contain-intrinsic-size: 280px;
+}
+.panel:hover { border-color: var(--border-panel-glow); transform: translateY(-1px); }
+@media (max-width: 640px) { .panel { padding: 16px; } }
+body { font-family: 'Inter', system-ui, sans-serif; color: var(--text-primary); background: var(--bg-app); }

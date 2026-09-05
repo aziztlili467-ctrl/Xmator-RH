@@ -33,6 +33,11 @@ export default function JournalRMA() {
   const [suppressionOuverte, setSuppressionOuverte] = useState(false);
   const [suppression, setSuppression] = useState(false);
 
+  // --- Mode paramètres : modification manuelle des codes ---
+  const [parametresMode, setParametresMode] = useState(false);
+  const [editingCell, setEditingCell] = useState(null); // { employeId, date, currentCode }
+  const [savingCell, setSavingCell] = useState(false);
+
   // Métadonnées des codes (couleur/libellé) renvoyées par l'API — visibles par tous les rôles
   const metaCodes = {};
   if (data && Array.isArray(data.codes)) {
@@ -66,6 +71,12 @@ export default function JournalRMA() {
 
   const changeDebut = (v) => { setDebut(v); load(v, fin); };
   const changeFin = (v) => { setFin(v); load(debut, v); };
+
+  // Prévient les autres sous-rubriques (ex. « Éditer solde de congé ») qu'un jour de congé CA/DJ
+  // vient d'être ajouté, rectifié ou supprimé : elles se rechargent immédiatement.
+  const notifierSolde = () => {
+    try { window.dispatchEvent(new CustomEvent('rh:solde-changed', { detail: { source: 'journal-rma' } })); } catch {}
+  };
 
   const handlePrint = () => {
     if (!data || !data.employes || data.employes.length === 0) return;
@@ -141,6 +152,7 @@ tfoot td{border-top:0.8px solid #333;background:#f8fafc;font-weight:700}
       setImportResult(r);
       setImportTexte('');
       load(debut, fin);
+      notifierSolde();
     } catch (e) {
       setImportError(e.message);
     } finally {
@@ -155,11 +167,68 @@ tfoot td{border-top:0.8px solid #333;background:#f8fafc;font-weight:700}
       await api.deleteCodesRma({ debut, fin });
       setSuppressionOuverte(false);
       load(debut, fin);
+      notifierSolde();
     } catch (e) {
       setError(e.message);
       setSuppressionOuverte(false);
     } finally {
       setSuppression(false);
+    }
+  };
+
+  const handleCellClick = (employeId, date, currentCode) => {
+    if (!parametresMode) return;
+    setEditingCell({ employeId, date, currentCode });
+  };
+
+  const handleCodeChange = async (nouveauCode) => {
+    if (!editingCell) return;
+    const ancienCode = editingCell.currentCode ? String(editingCell.currentCode).split('/')[0] : null;
+
+    // Si on sélectionne "vide" et qu'il y avait un code → supprimer la ligne
+    if (!nouveauCode && ancienCode) {
+      setSavingCell(true);
+      try {
+        await api.deleteCellRma({ employe_id: editingCell.employeId, date: editingCell.date, code: ancienCode });
+        setEditingCell(null);
+        load(debut, fin);
+        notifierSolde();
+      } catch (e) {
+        setError(e.message);
+      } finally {
+        setSavingCell(false);
+      }
+      return;
+    }
+
+    // Si on sélectionne "vide" et qu'il n'y avait rien → rien à faire
+    if (!nouveauCode && !ancienCode) {
+      setEditingCell(null);
+      return;
+    }
+
+    // Si le nouveau code est le même que l'ancien → rien à faire
+    if (nouveauCode && ancienCode && nouveauCode === ancienCode) {
+      setEditingCell(null);
+      return;
+    }
+
+    // Modification du code
+    setSavingCell(true);
+    try {
+      await api.updateCodeRma({
+        employe_id: editingCell.employeId,
+        date: editingCell.date,
+        ancien_code: ancienCode,
+        nouveau_code: nouveauCode,
+      });
+      setEditingCell(null);
+      load(debut, fin);
+      notifierSolde();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSavingCell(false);
     }
   };
 
@@ -184,6 +253,30 @@ tfoot td{border-top:0.8px solid #333;background:#f8fafc;font-weight:700}
       </div>
 
       {error && <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-200">{error}</p>}
+
+      {user?.role === 'super_admin' && data && codesUtilises.length > 0 && (
+        <div className="flex items-center gap-3">
+          <button
+            className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold transition ${
+              parametresMode
+                ? 'border-amber-300 bg-amber-50 text-amber-800 shadow-sm'
+                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+            }`}
+            onClick={() => { setParametresMode(!parametresMode); setEditingCell(null); }}
+            title="Activer le mode paramètres pour modifier manuellement les codes"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+            </svg>
+            Paramètres
+          </button>
+          {parametresMode && (
+            <span className="text-xs text-amber-600 font-medium">
+              Mode édition — cliquez sur une cellule pour changer son code
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-3">
@@ -342,12 +435,30 @@ tfoot td{border-top:0.8px solid #333;background:#f8fafc;font-weight:700}
                             const cellule = data.jours[e.id] ? data.jours[e.id][iso] : null;
                             const we = isWeekend(iso);
                             const isDemiCA = !!(data.joursDemi && data.joursDemi[e.id] && data.joursDemi[e.id][iso]);
+                            const isEditing = editingCell && editingCell.employeId === e.id && editingCell.date === iso;
                             return (
-                              <td key={iso} className={`px-2 py-2 text-center ${we ? 'bg-slate-100/70' : ''}`}>
-                                {cellule && (
-                                  <span className="inline-flex items-center rounded-md px-1.5 py-0.5 font-mono text-[11px] font-bold" style={badgeStyle(cellule, isDemiCA)}>
-                                    {cellule}
-                                  </span>
+                              <td key={iso} className={`px-2 py-2 text-center ${we ? 'bg-slate-100/70' : ''} ${parametresMode && !isEditing ? 'cursor-pointer hover:ring-2 hover:ring-amber-400 hover:ring-inset rounded' : ''}`}
+                                onClick={() => parametresMode && !isEditing && handleCellClick(e.id, iso, cellule)}>
+                                {isEditing ? (
+                                  <select
+                                    className="rounded border border-amber-400 bg-white px-1 py-0.5 text-[11px] font-bold text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                    value={cellule ? String(cellule).split('/')[0] : ''}
+                                    onChange={(ev) => handleCodeChange(ev.target.value)}
+                                    onBlur={() => !savingCell && setEditingCell(null)}
+                                    autoFocus
+                                    disabled={savingCell}
+                                  >
+                                    <option value="">— vide —</option>
+                                    {(data.codes || []).map((c) => (
+                                      <option key={c.code} value={c.code}>{c.code} — {c.libelle}</option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  cellule && (
+                                    <span className="inline-flex items-center rounded-md px-1.5 py-0.5 font-mono text-[11px] font-bold" style={badgeStyle(cellule, isDemiCA)}>
+                                      {cellule}
+                                    </span>
+                                  )
                                 )}
                               </td>
                             );

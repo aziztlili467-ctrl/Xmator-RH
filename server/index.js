@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+let compression;
+try { compression = require('compression'); } catch { compression = () => (req,res,next)=>next(); }
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -10,18 +12,33 @@ const app = express();
 // CORS : en production, n'autoriser que les origines listées dans CORS_ORIGIN (séparées par des virgules).
 // Si CORS_ORIGIN est vide (défaut), aucun en-tête CORS n'est émis : le client est servi par ce même serveur.
 const corsOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()) : false;
+app.use(compression({ threshold: 1024 }));
 app.use(cors({ origin: corsOrigins }));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '2mb' }));
+// Anti-crash : ne jamais laisser une exception non capturée tuer le process (log + keep alive)
+process.on('uncaughtException', (err) => console.error('[uncaughtException]', err.message));
+process.on('unhandledRejection', (err) => console.error('[unhandledRejection]', err?.message || err));
 
 const { requireAuth, requireRole, requireModule } = require('./middleware/auth');
 const { auditLog } = require('./middleware/audit');
 const { db } = require('./db');
+const { notifyDataChanged } = require('./routes/dataSync');
 
 // Auth publique (login) — /me et /logout sont protégés en interne
 app.use('/api/auth', require('./routes/auth'));
 
 // Tout le reste des /api exige un compte authentifié
 app.use('/api', requireAuth);
+
+// Synchronisation « temps réel » : après toute écriture API réussie (POST/PUT/DELETE 2xx), signale
+// aux caches d'indicateurs (tableau de bord) de se vider — les données affichées restent ainsi
+// cohérentes avec les rectifications, importations et validations apportées à l'instant.
+app.use('/api', (req, res, next) => {
+  res.on('finish', () => {
+    if (req.method !== 'GET' && res.statusCode >= 200 && res.statusCode < 300) notifyDataChanged();
+  });
+  next();
+});
 
 // Mouchard : journalise chaque opération authentifiée (lecture/ajout/modification/suppression) — super_admin uniquement
 app.use('/api/mouchard', requireRole('super_admin'), require('./routes/mouchard'));
@@ -33,7 +50,11 @@ app.use('/api/maintenance', requireRole('super_admin'), require('./routes/mainte
 app.use('/api/import', requireRole('super_admin'), require('./routes/import'));
 app.use('/api/calendrier', requireRole('super_admin'), require('./routes/calendrier'));
 app.use('/api/codes-paie', requireRole('super_admin'), require('./routes/codes-paie'));
-app.use('/api/grille-salaire', requireRole('super_admin'), require('./routes/grille-salaire'));
+// Grille de salaire : lecture pour super_admin + consultation + moderateur (options des listes
+// Rubrique / Grade / Classe / Echelon côté Employés) ; écritures super_admin uniquement
+app.use('/api/grille-salaire', (req, res, next) =>
+  req.method === 'GET' ? lecture(req, res, next) : requireRole('super_admin')(req, res, next),
+  require('./routes/grille-salaire'));
 
 // Workflow congés / arrêts : écritures et décisions selon les permissions du modérateur
 app.use('/api/demandes-conge', requireModule('demandes'), require('./routes/demandes-conge'));
@@ -50,6 +71,7 @@ app.use('/api/journal-rma', (req, res, next) =>
   req.method === 'GET' ? lecture(req, res, next) : requireRole('super_admin')(req, res, next),
   require('./routes/journal-rma'));
 app.use('/api/journal-maladie', lecture, require('./routes/journal-maladie'));
+app.use('/api/edition-conges', lecture, require('./routes/edition-conges'));
 app.use('/api/mouvements', (req, res, next) =>
   req.method === 'GET' ? lecture(req, res, next) : requireModule('soldes')(req, res, next),
   require('./routes/mouvements'));
@@ -177,48 +199,62 @@ function totalNonLusAdmin() {
   return t;
 }
 
-// Photos employés (publiques — chargées par <img>).
-// Source unique servie = data/photos (ce que lisent ET écrivent les uploads).
-// La photothèque de référence (committée dans le dépôt : server/photos-reference/photos)
-// est copiée dans data/photos au démarrage pour les fichiers ABSENTS : garantit que les
-// photos existent dès la 1re exécution (clone local, déploiement Render au disque éphémère).
-// Cache navigateur 1 h (re-upload visible sous 1 h ; le SW rafraîchit déjà en arrière-plan).
+// Photos employés — copie asynchrone pour ne pas bloquer le démarrage (page d'accès)
 const photosDir = path.join(__dirname, '..', 'data', 'photos');
 if (!fs.existsSync(photosDir)) fs.mkdirSync(photosDir, { recursive: true });
-const photosReference = path.join(__dirname, 'photos-reference', 'photos');
-if (fs.existsSync(photosReference)) {
+setImmediate(() => {
+  const photosReference = path.join(__dirname, 'photos-reference', 'photos');
+  if (!fs.existsSync(photosReference)) return;
   try {
     let copiees = 0;
     for (const f of fs.readdirSync(photosReference)) {
       if (!/\.webp$/i.test(f)) continue;
       const dest = path.join(photosDir, f);
-      if (!fs.existsSync(dest)) {
-        fs.copyFileSync(path.join(photosReference, f), dest);
-        copiees++;
-      }
+      if (!fs.existsSync(dest)) { fs.copyFileSync(path.join(photosReference, f), dest); copiees++; }
     }
     if (copiees > 0) console.log(`[photos] ${copiees} photo(s) de référence copiée(s) dans data/photos`);
-  } catch (e) {
-    console.warn('[photos] sync de la photothèque de référence ignorée :', e.message);
-  }
-}
+  } catch (e) { console.warn('[photos] sync ignorée :', e.message); }
+});
 app.use('/photos', express.static(photosDir, {
   maxAge: '1h',
   etag: true,
   setHeaders: (res) => res.setHeader('Cache-Control', 'public, max-age=3600'),
 }));
 
+app.use((err, req, res, next) => {
+  console.error('[api-error]', req.method, req.path, err.message);
+  if (res.headersSent) return next(err);
+  res.status(err.status || 500).json({ error: err.message || 'Erreur interne.' });
+});
+
 const clientDist = path.join(__dirname, '..', 'client', 'dist');
 if (fs.existsSync(clientDist)) {
-  app.use(express.static(clientDist));
+  // Assets versionnés (hash dans le nom) → 1 an immutable, ultra-rapide au 2e chargement
+  app.use(express.static(clientDist, { maxAge: '1y', immutable: true, index: false, etag: true }));
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api')) return next();
     if (req.path.startsWith('/photos')) return next();
+    // index.html toujours frais (no-cache) pour éviter la page blanche après déploiement
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
     res.sendFile(path.join(clientDist, 'index.html'));
   });
 }
+app.disable('x-powered-by');
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
   console.log(`API Amicale démarrée sur http://localhost:${PORT} (chat temps réel Socket.IO actif)`);
+  // Affiche les identifiants admin à chaque démarrage pour éviter les oublis
+  try {
+    const admin = db.prepare("SELECT login FROM utilisateurs WHERE role = 'super_admin' LIMIT 1").get();
+    if (admin) {
+      console.log(`\n╔══════════════════════════════════════════════════════╗`);
+      console.log(`║  Identifiants Super Admin (par défaut) :             ║`);
+      console.log(`║  Login       : ${admin.login.padEnd(37)}║`);
+      console.log(`║  Mot de passe: admin123                             ║`);
+      console.log(`║  (réinitialisable via : node resetpw2.js)           ║`);
+      console.log(`╚══════════════════════════════════════════════════════╝\n`);
+    }
+  } catch {}
 });

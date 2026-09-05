@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { downloadFile } from '../utils';
-import { IconUpload, IconDownload } from '../components/icons';
+import { IconDownload } from '../components/icons';
 
 const fmtDate = (iso) => {
   const [, m, d] = iso.split('-');
@@ -30,12 +30,9 @@ export default function Horaires() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  const [importTexte, setImportTexte] = useState('');
-  const [importing, setImporting] = useState(false);
-  const [importError, setImportError] = useState('');
-  const [importResult, setImportResult] = useState(null);
-  const fileRef = useRef(null);
+  const [viderMsg, setViderMsg] = useState('');
+  const [viderErr, setViderErr] = useState('');
+  const [viderChk, setViderChk] = useState(false);
 
   const load = (d, f, m) => {
     setLoading(true);
@@ -82,40 +79,26 @@ export default function Horaires() {
     downloadFile(`horaires_${debut || 'tout'}_${fin || 'tout'}.csv`, [header, ...lines, totalLine].join('\n'));
   };
 
-  const lireFichier = (e) => {
-    const fichier = e.target.files && e.target.files[0];
-    if (!fichier) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      setImportTexte(String(reader.result || ''));
-      setImportResult(null);
-      setImportError('');
-    };
-    reader.readAsText(fichier);
-    e.target.value = '';
-  };
-
-  const doImport = async () => {
-    if (!importTexte.trim()) return;
-    setImporting(true);
-    setImportError('');
-    setImportResult(null);
+  const viderPeriode = async () => {
+    setViderMsg('');
+    setViderErr('');
+    const periodeLabel = [debut && `du ${fmtFR(debut)}`, fin && `au ${fmtFR(fin)}`].filter(Boolean).join(' ');
+    const matLib = matricule.trim() ? ` (matricule ${matricule.trim()})` : '';
+    const lib = `${periodeLabel}${matLib}` || 'toute la période';
+    if (!window.confirm(
+      `Vider la période ${lib} ?\n\nCette action supprime DÉFINITIVEMENT les badgeages de « Présences & pointages` +
+      ` (table source des heures affichées ici) et leurs corrections, de la période sélectionnée. Continuer ?`
+    )) return;
+    setViderChk(true);
     try {
-      const r = await api.importHoraires(importTexte);
-      setImportResult(r);
+      const r = await api.viderHoraires({ debut, fin, matricule: matricule.trim() });
+      setViderMsg(`${r.supprimes} badgeage(s) supprimé(s)${r.jours ? ` sur ${r.jours} jour(s)` : ''} pour ${lib}.`);
       load(debut, fin, matricule);
     } catch (err) {
-      setImportError(err.message);
+      setViderErr(err.message);
     } finally {
-      setImporting(false);
+      setViderChk(false);
     }
-  };
-
-  const effacerImport = () => {
-    setImportTexte('');
-    setImportResult(null);
-    setImportError('');
-    if (fileRef.current) fileRef.current.value = '';
   };
 
   return (
@@ -124,7 +107,10 @@ export default function Horaires() {
         <div>
           <h2 className="text-lg font-bold text-slate-900">Horaires de travail</h2>
           <p className="text-sm text-slate-500">
-            Heures travaillées par employé et par date : pour chaque jour et chaque matricule, la durée = <strong>dernier badgeage − premier badgeage</strong> de la journée. Filtrez par calendrier et par matricule.
+            Heures travaillées par employé et par date, calculées depuis les données de{' '}
+            <strong>« Présences & pointages »</strong> : pour chaque jour et chaque matricule, la durée ={' '}
+            <strong>Sortie réelle − Entrée réelle</strong> (dernier badgeage − premier badgeage de la journée).
+            Filtrez par calendrier et par matricule.
           </p>
         </div>
         <div className="flex gap-2">
@@ -144,6 +130,16 @@ export default function Horaires() {
             <span className="text-slate-400">→</span>
             <input type="date" className="input" value={fin} onChange={(e) => changeFin(e.target.value)} />
           </div>
+          {user?.role === 'super_admin' && (debut || fin) && (
+            <button
+              className="btn-secondary !border-rose-300 !text-rose-600 hover:!bg-rose-50"
+              onClick={viderPeriode}
+              disabled={viderChk}
+              title="Supprime les badgeages (Présences & pointages) de la période sélectionnée."
+            >
+              {viderChk ? 'Suppression…' : 'Vider la période'}
+            </button>
+          )}
           <label className="text-sm font-semibold text-slate-600">Matricule :</label>
           <input
             type="text"
@@ -164,6 +160,9 @@ export default function Horaires() {
           )}
         </p>
       </div>
+
+      {viderErr && <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-200">{viderErr}</p>}
+      {viderMsg && <p className="rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700 ring-1 ring-emerald-200">{viderMsg}</p>}
 
       {data && (
         <>
@@ -243,73 +242,12 @@ export default function Horaires() {
             </div>
             {!loading && data.employes.length === 0 && (
               <p className="px-4 py-8 text-center text-sm text-slate-500">
-                Aucune donnée pour cette période{matricule ? ` et ce matricule (${matricule})` : ''}. Importez un fichier de pointages, ou élargissez le filtre.
+                Aucune donnée pour cette période{matricule ? ` et ce matricule (${matricule})` : ''}. Importez des
+                pointages dans la sous-catégorie « Présences & pointages », ou élargissez le filtre.
               </p>
             )}
           </div>
         </>
-      )}
-
-      {user?.role === 'super_admin' && (
-        <div className="card p-4">
-          <div className="mb-3">
-            <h3 className="text-sm font-bold text-slate-900">Importer les heures de travail</h3>
-            <p className="mt-1 text-xs text-slate-500">
-              Fichier de badgeuse <span className="font-mono">.csv</span> / <span className="font-mono">.txt</span> — norme identique au journal des
-              pointages — avec les colonnes <span className="font-mono">Matricule</span> + <span className="font-mono">Horodatage</span> (formats{' '}
-              <span className="font-mono">AAAA-MM-JJ HH:mm:ss</span> ou <span className="font-mono">JJ/MM/AAAA HH:mm:ss</span>), ou{' '}
-              <span className="font-mono">Matricule</span> + <span className="font-mono">Date</span> + <span className="font-mono">Heure</span>.
-              Séparateur détecté automatiquement (tabulation, point-virgule ou virgule). Un ré-import du même horodatage est ignoré ; seuls les
-              matricules présents en base sont importés. Pour chaque jour, la durée affichée = <strong>dernier badgeage − premier badgeage</strong> du matricule.
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".txt,.csv"
-              onChange={lireFichier}
-              className="block w-full text-sm text-slate-600 file:me-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-brand-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white file:transition hover:file:bg-brand-700"
-            />
-            <textarea
-              className="input w-full resize-y font-mono text-xs"
-              rows={6}
-              placeholder="Collez ici le contenu du fichier (Matricule;Horodatage)…"
-              value={importTexte}
-              onChange={(e) => {
-                setImportTexte(e.target.value);
-                setImportResult(null);
-                setImportError('');
-              }}
-            />
-            <div className="flex flex-wrap items-center gap-2">
-              <button className="btn-primary" onClick={doImport} disabled={importing || !importTexte.trim()}>
-                <IconUpload /> {importing ? 'Import en cours…' : 'Importer'}
-              </button>
-              <button className="btn-secondary" onClick={effacerImport} disabled={!importTexte && !importResult}>
-                Effacer
-              </button>
-            </div>
-          </div>
-
-          {importError && <p className="mt-3 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-200">{importError}</p>}
-
-          {importResult && (
-            <p className="mt-3 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700 ring-1 ring-emerald-200">
-              Import terminé : <strong>{importResult.importes}</strong> badgeage(s) créé(s) sur <strong>{importResult.jours}</strong> jour(s){' '}
-              (durée quotidienne recalculée = dernier badgeage − premier badgeage), <strong>{importResult.doublons}</strong> déjà présent(s)
-              (ré-import ignoré){importResult.debut && <> — du {fmtFR(importResult.debut)} au {fmtFR(importResult.fin)}</>}.
-              {importResult.invalides > 0 && <> <span className="text-amber-700">{importResult.invalides} horodatage(s) illisible(s).</span></>}
-              {importResult.nonReconnus.length > 0 && (
-                <>
-                  <br />
-                  <span className="text-amber-700">Matricules absents de la base (non importés) : {importResult.nonReconnus.join(', ')}</span>
-                </>
-              )}
-            </p>
-          )}
-        </div>
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { downloadFile, fmtDate } from '../utils';
@@ -95,6 +95,132 @@ export default function Presence() {
     return [h, m, s].map((x) => String(x).padStart(2, '0')).join(':');
   };
 
+  // ----- Filtres de colonnes (style Excel) -----
+  // Définition des colonnes filtrables : clé, intitulé, extracteur de valeur crue & valeur affichée
+  const COLONNES = [
+    { key: 'matricule', label: 'Matricule', get: (l) => l.matricule || '' },
+    { key: 'employe', label: 'Employé', get: (l) => `${l.nom || ''} ${l.prenom || ''}`.trim() },
+    { key: 'categorie', label: 'Catégorie', get: (l) => l.categorie || '' },
+    { key: 'date', label: 'Date', get: (l) => fmtDate(l.date) },
+    { key: 'entree_regle', label: 'Entrée réglementaire', get: (l) => l.entree_regle || '—' },
+    { key: 'entree_reelle', label: 'Entrée réelle', get: (l) => l.entree_reelle || '—' },
+    { key: 'retard', label: 'Retard', get: (l) => (l.retard !== null && l.retard !== undefined && l.retard !== '00:00:00' ? l.retard : '—') },
+    { key: 'sortie_regle', label: 'Sortie réglementaire', get: (l) => l.sortie_regle || '—' },
+    { key: 'sortie_reelle', label: 'Sortie réelle', get: (l) => (l.sortie_reelle !== null && l.sortie_reelle !== undefined ? l.sortie_reelle : 'n/a') },
+    { key: 'sortie_anticipee', label: 'Sortie anticipée', get: (l) => (l.sortie_anticipee !== null && l.sortie_anticipee !== undefined && l.sortie_anticipee !== '00:00:00' ? l.sortie_anticipee : '—') },
+    { key: 'statut', label: 'Statut / Anomalie', get: (l) => l.statut || '' },
+  ];
+
+  const [filtres, setFiltres] = useState({});          // colKey -> Set(valeurs sélectionnées)
+  const [colFiltreOuverte, setColFiltreOuverte] = useState(null); // colKey active du menu déroulant
+  const [rechercheFiltre, setRechercheFiltre] = useState(''); // recherche dans le menu ouvert
+  const [filtrePos, setFiltrePos] = useState({ top: 0, left: 0 });
+
+  // Ferme le menu de filtre de colonne en cas de clic à l'extérieur
+  useEffect(() => {
+    if (colFiltreOuverte === null) return;
+    const onDoc = (e) => {
+      if (!e.target || !e.target.closest || !e.target.closest('[data-colfiltre]')) {
+        setColFiltreOuverte(null);
+        setRechercheFiltre('');
+      }
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [colFiltreOuverte]);
+
+  const filtreActifCount = Object.values(filtres).filter((s) => s && s.size > 0).length;
+
+  // Valeurs distinctes d'une colonne parmi les lignes (mémorisé → performances sur gros volumes)
+  // colOptions: [ { value, count } ] triés, calculé une seule fois par jeu de données
+  const colOptions = useMemo(() => {
+    const map = {};
+    COLONNES.forEach((col) => {
+      const counts = new Map();
+      (data?.lignes || []).forEach((l) => {
+        const v = col.get(l) || '';
+        counts.set(v, (counts.get(v) || 0) + 1);
+      });
+      const arr = [...counts.entries()]
+        .filter(([v]) => v !== '')
+        .map(([value, count]) => ({ value, count }))
+        .sort((a, b) => String(a.value).localeCompare(String(b.value), 'fr', { numeric: true }));
+      if (counts.has('')) arr.push({ value: '', count: counts.get('') });
+      map[col.key] = arr;
+    });
+    return map;
+  }, [data]);
+
+  const valeursDistinctes = (col) => (colOptions[col.key] || []).map((o) => o.value);
+
+  const toggleFiltre = (colKey, valeur) => {
+    setFiltres((prev) => {
+      const cur = new Set(prev[colKey] || []);
+      if (cur.has(valeur)) cur.delete(valeur); else cur.add(valeur);
+      const next = { ...prev };
+      if (cur.size === 0) delete next[colKey]; else next[colKey] = cur;
+      return next;
+    });
+  };
+
+  const toggleAllColonne = (colKey, valeurs, checked) => {
+    setFiltres((prev) => {
+      const next = { ...prev };
+      if (checked) next[colKey] = new Set(valeurs);
+      else delete next[colKey];
+      return next;
+    });
+  };
+
+  const effacerFiltres = () => setFiltres({});
+
+  const ouvrirFiltreCol = (colKey, evt) => {
+    setRechercheFiltre('');
+    if (colFiltreOuverte === colKey) { setColFiltreOuverte(null); return; }
+    const rect = evt?.currentTarget?.getBoundingClientRect?.();
+    if (rect) {
+      // Position fixe relative à la fenêtre (getBoundingClientRect est déjà viewport-relative).
+      // Fenêtre du menu ouverte vers le bas, ou vers le haut si pas assez de place.
+      const estimeMaxH = Math.min(320, window.innerHeight - 70);
+      const top = (rect.bottom + 6 + estimeMaxH <= window.innerHeight)
+        ? rect.bottom + 6
+        : Math.max(8, rect.top - estimeMaxH - 6);
+      setFiltrePos({ top, left: Math.min(rect.left, window.innerWidth - 262) });
+    } else {
+      setFiltrePos({ top: 60, left: 12 });
+    }
+    setColFiltreOuverte(colKey);
+  };
+
+  // Valeurs affichées dans le menu de la colonne, filtrées par la recherche du menu
+  const valeursMenu = (col) => {
+    const options = colOptions[col.key] || [];
+    const q = String(rechercheFiltre || '').trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((o) => String(o.value).toLowerCase().includes(q));
+  };
+
+  const colToutSelectionne = (col) => {
+    const cur = filtres[col.key];
+    const vals = valeursDistinctes(col);
+    return cur && vals.length > 0 && cur.size === vals.length && vals.every((v) => cur.has(v));
+  };
+
+  // Lignes filtrées selon les filtres de colonnes actifs
+  const lignesFiltrees = (() => {
+    if (!data) return [];
+    if (filtreActifCount === 0) return data.lignes || [];
+    return (data.lignes || []).filter((l) => {
+      for (const [colKey, setVal] of Object.entries(filtres)) {
+        if (!setVal || setVal.size === 0) continue;
+        const col = COLONNES.find((c) => c.key === colKey);
+        const val = col ? (col.get(l) || '') : '';
+        if (!setVal.has(val)) return false;
+      }
+      return true;
+    });
+  })();
+
   // Ramadan(s) intersectant la période affichée
   const ramadanActifs = () => {
     if (!data || !data.ramadan || !data.ramadan.length) return [];
@@ -176,7 +302,7 @@ export default function Presence() {
       setGestionErreur(false);
       try {
         const r = await api.importPresence(String(reader.result || ''));
-        setGestionMsg(`Restauration terminée : ${r.importes} pointage(s) créé(s), ${r.doublons} déjà présent(s) (ré-import ignoré).`);
+        setGestionMsg(`Restauration terminée : ${r.importes} pointage(s) restauré(s) sur ${r.jours || 0} jour(s) (données anciennes écrasées), ${r.doublons} ligne(s) en double ignorée(s).`);
         load(debut, fin, matricule, categorieId);
       } catch (e) {
         setGestionErreur(true);
@@ -364,29 +490,50 @@ export default function Presence() {
           </div>
 
           <div className="card overflow-hidden">
+            {(filtreActifCount > 0) && (
+              <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-3 py-2" style={{ background: '#fef9ec' }}>
+                <span className="text-xs font-semibold text-amber-700">Filtres actifs : {filtreActifCount} colonne(s) · {lignesFiltrees.length} ligne(s) affichée(s) sur {data.totaux.lignes}</span>
+                <button type="button" className="btn-secondary px-2.5 py-1 text-xs" onClick={effacerFiltres}>✕ Effacer tous les filtres</button>
+              </div>
+            )}
             <div className="table-wrap">
               <table className="w-max-table text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    <th className="px-3 py-3">Matricule</th>
-                    <th className="px-3 py-3">Employé</th>
-                    <th className="px-3 py-3">Catégorie</th>
-                    <th className="px-3 py-3 text-center">Date</th>
-                    <th className="px-3 py-3 text-center">Entrée réglementaire</th>
-                    <th className="px-3 py-3 text-center">Entrée réelle</th>
-                    <th className="px-3 py-3 text-center">Retard</th>
-                    <th className="px-3 py-3 text-center">Sortie réglementaire</th>
-                    <th className="px-3 py-3 text-center">Sortie réelle</th>
-                    <th className="px-3 py-3 text-center">Sortie anticipée</th>
-                    <th className="px-3 py-3 text-center">Statut / Anomalie</th>
+                    {COLONNES.map((col) => {
+                      const actif = (filtres[col.key]?.size || 0) > 0;
+                      return (
+                        <th key={col.key} className={`px-3 py-3 ${col.key === 'date' || col.key.startsWith('entree') || col.key.startsWith('sortie') || col.key === 'retard' ? 'text-center' : ''}`}>
+                          <div className="inline-flex items-center gap-1.5">
+                            <span>{col.label}</span>
+                            <button
+                              type="button"
+                              data-colfiltre
+                              onClick={(e) => ouvrirFiltreCol(col.key, e)}
+                              className="flex h-5 w-5 items-center justify-center rounded border text-[10px] font-bold transition"
+                              title={`Filtrer par ${col.label}`}
+                              style={
+                                actif
+                                  ? { background: '#f59e0b', borderColor: '#f59e0b', color: '#fff' }
+                                  : { background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-secondary)' }
+                              }
+                            >
+                              ⌄
+                            </button>
+                          </div>
+                        </th>
+                      );
+                    })}
                     {user?.role === 'super_admin' && <th className="px-3 py-3 text-center">Action</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {loading ? (
                     <tr><td colSpan={11 + (user?.role === 'super_admin' ? 1 : 0)} className="px-4 py-10 text-center text-slate-500">Chargement…</td></tr>
+                  ) : lignesFiltrees.length === 0 ? (
+                    <tr><td colSpan={11 + (user?.role === 'super_admin' ? 1 : 0)} className="px-4 py-10 text-center text-slate-500">Aucune ligne ne correspond aux filtres sélectionnés.</td></tr>
                   ) : (
-                    data.lignes.map((l) => {
+                    lignesFiltrees.map((l) => {
                       const b = statutBadge(l.statut);
                       return (
                         <tr key={`${l.employe_id}-${l.date}`} className="border-b border-slate-100 hover:bg-slate-50">
@@ -568,8 +715,9 @@ export default function Presence() {
 
           {importResult && (
             <p className="mt-3 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700 ring-1 ring-emerald-200">
-              Import terminé : <strong>{importResult.importes}</strong> pointage(s) créé(s), <strong>{importResult.doublons}</strong> déjà présent(s)
-              (ré-import ignoré){importResult.debut && <> — du {fmtDate(importResult.debut)} au {fmtDate(importResult.fin)}</>}.
+              Import terminé : <strong>{importResult.importes}</strong> pointage(s) créé(s) sur{' '}
+              <strong>{importResult.jours}</strong> jour(s){importResult.debut && <> — du {fmtDate(importResult.debut)} au {fmtDate(importResult.fin)}</>}.
+              {' '}Les données anciennes de ces journées ont été <strong>écrasées</strong>{importResult.doublons > 0 && <> ; <strong>{importResult.doublons}</strong> ligne(s) en double dans le fichier ignorée(s)</>}.
               {importResult.invalides > 0 && <> <span className="text-amber-700">{importResult.invalides} horodatage(s) illisible(s).</span></>}
               {importResult.nonReconnus.length > 0 && (
                 <>
@@ -679,6 +827,60 @@ export default function Presence() {
           </div>
         </div>
       )}
+
+      {/* Menu de filtre de colonne (position fixe vue fenêtre, clampée dans l'écran) */}
+      {colFiltreOuverte && (() => {
+        const col = COLONNES.find((c) => c.key === colFiltreOuverte);
+        if (!col) return null;
+        const opts = valeursMenu(col);
+        const toutes = valeursDistinctes(col);
+        return (
+          <div
+            data-colfiltre
+            onMouseDown={(e) => e.stopPropagation()}
+            className="fixed z-50 w-64 rounded-xl border bg-white p-2 shadow-2xl"
+            style={{ top: filtrePos.top, left: filtrePos.left, borderColor: 'var(--border)' }}
+          >
+            <div className="mb-1.5">
+              <input
+                className="input w-full px-2 py-1 text-xs"
+                placeholder="Rechercher…"
+                value={rechercheFiltre}
+                onChange={(e) => setRechercheFiltre(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="max-h-60 overflow-auto">
+              {opts.map((o) => {
+                const v = o.value;
+                const sel = (filtres[col.key] || new Set()).has(v);
+                return (
+                  <label key={String(v)} className="flex cursor-pointer select-none items-center gap-2 rounded px-1.5 py-1.5 text-xs hover:bg-amber-50">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 shrink-0"
+                      style={{ accentColor: '#f59e0b' }}
+                      checked={sel}
+                      onChange={() => toggleFiltre(col.key, v)}
+                    />
+                    <span className="truncate font-mono text-slate-700">{v === '' ? <span className="italic text-slate-400">(vide)</span> : v}</span>
+                    <span className="ms-auto shrink-0 text-[10px] text-slate-400">{o.count}</span>
+                  </label>
+                );
+              })}
+              {opts.length === 0 && <p className="px-1.5 py-2 text-xs text-slate-400">Aucune valeur.</p>}
+            </div>
+            <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-slate-100 pt-2">
+              <button type="button" className="text-xs font-semibold text-slate-500 hover:underline" onClick={() => toggleAllColonne(col.key, toutes, !colToutSelectionne(col))}>
+                {colToutSelectionne(col) ? 'Tout décocher' : 'Tout cocher'}
+              </button>
+              <button type="button" className="btn-primary px-2.5 py-1 text-xs" style={{ background: '#f59e0b' }} onClick={() => { setColFiltreOuverte(null); setRechercheFiltre(''); }}>
+                OK
+              </button>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

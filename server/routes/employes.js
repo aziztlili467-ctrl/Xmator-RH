@@ -3,16 +3,46 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const sharp = require('sharp');
-const { db, soldeEmploye, soldeMaladie } = require('../db');
+const { db, soldeMaladie, soldeCongeRestantDate, journalSoldeConge } = require('../db');
 const { requireRole } = require('../middleware/auth');
 const router = Router();
 
 const lecture = requireRole('super_admin', 'consultation', 'moderateur');
 
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
+// Grille de salaire : valeur (salaire de base) et rubrique correspondant à (grade, classe, echelon)
+function grilleSalaire(grade, classe, echelon) {
+  if (!grade || !classe || !echelon) return null;
+  return db.prepare(
+    'SELECT rubrique, valeur FROM grille_salaire WHERE grade = ? AND classe = ? AND echelon = ?'
+  ).get(String(grade).trim(), String(classe).trim(), String(echelon).trim()) || null;
+}
+
+// Consomme les changements de la grille SANS éditer la fiche : recale salaire de base (et rubrique
+// si vide) à la lecture, à partir de (grade / classe / echelon). Appliqué à toutes les lectures d'employé.
+function enrichirGrille(e) {
+  if (!e) return e;
+  const g = grilleSalaire(e.grade, e.classe, e.echelon);
+  if (g) {
+    e.salaire_base = String(g.valeur);
+    if (!e.rubrique) e.rubrique = g.rubrique;
+  }
+  return e;
+}
+
 const BASE = `
   SELECT e.id, e.matricule, e.nom, e.prenom, e.actif, e.categorie_id,
          e.date_naissance, e.date_embauche, e.photo_url,
          e.rubrique, e.grade, e.classe, e.echelon,
+         e.adresse, e.telephone, e.situation_familiale, e.nombre_enfants,
+         e.lieu_naissance, e.sexe, e.nationalite, e.groupe_sanguin, e.cin, e.date_emission_cin, e.service_militaire, e.cnss,
+         e.rue, e.code_postal, e.localite, e.gouvernorat, e.gsm, e.adresse_electronique,
+         e.conjoint_nom, e.conjoint_date_naissance, e.enfants_details,
+         e.niveau_etudes, e.diplome, e.date_emission_diplome,
+         e.cnam, e.type_contrat, e.banque, e.titulaire_compte, e.type_compte, e.rib,
+         e.salaire_base, e.indemnite_presence, e.indemnite_transport, e.indemnite_fonction, e.intitule_poste,
+         e.departement,
          c.libelle AS categorie
   FROM employes e
   JOIN categories c ON c.id = e.categorie_id
@@ -36,24 +66,23 @@ router.get('/', lecture, (req, res) => {
     params.push(Number(actif));
   }
   sql += ' ORDER BY CAST(e.matricule AS INTEGER), e.matricule';
-  const rows = db.prepare(sql).all(...params);
-  res.json(rows.map((r) => ({ ...r, solde: soldeEmploye(r.id), solde_maladie: soldeMaladie(r.id) })));
+  const rows = db.prepare(sql).all(...params).map(enrichirGrille);
+  res.json(rows.map((r) => ({ ...r, solde: soldeCongeRestantDate(r.id, todayISO()), solde_maladie: soldeMaladie(r.id) })));
 });
 
 router.get('/:id', lecture, (req, res) => {
-  const e = db.prepare(BASE + ' WHERE e.id = ?').get(req.params.id);
+  const e = enrichirGrille(db.prepare(BASE + ' WHERE e.id = ?').get(req.params.id));
   if (!e) return res.status(404).json({ error: 'Employé introuvable.' });
 
-  const solde = soldeEmploye(e.id);
+  // Solde de congé cohérent avec le « Journal du solde de congé » (source de vérité RMA) :
+  // accorde = dotations crédit, consomme = prélèvements CA/DJ du journal RMA (toute cellule
+  // de la grille = jour consommé), solde = accorde − consomme. Le solde maladie reste sur le
+  // grand livre des mouvements.
+  const journal = journalSoldeConge(e.id);
+  const accorde = Math.round(journal.lignes.filter((l) => l.signe > 0).reduce((s, l) => s + l.jours, 0) * 1000) / 1000;
+  const consomme = Math.round(journal.lignes.filter((l) => l.signe < 0).reduce((s, l) => s + l.jours, 0) * 1000) / 1000;
+  const solde = journal.solde;
   const soldeMaladieSolde = soldeMaladie(e.id);
-  const accorde = db.prepare(`
-    SELECT COALESCE(SUM(CASE WHEN type_operation IN ('solde_initial','ajout_annuel') THEN jours ELSE 0 END), 0) AS accorde
-    FROM mouvements WHERE employe_id = ? AND solde_type = 'conge'
-  `).get(e.id).accorde;
-  const consomme = db.prepare(`
-    SELECT COALESCE(SUM(CASE WHEN type_operation = 'prelevement' THEN jours ELSE 0 END), 0) AS consomme
-    FROM mouvements WHERE employe_id = ? AND solde_type = 'conge'
-  `).get(e.id).consomme;
   const accordeMaladie = db.prepare(`
     SELECT COALESCE(SUM(CASE WHEN type_operation IN ('solde_initial','ajout_annuel') THEN jours ELSE 0 END), 0) AS accorde
     FROM mouvements WHERE employe_id = ? AND solde_type = 'maladie'
@@ -72,7 +101,7 @@ router.get('/:id', lecture, (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { matricule, nom, prenom, categorie_id, rubrique, grade, classe, echelon, actif } = req.body || {};
+  const { matricule, nom, prenom, categorie_id, rubrique, grade, classe, echelon, actif, date_naissance, date_embauche, adresse, telephone, situation_familiale, nombre_enfants, lieu_naissance, sexe, nationalite, groupe_sanguin, cin, date_emission_cin, service_militaire, cnss, rue, code_postal, localite, gouvernorat, gsm, adresse_electronique, conjoint_nom, conjoint_date_naissance, enfants_details, niveau_etudes, diplome, date_emission_diplome, cnam, type_contrat, banque, titulaire_compte, type_compte, rib, salaire_base, indemnite_presence, indemnite_transport, indemnite_fonction, intitule_poste } = req.body || {};
   if (!matricule || !nom || !prenom || !categorie_id) {
     return res.status(400).json({ error: 'Matricule, nom, prénom et catégorie sont obligatoires.' });
   }
@@ -82,10 +111,22 @@ router.post('/', (req, res) => {
   const cat = db.prepare('SELECT id FROM categories WHERE id = ?').get(Number(categorie_id));
   if (!cat) return res.status(400).json({ error: 'Catégorie inconnue.' });
   try {
-    const r = db.prepare('INSERT INTO employes (matricule, nom, prenom, categorie_id, rubrique, grade, classe, echelon, actif) VALUES (?,?,?,?,?,?,?,?,?)')
+    const gr = grilleSalaire(grade, classe, echelon);
+    const rubriqueRef = String(rubrique || '').trim() || (gr ? gr.rubrique : '');
+    const r = db.prepare('INSERT INTO employes (matricule, nom, prenom, categorie_id, rubrique, grade, classe, echelon, actif, date_naissance, date_embauche, adresse, telephone, situation_familiale, nombre_enfants, lieu_naissance, sexe, nationalite, groupe_sanguin, cin, date_emission_cin, service_militaire, cnss, rue, code_postal, localite, gouvernorat, gsm, adresse_electronique, conjoint_nom, conjoint_date_naissance, enfants_details, niveau_etudes, diplome, date_emission_diplome, cnam, type_contrat, banque, titulaire_compte, type_compte, rib, salaire_base, indemnite_presence, indemnite_transport, indemnite_fonction, intitule_poste, departement) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
       .run(mat, String(nom).trim(), String(prenom).trim(), Number(categorie_id),
-        String(rubrique || '').trim(), String(grade || '').trim(), String(classe || '').trim(), String(echelon || '').trim(),
-        actif === false ? 0 : 1);
+        rubriqueRef, String(grade || '').trim(), String(classe || '').trim(), String(echelon || '').trim(),
+        actif === false ? 0 : 1,
+        date_naissance || null, date_embauche || null,
+        adresse ? String(adresse).trim() : null, telephone ? String(telephone).trim() : null,
+        situation_familiale ? String(situation_familiale).trim() : null, nombre_enfants ? Number(nombre_enfants) : 0,
+        lieu_naissance ? String(lieu_naissance).trim() : null, sexe || null, nationalite ? String(nationalite).trim() : null, groupe_sanguin || null, cin ? String(cin).trim() : null, date_emission_cin || null, service_militaire || null, cnss ? String(cnss).trim() : null,
+        rue ? String(rue).trim() : null, code_postal ? String(code_postal).trim() : null, localite ? String(localite).trim() : null, gouvernorat ? String(gouvernorat).trim() : null, gsm ? String(gsm).trim() : null, adresse_electronique ? String(adresse_electronique).trim() : null,
+        conjoint_nom ? String(conjoint_nom).trim() : null, conjoint_date_naissance || null, enfants_details ? (typeof enfants_details==='string'? enfants_details : JSON.stringify(enfants_details)) : null,
+        niveau_etudes || null, diplome ? String(diplome).trim() : null, date_emission_diplome || null,
+        cnam ? String(cnam).trim() : null, type_contrat || null, banque ? String(banque).trim() : null, titulaire_compte ? String(titulaire_compte).trim() : null, type_compte || null, rib ? String(rib).replace(/\s/g, '') : null,
+        salaire_base !== undefined && salaire_base !== '' ? String(salaire_base).trim() : (gr ? String(gr.valeur) : null), indemnite_presence !== undefined && indemnite_presence !== '' ? String(indemnite_presence).trim() : null, indemnite_transport !== undefined && indemnite_transport !== '' ? String(indemnite_transport).trim() : null, indemnite_fonction !== undefined && indemnite_fonction !== '' ? String(indemnite_fonction).trim() : null, intitule_poste !== undefined && intitule_poste !== '' ? String(intitule_poste).trim() : null,
+        departement ? String(departement).trim() : null);
     res.status(201).json({ id: r.lastInsertRowid });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -177,7 +218,7 @@ router.post('/import-rh', (req, res) => {
 });
 
 router.put('/:id', (req, res) => {
-  const { matricule, nom, prenom, categorie_id, rubrique, grade, classe, echelon, actif } = req.body || {};
+  const { matricule, nom, prenom, categorie_id, rubrique, grade, classe, echelon, actif, date_naissance, date_embauche, adresse, telephone, situation_familiale, nombre_enfants, lieu_naissance, sexe, nationalite, groupe_sanguin, cin, date_emission_cin, service_militaire, cnss, rue, code_postal, localite, gouvernorat, gsm, adresse_electronique, conjoint_nom, conjoint_date_naissance, enfants_details, niveau_etudes, diplome, date_emission_diplome, cnam, type_contrat, banque, titulaire_compte, type_compte, rib, salaire_base, indemnite_presence, indemnite_transport, indemnite_fonction, intitule_poste, departement } = req.body || {};
   const id = Number(req.params.id);
   const e = db.prepare('SELECT id, matricule FROM employes WHERE id = ?').get(id);
   if (!e) return res.status(404).json({ error: 'Employé introuvable.' });
@@ -194,6 +235,8 @@ router.put('/:id', (req, res) => {
     if (conflict) return res.status(400).json({ error: 'Ce matricule est déjà utilisé par un autre employé.' });
   }
 
+  const gr = grilleSalaire(grade, classe, echelon);
+
   db.prepare(`
     UPDATE employes SET
       matricule = ?,
@@ -204,18 +247,94 @@ router.put('/:id', (req, res) => {
       grade = COALESCE(?, grade),
       classe = COALESCE(?, classe),
       echelon = COALESCE(?, echelon),
-      actif = COALESCE(?, actif)
+      actif = COALESCE(?, actif),
+      date_naissance = COALESCE(?, date_naissance),
+      date_embauche = COALESCE(?, date_embauche),
+      adresse = COALESCE(?, adresse),
+      telephone = COALESCE(?, telephone),
+      situation_familiale = COALESCE(?, situation_familiale),
+      nombre_enfants = COALESCE(?, nombre_enfants),
+      lieu_naissance = COALESCE(?, lieu_naissance),
+      sexe = COALESCE(?, sexe),
+      nationalite = COALESCE(?, nationalite),
+      groupe_sanguin = COALESCE(?, groupe_sanguin),
+      cin = COALESCE(?, cin),
+      date_emission_cin = COALESCE(?, date_emission_cin),
+      service_militaire = COALESCE(?, service_militaire),
+      cnss = COALESCE(?, cnss),
+      rue = COALESCE(?, rue),
+      code_postal = COALESCE(?, code_postal),
+      localite = COALESCE(?, localite),
+      gouvernorat = COALESCE(?, gouvernorat),
+      gsm = COALESCE(?, gsm),
+      adresse_electronique = COALESCE(?, adresse_electronique),
+      conjoint_nom = COALESCE(?, conjoint_nom),
+      conjoint_date_naissance = COALESCE(?, conjoint_date_naissance),
+      enfants_details = COALESCE(?, enfants_details),
+      niveau_etudes = COALESCE(?, niveau_etudes),
+      diplome = COALESCE(?, diplome),
+      date_emission_diplome = COALESCE(?, date_emission_diplome),
+      cnam = COALESCE(?, cnam),
+      type_contrat = COALESCE(?, type_contrat),
+      banque = COALESCE(?, banque),
+      titulaire_compte = COALESCE(?, titulaire_compte),
+      type_compte = COALESCE(?, type_compte),
+      rib = COALESCE(?, rib),
+      salaire_base = COALESCE(?, salaire_base),
+      indemnite_presence = COALESCE(?, indemnite_presence),
+      indemnite_transport = COALESCE(?, indemnite_transport),
+      indemnite_fonction = COALESCE(?, indemnite_fonction),
+      intitule_poste = COALESCE(?, intitule_poste),
+      departement = COALESCE(?, departement)
     WHERE id = ?
   `).run(
     nouveauMatricule,
     nom !== undefined ? String(nom).trim() : null,
     prenom !== undefined ? String(prenom).trim() : null,
     categorie_id !== undefined ? Number(categorie_id) : null,
-    rubrique !== undefined ? String(rubrique).trim() : null,
+    rubrique !== undefined ? (String(rubrique).trim() || (gr ? gr.rubrique : '')) : (gr ? gr.rubrique : null),
     grade !== undefined ? String(grade).trim() : null,
     classe !== undefined ? String(classe).trim() : null,
     echelon !== undefined ? String(echelon).trim() : null,
     actif !== undefined ? (actif ? 1 : 0) : null,
+    date_naissance !== undefined ? (date_naissance || null) : null,
+    date_embauche !== undefined ? (date_embauche || null) : null,
+    adresse !== undefined ? (adresse ? String(adresse).trim() : null) : null,
+    telephone !== undefined ? (telephone ? String(telephone).trim() : null) : null,
+    situation_familiale !== undefined ? (situation_familiale ? String(situation_familiale).trim() : null) : null,
+    nombre_enfants !== undefined ? (nombre_enfants !== '' ? Number(nombre_enfants) : null) : null,
+    lieu_naissance !== undefined ? (lieu_naissance ? String(lieu_naissance).trim() : null) : null,
+    sexe !== undefined ? (sexe || null) : null,
+    nationalite !== undefined ? (nationalite ? String(nationalite).trim() : null) : null,
+    groupe_sanguin !== undefined ? (groupe_sanguin || null) : null,
+    cin !== undefined ? (cin ? String(cin).trim() : null) : null,
+    date_emission_cin !== undefined ? (date_emission_cin || null) : null,
+    service_militaire !== undefined ? (service_militaire || null) : null,
+    cnss !== undefined ? (cnss ? String(cnss).trim() : null) : null,
+    rue !== undefined ? (rue ? String(rue).trim() : null) : null,
+    code_postal !== undefined ? (code_postal ? String(code_postal).trim() : null) : null,
+    localite !== undefined ? (localite ? String(localite).trim() : null) : null,
+    gouvernorat !== undefined ? (gouvernorat ? String(gouvernorat).trim() : null) : null,
+    gsm !== undefined ? (gsm ? String(gsm).trim() : null) : null,
+    adresse_electronique !== undefined ? (adresse_electronique ? String(adresse_electronique).trim() : null) : null,
+    conjoint_nom !== undefined ? (conjoint_nom ? String(conjoint_nom).trim() : null) : null,
+    conjoint_date_naissance !== undefined ? (conjoint_date_naissance || null) : null,
+    enfants_details !== undefined ? (enfants_details ? (typeof enfants_details==='string'? enfants_details : JSON.stringify(enfants_details)) : null) : null,
+    niveau_etudes !== undefined ? (niveau_etudes || null) : null,
+    diplome !== undefined ? (diplome ? String(diplome).trim() : null) : null,
+    date_emission_diplome !== undefined ? (date_emission_diplome || null) : null,
+    cnam !== undefined ? (cnam ? String(cnam).trim() : null) : null,
+    type_contrat !== undefined ? (type_contrat || null) : null,
+    banque !== undefined ? (banque ? String(banque).trim() : null) : null,
+    titulaire_compte !== undefined ? (titulaire_compte ? String(titulaire_compte).trim() : null) : null,
+    type_compte !== undefined ? (type_compte || null) : null,
+    rib !== undefined ? (rib ? String(rib).replace(/\s/g, '') : null) : null,
+    salaire_base !== undefined ? (salaire_base !== '' ? String(salaire_base).trim() : (gr ? String(gr.valeur) : null)) : (gr ? String(gr.valeur) : null),
+    indemnite_presence !== undefined ? (indemnite_presence !== '' ? String(indemnite_presence).trim() : null) : null,
+    indemnite_transport !== undefined ? (indemnite_transport !== '' ? String(indemnite_transport).trim() : null) : null,
+    indemnite_fonction !== undefined ? (indemnite_fonction !== '' ? String(indemnite_fonction).trim() : null) : null,
+    intitule_poste !== undefined ? (intitule_poste !== '' ? String(intitule_poste).trim() : null) : null,
+    departement !== undefined ? (departement ? String(departement).trim() : null) : null,
     id
   );
   res.json({ ok: true, id, matricule: nouveauMatricule });
@@ -227,7 +346,22 @@ router.delete('/:id', (req, res) => {
   if (!e) return res.status(404).json({ error: 'Employé introuvable.' });
 
   const tx = db.transaction(() => {
-    db.prepare('DELETE FROM mouvements WHERE employe_id = ?').run(id);
+    // Purger toutes les tables qui référencent employe_id (ordre : enfants d'abord)
+    const tables = [
+      'codes_importes',
+      'demandes_conge',
+      'arrets_maladie',
+      'pointages',
+      'corrections_pointages',
+      'horaires_travail',
+      'horaires_pointages',
+      'notifications_absence',
+      'mouvements',
+      'utilisateurs',
+    ];
+    for (const t of tables) {
+      db.prepare(`DELETE FROM ${t} WHERE employe_id = ?`).run(id);
+    }
     db.prepare('DELETE FROM employes WHERE id = ?').run(id);
   });
   tx();
@@ -263,18 +397,17 @@ function anneesService(dateEmbauche) {
 
 // GET /api/employes/:matricule/fiche — fiche complète (protégée : super_admin/consultation, ou l'employé lui-même)
 router.get('/:matricule/fiche', validerAccesMatricule, (req, res) => {
-  const e = db.prepare(BASE + ' WHERE e.matricule = ?').get(req.params.matricule);
+  const e = enrichirGrille(db.prepare(BASE + ' WHERE e.matricule = ?').get(req.params.matricule));
   if (!e) return res.status(404).json({ error: 'Employé introuvable.' });
-  const solde = soldeEmploye(e.id);
+  // Solde de congé cohérent avec le « Journal du solde de congé » (source de vérité RMA) :
+  // accorde = dotations crédit, consomme = prélèvements CA/DJ du journal RMA (toute cellule
+  // de la grille = jour consommé), solde = accorde − consomme. Le solde maladie reste sur le
+  // grand livre des mouvements.
+  const journal = journalSoldeConge(e.id);
+  const accorde = Math.round(journal.lignes.filter((l) => l.signe > 0).reduce((s, l) => s + l.jours, 0) * 1000) / 1000;
+  const consomme = Math.round(journal.lignes.filter((l) => l.signe < 0).reduce((s, l) => s + l.jours, 0) * 1000) / 1000;
+  const solde = journal.solde;
   const soldeMaladieSolde = soldeMaladie(e.id);
-  const accorde = db.prepare(`
-    SELECT COALESCE(SUM(CASE WHEN type_operation IN ('solde_initial','ajout_annuel') THEN jours ELSE 0 END), 0) AS accorde
-    FROM mouvements WHERE employe_id = ? AND solde_type = 'conge'
-  `).get(e.id).accorde;
-  const consomme = db.prepare(`
-    SELECT COALESCE(SUM(CASE WHEN type_operation = 'prelevement' THEN jours ELSE 0 END), 0) AS consomme
-    FROM mouvements WHERE employe_id = ? AND solde_type = 'conge'
-  `).get(e.id).consomme;
   const accordeMaladie = db.prepare(`
     SELECT COALESCE(SUM(CASE WHEN type_operation IN ('solde_initial','ajout_annuel') THEN jours ELSE 0 END), 0) AS accorde
     FROM mouvements WHERE employe_id = ? AND solde_type = 'maladie'
@@ -342,14 +475,29 @@ router.get('/:matricule/stats', validerAccesMatricule, (req, res) => {
     WHERE employe_id = ? AND type_operation = ? AND solde_type = ? AND date_operation BETWEEN ? AND ?
   `).get(req.employe.id, typeOp, soldeType, debutPar, finPar);
 
-  const conge = somm('prelevement', 'conge');
+  // Congé consommé : source de vérité = grille RMA (codes_importes CA/DJ) — toute cellule est un
+  // jour consommé (CA = 1, DJ / demi-journée = 0,5), aligné sur le dashboard, la fiche, le journal
+  // du solde et le journal RMA lui-même (même regroupement mensuel par date de la cellule).
+  const congeMois = db.prepare(`
+    SELECT substr(ci.date,1,7) AS mois, COUNT(*) AS episodes,
+           COALESCE(SUM(CASE WHEN ci.code='DJ' OR ci.demi_journee=1 THEN 0.5 ELSE 1 END),0) AS jours
+    FROM codes_importes ci JOIN employes e ON e.id = ci.employe_id
+    WHERE e.matricule = ? AND ci.code IN ('CA','DJ') AND ci.date BETWEEN ? AND ?
+    GROUP BY substr(ci.date,1,7) ORDER BY mois
+  `).all(String(req.params.matricule), debutPar, finPar);
+  const conge = congeMois.reduce((a, r) => {
+    a.episodes += r.episodes;
+    a.jours = Math.round((a.jours + r.jours) * 1000) / 1000;
+    return a;
+  }, { episodes: 0, jours: 0 });
+
   const maladie = somm('maladie', 'maladie');
   const absence = somm('absence', 'conge');
 
   res.json({
     employe: db.prepare('SELECT e.matricule, e.nom, e.prenom, c.libelle AS categorie FROM employes e JOIN categories c ON c.id=e.categorie_id WHERE e.id = ?').get(req.employe.id),
     periode: { debut: debutPar, fin: finPar },
-    conge: { ...conge, restant: soldeEmploye(req.employe.id, 'conge'), parMois: parMois('prelevement', 'conge') },
+    conge: { ...conge, restant: soldeCongeRestantDate(req.employe.id), parMois: congeMois },
     maladie: { ...maladie, restant: soldeMaladie(req.employe.id), parMois: parMois('maladie', 'maladie') },
     absence: { ...absence, parMois: parMois('absence', 'conge') },
   });

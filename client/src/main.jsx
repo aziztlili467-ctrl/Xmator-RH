@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
+import './theme.css';
 import './index.css';
 
 // PWA : enregistrement du service worker (production uniquement).

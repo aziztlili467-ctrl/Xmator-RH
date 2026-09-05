@@ -112,6 +112,9 @@ export default function Login() {
         <p className="mt-4 text-center text-xs font-medium text-brand-200">
           Amicale du Personnel de la Banque Centrale de Tunisie
         </p>
+        <p className="mt-2 text-center text-[11px] text-slate-500/60">
+          Mot de passe oublié ? Contactez l'administrateur système.
+        </p>
       </div>
     </div>
   );

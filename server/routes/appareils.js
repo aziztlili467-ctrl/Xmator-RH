@@ -255,6 +255,8 @@ router.get('/pdf', requireRole('super_admin'), (req, res) => {
 
   doc.font('Helvetica-Oblique').fontSize(8).fillColor('#6b7280')
     .text(`Document généré le ${new Date().toLocaleString('fr-FR')} — XMATOR RH`, L, Math.min(pageH - 40, y + 16), { lineBreak: false });
+  const { drawPDFBrandFooter } = require('../utils/pdfBranding');
+  drawPDFBrandFooter(doc, { footerText: 'Appareils connectés' });
   doc.end();
 });
 

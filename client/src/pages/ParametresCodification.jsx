@@ -3,6 +3,7 @@ import { api } from '../api';
 import { IconAlert } from '../components/icons';
 
 const COULEURS = [
+  { hex: '#000000', nom: 'Noir' },
   { hex: '#f59e0b', nom: 'Ambre' },
   { hex: '#0ea5e9', nom: 'Bleu ciel' },
   { hex: '#f43f5e', nom: 'Rose' },

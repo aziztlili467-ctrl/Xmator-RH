@@ -157,6 +157,7 @@ router.get('/:id/pdf', (req, res) => {
 
   const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margins: { top: 55, bottom: 55, left: 60, right: 60 } });
   doc.registerFont('Garamond', path.join(__dirname, '..', 'fonts', 'EBGaramond.ttf'));
+  const { drawPDFBrandFooter } = require('../utils/pdfBranding');
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="notification-absence-${n.id}.pdf"`);
   doc.pipe(res);
@@ -232,6 +233,7 @@ router.get('/:id/pdf', (req, res) => {
     .text(`Document établi le ${stamp} par « ${n.cree_par || '—'} » — Notification d'absences N° ${String(n.id).padStart(4, '0')}`,
       L, doc.page.height - 62, { width: W, align: 'center', lineBreak: false });
 
+  drawPDFBrandFooter(doc, { footerText: `Notification d'absences N° ${String(n.id).padStart(4, '0')}` });
   doc.end();
 });
 

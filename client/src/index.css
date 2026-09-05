@@ -4,8 +4,12 @@
 
 @layer base {
   body {
-    @apply bg-slate-100 text-slate-800 antialiased;
+    @apply bg-[var(--bg-app)] text-[var(--text-primary)] antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
   }
+  h1 { font-size: 28px; font-weight: 700; }
+  h2 { font-size: 22px; font-weight: 600; }
+  h3 { font-size: 18px; font-weight: 600; }
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -20,23 +24,37 @@
 
 @layer components {
   .card {
-    @apply bg-white rounded-xl shadow-card border border-slate-200;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm); padding: 20px;
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
   }
+  .card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
   .input {
-    @apply w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-800
-      placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100;
+    @apply w-full bg-white px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-slate-400 focus:outline-none focus:ring-2;
+    border: 1px solid var(--border); border-radius: var(--radius-md);
   }
+  .input:focus { border-color: var(--primary-600); box-shadow: 0 0 0 3px var(--primary-50); }
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-brand-700 px-4 py-2.5 text-sm font-semibold
-      text-white transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50;
+    background: var(--primary-600); border-radius: var(--radius-md); padding: 10px 16px; box-shadow: var(--shadow-sm);
   }
+  .btn-primary:hover { background: var(--primary-700); box-shadow: var(--shadow-md); }
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5
-      text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50;
+    background: transparent; border: 1px solid var(--border); color: var(--text-primary); border-radius: var(--radius-md); padding: 10px 16px;
   }
-  .label {
-    @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500;
-  }
+  .btn-secondary:hover { background: var(--primary-50); }
+  .label { @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide; color: var(--text-secondary); letter-spacing: 0.03em; }
+  .badge { padding: 4px 12px; border-radius: var(--radius-full); font-size: 12px; font-weight: 600; }
+  .badge-approved { background: #d1fae5; color: #047857; }
+  .badge-pending { background: #fef3c7; color: #b45309; }
+  .badge-rejected { background: #fee2e2; color: #b91c1c; }
+  .badge-draft { background: #f1f5f9; color: #64748b; }
+  .icon-badge { width: 40px; height: 40px; display:flex; align-items:center; justify-content:center; border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
+  .skeleton { background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 37%, #e2e8f0 63%); background-size: 400% 100%; animation: shimmer 1.2s ease-in-out infinite; }
+  @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+  .fade-in { animation: fadeIn 0.3s ease; }
+  @keyframes fadeIn { from { opacity:0; transform: translateY(8px);} to {opacity:1; transform:none;} }
   /* Tableaux larges : scroll horizontal fluide sur mobile, pleine largeur sur desktop */
   .table-wrap {
     @apply overflow-x-auto;
@@ -50,7 +68,25 @@
     min-width: 100%;
   }
   /* Boutons pleine largeur sur mobile uniquement */
-  .btn-block {
-    @apply w-full sm:w-auto;
+  .btn-block { @apply w-full sm:w-auto; }
+  @media (max-width: 640px) {
+    .table-wrap table thead { display: none; }
+    .table-wrap table tbody tr { display: block; margin-bottom: 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-card); box-shadow: var(--shadow-sm); }
+    .table-wrap table tbody td { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border: none; border-bottom: 1px solid var(--border); }
+    .table-wrap table tbody td:last-child { border-bottom: none; }
+    .table-wrap table tbody td::before { content: attr(data-label); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-secondary); }
   }
+}
+
+/* Impression : masquer le chrome applicatif pour un Ctrl+P propre */
+@media print {
+  .no-print,
+  aside,
+  header {
+    display: none !important;
+  }
+  .fixed { display: none !important; }
+  main { padding: 0 !important; }
+  div.flex.flex-col { padding-left: 0 !important; }
+  body { background: #fff !important; }
 }

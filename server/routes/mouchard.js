@@ -215,6 +215,7 @@ router.get('/pdf', (req, res) => {
 
   const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margins: { top: 40, bottom: 40, left: 40, right: 40 } });
   doc.registerFont('Garamond', path.join(__dirname, '..', 'fonts', 'EBGaramond.ttf'));
+  const { drawPDFBrandFooter } = require('../utils/pdfBranding');
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="mouchard-evenements_${debut || 'tout'}_${fin || 'tout'}.pdf"`);
   doc.pipe(res);
@@ -303,6 +304,7 @@ router.get('/pdf', (req, res) => {
     y = drawRow(ev, idx, y);
   });
 
+  drawPDFBrandFooter(doc, { footerText: 'Journal des activités (Mouchard)' });
   doc.end();
 });
 

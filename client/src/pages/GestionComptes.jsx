@@ -417,28 +417,9 @@ export default function GestionComptes() {
         </div>
       )}
 
-      {/* Upload photo */}
+      {/* Photos — sauvegarde/restauration uniquement (upload déplacé vers Fiche Signalétique > Informations Personnelles) */}
       <div className="card p-6">
-        <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-slate-500">Photo d'identité (webp)</h3>
-        <form onSubmit={uploadPhoto} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <div className="flex-1">
-            <label className="label">Employé</label>
-            <select className="input" value={photoEmpId} onChange={(e) => setPhotoEmpId(e.target.value)}>
-              <option value="">Choisir…</option>
-              {employes.map((e) => (
-                <option key={e.id} value={e.id}>{e.matricule} — {e.nom} {e.prenom}</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex-1">
-            <label className="label">Fichier (converti en webp automatiquement)</label>
-            <input className="input p-2" type="file" accept="image/*" onChange={(e) => setPhotoFile(e.target.files[0] || null)} />
-          </div>
-          <button type="submit" className="btn-primary" disabled={busy}>Uploader</button>
-        </form>
-        {photoMsg && <p className="mt-3 text-sm text-emerald-600">{photoMsg}</p>}
-
-        <div className="mt-5 border-t border-slate-100 pt-5">
+        <div className="mt-0 border-t-0 pt-0">
           <h4 className="mb-2 text-sm font-semibold text-slate-700">Sauvegarde & restauration des photos d'identité</h4>
           <p className="mb-4 text-xs leading-relaxed text-slate-500">
             Sauvegardez <span className="font-semibold text-slate-700">toutes les photos d'identité</span> dans un fichier

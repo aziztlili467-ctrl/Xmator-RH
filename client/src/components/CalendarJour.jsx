@@ -5,39 +5,48 @@ import { IconCalendarCheck } from './icons';
 const JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 
-const LEGENDE = [
-  { st: 'present', label: 'Présent (P1)', dot: '#10b981' },
-  { st: 'conge', label: 'Congé', dot: '#3860ea' },
-  { st: 'conge_demi', label: 'Demi-journée de congé', dot: '#000000' },
-  { st: 'maladie', label: 'Maladie', dot: '#f43f5e' },
-  { st: 'absence', label: 'Absent', dot: '#f59e0b' },
-  { st: 'repos', label: 'Repos / férié', dot: '#cbd5e1' },
-  { st: 'rma_A1', label: 'A1 — Absent', dot: '#f59e0b' },
-  { st: 'rma_CA', label: 'CA — Congé Annuel', dot: '#0ea5e9' },
-  { st: 'rma_MA', label: 'MA — Maladie', dot: '#f43f5e' },
-  { st: 'rma_R3', label: 'R3 — Repos Payé', dot: '#8b5cf6' },
-  { st: 'rma_RP', label: 'RP — Repos', dot: '#64748b' },
-];
+// Statuts standard du calendrier → codes de « Paramètres & Codification » (codes_paie)
+// La couleur affichée vient de la table (live) : toute mise à jour/rectification y est reflétée.
+const STATUT_CODE = {
+  present: 'P1',
+  conge: 'CA',
+  conge_demi: 'CA',
+  demi_journee: 'DJ',
+  maladie: 'MA',
+  absence: 'A1',
+  repos: 'RP',
+};
+
+// Couleurs de repli (défauts codes_paie) si le code est absent de la réponse
+const COULEURS_DEFAUT = {
+  P1: '#10b981',
+  A1: '#f59e0b',
+  CA: '#0ea5e9',
+  DJ: '#000000',
+  MA: '#f43f5e',
+  RP: '#64748b',
+  R3: '#8b5cf6',
+};
 
 const CELLS = {
-  present: 'bg-emerald-500 text-white shadow-sm ring-1 ring-emerald-600/40',
-  conge: 'bg-blue-600 text-white shadow-sm ring-1 ring-blue-700/40',
-  conge_demi: 'bg-black text-white shadow-sm ring-1 ring-black/40',
-  maladie: 'bg-rose-500 text-white shadow-sm ring-1 ring-rose-600/40',
-  absence: 'bg-amber-500 text-white shadow-sm ring-1 ring-amber-600/40',
-  repos: 'bg-slate-200 text-slate-500',
+  present: 'text-white shadow-sm ring-1 ring-black/10',
+  conge: 'text-white shadow-sm ring-1 ring-black/10',
+  conge_demi: 'text-white shadow-sm ring-1 ring-black/40',
+  maladie: 'text-white shadow-sm ring-1 ring-black/10',
+  absence: 'text-white shadow-sm ring-1 ring-black/10',
+  repos: 'text-white shadow-sm ring-1 ring-black/10',
   rma: 'text-white shadow-sm ring-1 ring-black/10',
   vide: 'bg-transparent',
 };
 
-// Couleur des heures travaillées dans la case : lisible et distincte sur chaque fond
+// Couleur des heures travaillées dans la case : lisible sur n'importe quelle couleur de code (codes_paie)
 const HEURES_TXT = {
-  present: 'text-emerald-950/80',
-  conge: 'text-blue-100',
+  present: 'text-white/90',
+  conge: 'text-white/90',
   conge_demi: 'text-white/90',
-  maladie: 'text-rose-100',
-  absence: 'text-amber-950/80',
-  repos: 'text-slate-600',
+  maladie: 'text-white/90',
+  absence: 'text-white/90',
+  repos: 'text-slate-200',
   rma: 'text-white/90',
   vide: '',
 };
@@ -51,13 +60,13 @@ const fmtH = (sec) => {
   return mm ? `${h}h${String(mm).padStart(2, '0')}` : `${h}h`;
 };
 
-const statutJour = (j) => {
+export const statutJour = (j) => {
   if (!j) return { st: 'vide', day: '' };
   const day = Number(j.date.slice(8, 10));
   // Codifications RMA (Journal RMA → Journal de paie) : prioritaires, affichées avec leur couleur paramétrée
-  // Demi-journée CA : CA en noir (même si RMA)
+  // Demi-journée (CA en demi OU code DJ) : noir
   if (j.rma_code) {
-    if (j.rma_code.includes('CA') && (j.rma_demi || (j.demi && j.conge > 0))) return { st: 'rma', day, code: j.rma_code, couleur: '#000000' };
+    if (j.rma_code.includes('DJ') || (j.rma_code.includes('CA') && (j.rma_demi || (j.demi && j.conge > 0)))) return { st: 'rma', day, code: j.rma_code, couleur: '#000000' };
     return { st: 'rma', day, code: j.rma_code, couleur: j.rma_couleur || '#64748b' };
   }
   // Demi-journée de congé : prioritaire sur « présent » pour rester visible même si l'agent a badgeé
@@ -69,7 +78,31 @@ const statutJour = (j) => {
   return { st: 'repos', day };
 };
 
-export default function CalendarJour({ debut, fin, jours, nom, prenom, matricule }) {
+export default function CalendarJour({ debut, fin, jours, codes, nom, prenom, matricule }) {
+  // Map code → couleur + libellé fournie par le serveur depuis codes_paie (mises à jour en temps réel)
+  const parCode = useMemo(() => {
+    if (!Array.isArray(codes)) return { coul: { ...COULEURS_DEFAUT }, lib: {} };
+    const coul = { ...COULEURS_DEFAUT };
+    const lib = {};
+    for (const c of codes) {
+      coul[c.code] = c.couleur || COULEURS_DEFAUT[c.code] || '#64748b';
+      lib[c.code] = c.libelle;
+    }
+    return { coul, lib };
+  }, [codes]);
+
+  // Légende dynamique : un code par ligne de codes_paie (rendu live) + cas spéciaux du calendrier
+  const legende = useMemo(() => {
+    const items = Object.entries(parCode.lib).map(([code, libelle]) => ({
+      key: `code_${code}`,
+      code,
+      label: libelle ? `${code} — ${libelle}` : code,
+      dot: parCode.coul[code],
+    }));
+    items.push({ key: 'conge_demi', label: 'Demi-journée de congé', dot: '#000000' });
+    return items;
+  }, [parCode]);
+
   const parMois = useMemo(() => {
     const index = new Map((jours || []).map((j) => [j.date, j]));
     const debutDate = new Date(debut + 'T00:00:00');
@@ -113,8 +146,8 @@ export default function CalendarJour({ debut, fin, jours, nom, prenom, matricule
           </p>
         </div>
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-medium text-slate-600">
-          {LEGENDE.map((l) => (
-            <span key={l.st} className="flex items-center gap-1.5">
+          {legende.map((l) => (
+            <span key={l.key} className="flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-full" style={{ background: l.dot }} />
               {l.label}
             </span>
@@ -142,13 +175,17 @@ export default function CalendarJour({ debut, fin, jours, nom, prenom, matricule
                   const { st, day, code, couleur } = statutJour(j);
                   const heuresTxt = fmtH(j && j.travaille_secondes);
                   const rma = j && j.rma_code;
-                  const styleRma = st === 'rma' ? { backgroundColor: couleur } : undefined;
+                  // Fond : couleur du code (codes_paie) pour les statuts standard, couleur RMA paramétrée sinon
+                  // Demi-journée de congé (CA) : reste en noir pour la distinction visuelle
+                  const fond = st === 'rma' ? couleur
+                    : st === 'conge_demi' ? '#000000'
+                    : (st === 'vide' ? undefined : (parCode.coul[STATUT_CODE[st]] || '#64748b'));
                   return (
                     <div
                       key={`${m.cle}-${i}`}
                       title={j ? `${fmtDate(j.date)}${rma ? ` · ${rma}` : ''}${j.demi && j.conge > 0 ? ' · demi-journée de congé' : ''}${heuresTxt ? ` · ${heuresTxt} travaillées` : ''}` : ''}
                       className={`flex h-11 w-full flex-col items-center justify-center rounded-lg leading-none sm:h-12 md:h-14 ${CELLS[st]}`}
-                      style={styleRma}
+                      style={fond ? { backgroundColor: fond } : undefined}
                     >
                       <span className="text-[11px] font-bold sm:text-xs">{rma ? rma.split('/')[0] : day}</span>
                       {rma && rma.includes('/') ? (

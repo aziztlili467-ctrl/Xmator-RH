@@ -327,7 +327,10 @@ router.delete('/correction', (req, res) => {
 // ---- Import de pointages bruts (fichier de badgeuse .csv/.txt) ----
 // Colonnes : Matricule + Horodatage ('YYYY-MM-DD HH:mm:ss' ou 'DD/MM/YYYY HH:mm:ss'),
 // ou Matricule + Date + Heure. Séparateur détecté (tabulation, point-virgule ou virgule).
-// Seuls les matricules présents en base sont importés ; un ré-import du même horodatage est ignoré.
+// Seuls les matricules présents en base sont importés.
+// ÉCRASEMENT : pour chaque (employé, date) présent dans le fichier, les anciens badgeages du
+// même jour sont supprimés avant l'insertion (ré-import d'une date = remplacement, pas accumulation).
+// Les violations de contrainte (même horodatage présent deux fois dans le FICHIER) sont ignorées.
 router.post('/import', (req, res) => {
   const texte = String(req.body.texte || '').replace(/\r/g, '');
   const lignes = texte.split('\n').map((l) => l.trimEnd())
@@ -362,13 +365,18 @@ router.post('/import', (req, res) => {
     INSERT INTO pointages (employe_id, matricule, horodatage, date, source) VALUES (?,?,?,?,?)
     ON CONFLICT(employe_id, horodatage) DO NOTHING
   `);
+  // Écrasement par (employé, date) : suppression des anciens badgeages + de leurs corrections
+  const delJour = db.prepare('DELETE FROM pointages WHERE employe_id = ? AND date = ?');
+  const delCorr = db.prepare('DELETE FROM corrections_pointages WHERE employe_id = ? AND date = ?');
 
   const tx = db.transaction(() => {
     let importes = 0;
     let doublons = 0;
     let invalides = 0;
     const nonReconnus = [];
-    const datesIm = [];
+    const datesIm = new Set();
+    const joursTouches = new Set(); // "employe_id|date"
+    const aInserer = []; // badgeages du fichier
     const debutLigne = header ? 1 : 0;
     for (let i = debutLigne; i < lignes.length; i++) {
       const cell = cells(lignes[i]);
@@ -388,11 +396,23 @@ router.post('/import', (req, res) => {
         if (nonReconnus.length < 20 && !nonReconnus.includes(mat)) nonReconnus.push(mat);
         continue;
       }
-      const r = ins.run(emp.id, mat, ts.iso, ts.date, 'import');
-      if (r.changes > 0) { importes++; datesIm.push(ts.date); }
+      aInserer.push({ employe_id: emp.id, matricule: mat, iso: ts.iso, date: ts.date });
+      joursTouches.add(`${emp.id}|${ts.date}`);
+      datesIm.add(ts.date);
+    }
+    // Remplacement : on supprime les anciennes données de CHAQUE (employé, jour) du fichier…
+    for (const cle of joursTouches) {
+      const [eid, date] = cle.split('|');
+      delJour.run(eid, date);
+      delCorr.run(eid, date);
+    }
+    // …puis on insère le contenu du fichier.
+    for (const b of aInserer) {
+      const r = ins.run(b.employe_id, b.matricule, b.iso, b.date, 'import');
+      if (r.changes > 0) importes++;
       else doublons++;
     }
-    return { importes, doublons, invalides, nonReconnus, datesIm };
+    return { importes, doublons, invalides, nonReconnus, jours: joursTouches.size, datesIm: [...datesIm].sort() };
   });
 
   const result = tx();
@@ -402,9 +422,10 @@ router.post('/import', (req, res) => {
     doublons: result.doublons,
     invalides: result.invalides,
     nonReconnus: result.nonReconnus,
+    jours: result.jours,
     lignes: result.importes + result.doublons,
-    debut: result.datesIm.length ? result.datesIm.reduce((a, b) => (a < b ? a : b)) : null,
-    fin: result.datesIm.length ? result.datesIm.reduce((a, b) => (a > b ? a : b)) : null,
+    debut: result.datesIm.length ? result.datesIm[0] : null,
+    fin: result.datesIm.length ? result.datesIm[result.datesIm.length - 1] : null,
   });
 });
 

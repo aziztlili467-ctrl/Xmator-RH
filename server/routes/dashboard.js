@@ -1,23 +1,67 @@
 const { Router } = require('express');
-const { db, soldeEmploye } = require('../db');
+const { db, soldeEmploye, soldeCongeRestantDate } = require('../db');
+const { onDataChanged } = require('./dataSync');
 const presence = require('./presence');
 const { normaliser, horairePour, diffSecondes, statutPour, retardComptable, sortieAnticipeeComptable } = presence;
 const router = Router();
 
 const SEUIL_ALERTE = 5;
 
+// Solde de congé restant « selon calendrier », restreint à la période [debut, fin] du filtre :
+//   solde restant = (solde_initial + ajout_annuel dont la période chevauche [debut, fin])
+//                   − (prélèvements de congé du journal RMA dont le jour est dans [debut, fin])
+// Les crédits sont pris sur leur période (date_debut→date_fin, chevauchement) ; le prélèvement
+// CA/DJ est compté depuis la source de vérité codes_importes (CA = 1 jour, DJ demi-journée = 0,5) —
+// chaque cellule CA/DJ de la grille RMA compte dans la période.
+function soldeCongePeriode(employeId, debut, fin) {
+  const credits = db.prepare(`
+    SELECT COALESCE(SUM(jours),0) AS c FROM mouvements
+    WHERE employe_id = ? AND solde_type = 'conge'
+      AND type_operation IN ('solde_initial','ajout_annuel')
+      AND date_debut <= ? AND date_fin >= ?
+  `).get(employeId, fin, debut).c;
+  // Prélèvement CA/DJ du journal RMA (source de vérité : codes_importes) : chaque cellule de la
+  // grille est un jour de congé consommé dans la période, sans exclusion calendaire (férié/week-end)
+  // ni couverture par demande acceptée — miroir exact de la grille RMA et du « Journal du solde ».
+  const prlv = db.prepare(`
+    SELECT COALESCE(SUM(CASE WHEN ci.code = 'DJ' THEN 0.5 WHEN ci.demi_journee = 1 THEN 0.5 ELSE 1 END),0) AS c
+    FROM codes_importes ci
+    WHERE ci.employe_id = ? AND ci.code IN ('CA','DJ') AND ci.date >= ? AND ci.date <= ?
+  `).get(employeId, debut, fin).c;
+  return Math.round((credits - prlv) * 1000) / 1000;
+}
+
 // Cache court (10 s) pour les agrégats lourds du tableau de bord (mêmes données pour tous les
 // lecteurs, mais ~26 000 pointages + N+1 solde récalculés à chaque navigation). Légère fraîcheur
 // maximale : 10 s après une écriture — acceptable pour un tableau de bord.
-const DASH_CACHE_TTL = 10000;
+const DASH_CACHE_TTL = 30000;
+const DASH_CACHE_MAX = 80;
 const dashCache = new Map();
 function dashMemo(key, build) {
   const hit = dashCache.get(key);
   if (hit && Date.now() - hit.t < DASH_CACHE_TTL) return hit.v;
   const v = build();
+  // LRU : éviction si trop d'entrées
+  if (dashCache.size >= DASH_CACHE_MAX) {
+    const firstKey = dashCache.keys().next().value;
+    dashCache.delete(firstKey);
+  }
   dashCache.set(key, { v, t: Date.now() });
   return v;
 }
+// Auto-vidage toutes les 60s pour éviter mémoire résiduelle + données obsolètes
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, { t }] of dashCache) if (now - t > DASH_CACHE_TTL) dashCache.delete(k);
+  if (dashCache.size > DASH_CACHE_MAX) {
+    const toDelete = dashCache.size - DASH_CACHE_MAX;
+    let i = 0; for (const k of dashCache.keys()) { if (i++ >= toDelete) break; dashCache.delete(k); }
+  }
+}, 60000).unref();
+// Expose pour invalidation manuelle après écriture (demandes/mouvements)
+function clearDashCache() { dashCache.clear(); }
+// Invalidation « temps réel » : appelée par le bus dataSync après toute écriture API réussie.
+onDataChanged(clearDashCache);
 
 function iso(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -48,11 +92,39 @@ router.get('/', (req, res) => {
     SELECT type_operation, solde_type, COALESCE(SUM(jours),0) AS total, COUNT(*) AS nb
     FROM mouvements
     WHERE strftime('%Y', date_operation) = ?
+      AND NOT (solde_type = 'conge' AND COALESCE(motif,'') LIKE 'RMA%restauration%')
     GROUP BY type_operation, solde_type
   `).all(annee);
   const anneeTotal = (t) => { const r = anneeStats.find((x) => x.type_operation === t && x.solde_type === 'conge'); return r ? r.total : 0; };
   const anneeTotalMaladie = (t) => { const r = anneeStats.find((x) => x.type_operation === t && x.solde_type === 'maladie'); return r ? r.total : 0; };
 
+  // Solde maladie : grand livre (source maladie inchangée — pas de journal RMA maladie).
+  const soldeMalRows = db.prepare(`
+    SELECT employe_id,
+      COALESCE(SUM(CASE WHEN type_operation IN ('solde_initial','ajout_annuel') THEN jours WHEN type_operation='maladie' THEN -jours ELSE 0 END),0) AS s
+    FROM mouvements WHERE solde_type = 'maladie' GROUP BY employe_id
+  `).all();
+  const soldeMalMap = new Map(soldeMalRows.map(r=>[r.employe_id, Math.round(r.s*1000)/1000]));
+  const consMalRows = db.prepare(`SELECT employe_id, COALESCE(SUM(jours),0) AS c FROM mouvements WHERE type_operation='maladie' AND solde_type='maladie' AND strftime('%Y',date_operation)=? GROUP BY employe_id`).all(annee);
+  const consMalMap = new Map(consMalRows.map(r=>[r.employe_id, r.c]));
+  // Prélèvements de congé depuis la source de vérité « Journal du solde de congé » (codes_importes
+  // CA/DJ) — même règle que soldeCongeRestantDate : chaque cellule de la grille RMA est consommée,
+  // sans exclusion calendaire (férié/week-end) ni couverture par demande acceptée. Ces valeurs
+  // alimentent solde, parCategorie, la courbe mensuelle et la consommation annuelle, donc
+  // synchronisées avec la fiche, Mon Espace et le journal RMA.
+  const rmaRows = db.prepare(`
+    SELECT employe_id, substr(date,1,7) AS mois,
+      COALESCE(SUM(CASE WHEN code = 'DJ' OR demi_journee = 1 THEN 0.5 ELSE 1 END),0) AS jours
+    FROM codes_importes
+    WHERE code IN ('CA','DJ') AND strftime('%Y',date) = ?
+    GROUP BY employe_id, substr(date,1,7)
+  `).all(annee);
+  const rmaParEmp = new Map();   // employe_id → jours consommés dans l'année
+  const rmaParMois = {};         // 'AAAA-MM' → jours consommés
+  for (const r of rmaRows) {
+    rmaParEmp.set(r.employe_id, (rmaParEmp.get(r.employe_id) || 0) + r.jours);
+    rmaParMois[r.mois] = (rmaParMois[r.mois] || 0) + r.jours;
+  }
   const employes = db.prepare(`
     SELECT e.id, e.matricule, e.nom, e.prenom, e.categorie_id, e.photo_url, c.libelle AS categorie
     FROM employes e
@@ -60,40 +132,27 @@ router.get('/', (req, res) => {
     WHERE e.actif = 1
     ORDER BY CAST(e.matricule AS INTEGER), e.matricule
   `).all().map((e) => {
-    const solde = soldeEmploye(e.id);
-    const solde_maladie = soldeEmploye(e.id, 'maladie');
-    const consomme = db.prepare(`
-      SELECT COALESCE(SUM(jours),0) AS c FROM mouvements
-      WHERE employe_id = ? AND type_operation = 'prelevement' AND solde_type = 'conge' AND strftime('%Y', date_operation) = ?
-    `).get(e.id, annee).c;
-    const consomme_maladie = db.prepare(`
-      SELECT COALESCE(SUM(jours),0) AS c FROM mouvements
-      WHERE employe_id = ? AND type_operation = 'maladie' AND solde_type = 'maladie' AND strftime('%Y', date_operation) = ?
-    `).get(e.id, annee).c;
+    // Solde de congé restant cohérent avec la fiche et le journal RMA (accorde − consomme RMA)
+    const solde = soldeCongeRestantDate(e.id);
+    const solde_maladie = soldeMalMap.get(e.id) || 0;
+    const consomme = rmaParEmp.get(e.id) || 0;
+    const consomme_maladie = consMalMap.get(e.id) || 0;
     return { ...e, solde, solde_maladie, consomme, consomme_maladie };
   });
 
-  const parCategorie = db.prepare(`
-    SELECT c.id, c.libelle,
-      COUNT(DISTINCT e.id) AS nb_employes,
-      COALESCE(SUM(CASE
-        WHEN m.type_operation IN ('solde_initial','ajout_annuel') THEN m.jours
-        WHEN m.type_operation = 'prelevement' THEN -m.jours
-        ELSE 0 END), 0) AS solde_total
-    FROM categories c
-    LEFT JOIN employes e ON e.categorie_id = c.id AND e.actif = 1
-    LEFT JOIN mouvements m ON m.employe_id = e.id
-    GROUP BY c.id
-    ORDER BY c.libelle
-  `).all();
+  const catByEmp = {};
+  for (const e of employes) {
+    const a = catByEmp[e.categorie_id] || (catByEmp[e.categorie_id] = { nb: 0, solde: 0 });
+    a.nb += 1; a.solde += e.solde;
+  }
+  const parCategorie = db.prepare('SELECT id, libelle FROM categories ORDER BY libelle').all().map((c) => {
+    const a = catByEmp[c.id] || { nb: 0, solde: 0 };
+    return { id: c.id, libelle: c.libelle, nb_employes: a.nb, solde_total: Math.round(a.solde * 1000) / 1000 };
+  });
 
-  const mensuel = db.prepare(`
-    SELECT CAST(strftime('%m', date_operation) AS INTEGER) AS mois, COALESCE(SUM(jours),0) AS jours
-    FROM mouvements
-    WHERE type_operation = 'prelevement' AND strftime('%Y', date_operation) = ?
-    GROUP BY mois
-    ORDER BY mois
-  `).all(annee);
+  const mensuel = Object.entries(rmaParMois)
+    .map(([mois, jours]) => ({ mois: parseInt(mois.slice(5), 10), jours: Math.round(jours * 1000) / 1000 }))
+    .sort((a, b) => a.mois - b.mois);
 
   const mensuelMaladie = db.prepare(`
     SELECT CAST(strftime('%m', date_operation) AS INTEGER) AS mois, COALESCE(SUM(jours),0) AS jours
@@ -113,7 +172,7 @@ router.get('/', (req, res) => {
     seuilAlerte: SEUIL_ALERTE,
     nbEmployes,
     accordeAnnee: anneeTotal('solde_initial') + anneeTotal('ajout_annuel'),
-    consommeAnnee: anneeTotal('prelevement'),
+    consommeAnnee: Math.round(employes.reduce((s, e) => s + e.consomme, 0) * 1000) / 1000,
     soldeGlobal: employes.reduce((s, e) => s + e.solde, 0),
     accordeMaladieAnnee: anneeTotalMaladie('solde_initial') + anneeTotalMaladie('ajout_annuel'),
     consommeMaladieAnnee: anneeTotalMaladie('maladie'),
@@ -157,6 +216,7 @@ router.get('/audit', (req, res) => {
   const employe_id = req.query.employe_id ? Number(req.query.employe_id) : null;
   const matricule = String(req.query.matricule || '').trim();
   const categorie_id = req.query.categorie_id ? Number(req.query.categorie_id) : null;
+  const departement = String(req.query.departement || '').trim();
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(debut) || !/^\d{4}-\d{2}-\d{2}$/.test(fin) || fin < debut) {
     return res.status(400).json({ error: 'Période invalide (AAAA-MM-JJ, fin ≥ début).' });
@@ -166,6 +226,7 @@ router.get('/audit', (req, res) => {
   let where = 'e.actif = 1';
   const wparams = [];
   if (categorie_id) { where += ' AND e.categorie_id = ?'; wparams.push(categorie_id); }
+  if (departement) { where += ' AND e.departement = ?'; wparams.push(departement); }
   if (employe_id) { where += ' AND e.id = ?'; wparams.push(employe_id); }
   else if (matricule) {
     const n = parseInt(matricule, 10);
@@ -180,7 +241,7 @@ router.get('/audit', (req, res) => {
   `).all(...wparams);
   if (!employes.length) return res.status(404).json({ error: 'Aucun employé ne correspond au filtre.' });
 
-  res.json(dashMemo('audit:' + req.originalUrl, () => {
+  const payload = dashMemo('audit:' + req.originalUrl, () => {
   const ids = employes.map((e) => e.id);
 
   const jours = joursEntre(debut, fin);
@@ -213,7 +274,7 @@ router.get('/audit', (req, res) => {
   // Congés acceptés / arrêts validés chevauchant la période
   // (l'absence est DÉDUITE : jour ouvrable sans badge ET sans congé validé ET sans maladie acceptée)
   const conges = db.prepare(`
-    SELECT employe_id, date_debut, date_fin, demi_journee, nombre_jours FROM demandes_conge
+    SELECT employe_id, date_debut, date_fin, demi_journee, nombre_jours, nature_conge FROM demandes_conge
     WHERE statut = 'acceptee' AND date_debut <= ? AND date_fin >= ?
   `).all(fin, debut);
   const arrets = db.prepare(`
@@ -222,10 +283,12 @@ router.get('/audit', (req, res) => {
   `).all(fin, debut);
 
   const jourConge = {};
+  const jourCE = {};
   const jourMaladie = {};
   const jourDemi = {};
   const jourCongeDemi = {};
   const empConge = {};
+  const empCE = {};
   const empMaladie = {};
   // Jours de maladie par employé (pour déduire les heures d'arrêts validés des heures à travailler)
   const empMaladieJours = {};
@@ -259,18 +322,25 @@ router.get('/audit', (req, res) => {
   };
   // Demi-journée : flag explicite OU valeur fractionnaire héritée d'une saisie manuelle
   // (répare les demandes créées avant la normalisation : 1,5 j sur 2 jours => dernier jour à 0,5)
-  for (const c of conges) if (idsSet.has(c.employe_id)) marquer(jourConge, empConge, c.employe_id, c.date_debut, c.date_fin, !!c.demi_journee || !Number.isInteger(Number(c.nombre_jours)));
+  for (const c of conges) if (idsSet.has(c.employe_id)) {
+    const isCE = c.nature_conge === 'exceptionnel';
+    marquer(isCE ? jourCE : jourConge, isCE ? empCE : empConge, c.employe_id, c.date_debut, c.date_fin, !!c.demi_journee || !Number.isInteger(Number(c.nombre_jours)));
+  }
   for (const a of arrets) if (idsSet.has(a.employe_id)) marquer(jourMaladie, empMaladie, a.employe_id, a.date_debut, a.date_fin, false, empMaladieJours);
 
   // ---- Complément RMA manuel : CA/MA importés manuellement (sans demande/arrêt) ----
   // Évite le double comptage : ne compte que les dates ouvrables non déjà couvertes par une demande/arrêt
   const couvreConge = new Set();
+  const couvreCE = new Set();
   const couvreMaladie = new Set();
   for (const c of conges) if (idsSet.has(c.employe_id)) {
     const s = c.date_debut > debut ? c.date_debut : debut;
     const e = c.date_fin < fin ? c.date_fin : fin;
     const cur = new Date(s+'T00:00:00'); const end = new Date(e+'T00:00:00');
-    while (cur<=end) { const d=iso(cur); if (joursSet.has(d) && (legalMap[d]||0)>0) couvreConge.add(c.employe_id+'|'+d); cur.setDate(cur.getDate()+1); }
+    while (cur<=end) { const d=iso(cur); if (joursSet.has(d) && (legalMap[d]||0)>0) {
+      if (c.nature_conge === 'exceptionnel') couvreCE.add(c.employe_id+'|'+d); else couvreConge.add(c.employe_id+'|'+d);
+      cur.setDate(cur.getDate()+1);
+    } else cur.setDate(cur.getDate()+1); }
   }
   for (const a of arrets) if (idsSet.has(a.employe_id)) {
     const s = a.date_debut > debut ? a.date_debut : debut;
@@ -278,20 +348,38 @@ router.get('/audit', (req, res) => {
     const cur = new Date(s+'T00:00:00'); const end = new Date(e+'T00:00:00');
     while (cur<=end) { const d=iso(cur); if (joursSet.has(d) && (legalMap[d]||0)>0) couvreMaladie.add(a.employe_id+'|'+d); cur.setDate(cur.getDate()+1); }
   }
-  const rmaRows = db.prepare(`SELECT employe_id, date, code, demi_journee FROM codes_importes WHERE date >= ? AND date <= ? AND code IN ('CA','MA')`).all(debut, fin);
+  const rmaRows = db.prepare(`SELECT employe_id, date, code, demi_journee FROM codes_importes WHERE date >= ? AND date <= ? AND code IN ('CA','CE','MA','DJ')`).all(debut, fin);
   for (const r of rmaRows) {
     if (!idsSet.has(r.employe_id) || !joursSet.has(r.date) || (legalMap[r.date]||0)<=0) continue;
     const key = r.employe_id+'|'+r.date;
-    const inc = (r.code==='CA' && r.demi_journee) ? 0.5 : 1;
-    if (r.code==='CA' && !couvreConge.has(key)) {
+    // DJ = demi-journée de congé (0,5) ; CA/CE en demi = 0,5 ; sinon 1
+    const inc = r.code==='DJ' ? 0.5 : ((r.code==='CA' || r.code==='CE') && r.demi_journee) ? 0.5 : 1;
+    if ((r.code==='CA' || r.code==='DJ') && !couvreConge.has(key)) {
       jourConge[r.date]=(jourConge[r.date]||0)+inc;
       empConge[r.employe_id]=(empConge[r.employe_id]||0)+inc;
       if (inc===0.5) { jourDemi[r.date]=1; jourCongeDemi[r.date]=(jourCongeDemi[r.date]||0)+0.5; }
+      couvreConge.add(key);
+    } else if (r.code==='CE' && !couvreCE.has(key)) {
+      jourCE[r.date]=(jourCE[r.date]||0)+inc;
+      empCE[r.employe_id]=(empCE[r.employe_id]||0)+inc;
+      if (inc===0.5) { jourDemi[r.date]=1; }
+      couvreCE.add(key);
     } else if (r.code==='MA' && !couvreMaladie.has(key)) {
       jourMaladie[r.date]=(jourMaladie[r.date]||0)+inc;
       empMaladie[r.employe_id]=(empMaladie[r.employe_id]||0)+inc;
       if (!empMaladieJours[r.employe_id]) empMaladieJours[r.employe_id]={};
       empMaladieJours[r.employe_id][r.date]=(empMaladieJours[r.employe_id][r.date]||0)+inc;
+      couvreMaladie.add(key);
+    }
+  }
+
+  // --- Journée justifiée : badge OR code de présence autorisé (CA/CE/MA/RP/R3/R1/…) ---
+  // Seul `A1` (ABSENT) et l'absence de toute codification = absence injustifiée.
+  // Ces jours couvrent l'absence mais n'augmentent pas congé/maladie (déjà suivis dans jourConge…).
+  const justifieAbs = new Set([...couvreConge, ...couvreCE, ...couvreMaladie]);
+  for (const r of db.prepare(`SELECT employe_id, date, code FROM codes_importes WHERE date >= ? AND date <= ? AND code <> 'A1'`).all(debut, fin)) {
+    if (idsSet.has(r.employe_id) && joursSet.has(r.date) && (legalMap[r.date] || 0) > 0) {
+      justifieAbs.add(r.employe_id + '|' + r.date);
     }
   }
 
@@ -391,6 +479,27 @@ router.get('/audit', (req, res) => {
     agregPointage(pointagesCat, g.categorie, delta);
   }
 
+  // --- Absences : modèle journalier booléen (synchronisé avec « Présences & pointages ») ---
+  // Un jour d'absence = jour ouvrable sans badge ET sans couverture (congé validé, CE, maladie).
+  // Calculé par employé et par jour (présence ⇒ non-absence, même si ce jour est aussi marqué
+  // congé/maladie), puis agrégé : les totaux/journal/employé utilisent TOUJOURS la même base,
+  // sans clamp par mois (le clamp mensuel créait de faux jours d'absence).
+  const presentDay = new Set();
+  for (const g of parJour.values()) if ((legalMap[g.date] || 0) > 0) presentDay.add(`${g.employe_id}|${g.date}`);
+  const absJours = {};
+  const empAbsJours = {};
+  for (const d of jours) {
+    if ((legalMap[d] || 0) <= 0) continue;
+    let n = 0;
+    for (const e of employes) {
+      const key = `${e.id}|${d}`;
+      if (presentDay.has(key) || justifieAbs.has(key)) continue;
+      n += 1;
+      empAbsJours[e.id] = (empAbsJours[e.id] || 0) + 1;
+    }
+    if (n) absJours[d] = n;
+  }
+
   // Agrégation par bucket (jour / mois / année)
   const bucketKey = (d) => {
     if (granularite === 'jour') return d;
@@ -410,7 +519,7 @@ router.get('/audit', (req, res) => {
     if (!buckets[k]) buckets[k] = {
       key: k, label: bucketLabel(k),
       legal_heures: 0, maladie_heures: 0, travaille_heures: 0, jours_ouvrables: 0,
-      jours_conge: 0, jours_maladie: 0, jours_absence: 0,
+      jours_conge: 0, jours_ce: 0, jours_maladie: 0, jours_absence: 0,
       journees_presence: 0, jours_presents: 0, retards: 0, retard_secondes: 0,
       departs_anticipe: 0, sortie_anticipee_secondes: 0,
       pointages_uniques: 0, conformes: 0,
@@ -424,7 +533,9 @@ router.get('/audit', (req, res) => {
     // repos hebdomadaires et fériés payés (nationaux/religieux/manuels à 0 h) exclus.
     if ((legalMap[d] || 0) > 0) b.jours_ouvrables += 1;
     b.jours_conge += jourConge[d] || 0;
+    b.jours_ce += jourCE[d] || 0;
     b.jours_maladie += jourMaladie[d] || 0;
+    b.jours_absence += absJours[d] || 0;
     const pp = pointagesJour[d];
     if (pp) {
       b.journees_presence += pp.journees;
@@ -439,8 +550,9 @@ router.get('/audit', (req, res) => {
   }
 
   const series = Object.values(buckets).map((b) => {
-    // Absence = jour ouvrable sans badge ET sans congé validé ET sans maladie acceptée
-    const absence_calc = Math.max(0, b.jours_ouvrables * effectif - b.jours_presents - b.jours_conge - b.jours_maladie);
+    // Absence = jour ouvrable sans badge ET sans congé validé (CA/CE) ET sans maladie acceptée,
+    // calculé par jour dans absJours : sommes des jours = total, pas de clamp mensuel.
+    const absence_calc = b.jours_absence;
     // Heures à travailler NETTES = calendrier × effectif − heures des arrêts maladie validés
     // (les repos hebdomadaires et fériés payés sont déjà à 0 h dans jours_travail).
     const legal_avant_maladie = b.legal_heures * effectif;
@@ -462,6 +574,7 @@ router.get('/audit', (req, res) => {
   const totLegal = series.reduce((s, b) => s + b.legal_heures, 0);
   const totTrav = series.reduce((s, b) => s + b.travaille_heures, 0);
   const totConge = series.reduce((s, b) => s + b.jours_conge, 0);
+  const totCE = series.reduce((s, b) => s + b.jours_ce, 0);
   // Portion « demi-journées » du total congé (0,5 par date de fin marquée demi-journée)
   const totCongeDemi = Object.values(jourCongeDemi).reduce((s, v) => s + v, 0);
   const totMaladie = series.reduce((s, b) => s + b.jours_maladie, 0);
@@ -491,11 +604,11 @@ router.get('/audit', (req, res) => {
       COALESCE(SUM(CASE WHEN solde_type='maladie' AND type_operation='maladie' THEN jours ELSE 0 END),0) AS consomme_maladie
     FROM mouvements WHERE employe_id IN (${placeholders(ids.length)})
   `).get(...ids);
-  const soldeConge = employes.reduce((s, e) => s + soldeEmploye(e.id), 0);
+  const soldeConge = employes.reduce((s, e) => s + soldeCongeRestantDate(e.id), 0);
   const soldeMaladie = employes.reduce((s, e) => s + soldeEmploye(e.id, 'maladie'), 0);
 
-  // Alertes de solde congé
-  const alertes = employes.filter((e) => soldeEmploye(e.id) < SEUIL_ALERTE);
+  // Alertes de solde congé (solde restant RMA, cohérent avec le Journal du solde de congé)
+  const alertes = employes.filter((e) => soldeCongeRestantDate(e.id) < SEUIL_ALERTE);
 
   // Demandes en instance
   const enInstance = {
@@ -524,9 +637,11 @@ router.get('/audit', (req, res) => {
     const departs = pp.departs || 0;
     const jours_presents = pp.presents || 0;
     const jours_conge = empConge[e.id] || 0;
+    const jours_ce = empCE[e.id] || 0;
     const jours_maladie = empMaladie[e.id] || 0;
-    // Absence = jour ouvrable sans badge (0 h au badgeage) ET sans congé validé ET sans maladie acceptée
-    const jours_absence = Math.max(0, joursOuvrablesPeriode - jours_presents - jours_conge - jours_maladie);
+    // Absence = jour ouvrable sans badge ET sans congé validé (CA/CE) ET sans maladie
+    // — même modèle journalier booléen que les séries/KPIs (empAbsJours)
+    const jours_absence = empAbsJours[e.id] || 0;
     const jours_presents_pct = joursOuvrablesPeriode ? Math.round((jours_presents / joursOuvrablesPeriode) * 1000) / 10 : null;
     const jours_absence_pct = joursOuvrablesPeriode ? Math.round((jours_absence / joursOuvrablesPeriode) * 1000) / 10 : null;
     return {
@@ -542,8 +657,10 @@ router.get('/audit', (req, res) => {
       jours_absence,
       jours_absence_pct,
       jours_conge,
+      jours_ce,
       jours_maladie,
-      solde_conge: soldeEmploye(e.id),
+      solde_conge: soldeCongeRestantDate(e.id),
+      solde_conge_periode: soldeCongePeriode(e.id, debut, fin),
       solde_maladie: soldeEmploye(e.id, 'maladie'),
       journees_presence: journees,
       retards,
@@ -557,12 +674,13 @@ router.get('/audit', (req, res) => {
 
   // Répartition par catégorie
   const parCategorieAudit = Object.values(employesDetail.reduce((acc, e) => {
-    if (!acc[e.categorie]) acc[e.categorie] = { categorie: e.categorie, nb_employes: 0, travaille_heures: 0, legal_heures: 0, jours_conge: 0, jours_maladie: 0, jours_absence: 0, jours_presents: 0, jours_ouvrables: 0, journees_presence: 0, retards: 0, retard_secondes: 0, departs_anticipe: 0, sortie_anticipee_secondes: 0 };
+    if (!acc[e.categorie]) acc[e.categorie] = { categorie: e.categorie, nb_employes: 0, travaille_heures: 0, legal_heures: 0, jours_conge: 0, jours_ce: 0, jours_maladie: 0, jours_absence: 0, jours_presents: 0, jours_ouvrables: 0, journees_presence: 0, retards: 0, retard_secondes: 0, departs_anticipe: 0, sortie_anticipee_secondes: 0 };
     const c = acc[e.categorie];
     c.nb_employes += 1;
     c.travaille_heures += e.travaille_heures;
     c.legal_heures += e.legal_heures;
     c.jours_conge += e.jours_conge;
+    c.jours_ce += e.jours_ce || 0;
     c.jours_maladie += e.jours_maladie;
     c.jours_absence += e.jours_absence;
     c.jours_presents += e.jours_presents;
@@ -604,7 +722,7 @@ router.get('/audit', (req, res) => {
     for (const r of rmaRows) {
       if (!tmp[r.date]) tmp[r.date] = [];
       tmp[r.date].push(r.code);
-      if (r.demi_journee && r.code === 'CA') tmpDemi[r.date] = true;
+      if ((r.demi_journee && r.code === 'CA') || r.code === 'DJ') tmpDemi[r.date] = true;
     }
     for (const [d, arr] of Object.entries(tmp)) rmaMap[d] = arr.join('/');
     for (const [d] of Object.entries(tmpDemi)) rmaDemiMap[d] = true;
@@ -617,15 +735,16 @@ router.get('/audit', (req, res) => {
     const badge = pj ? pj.journees : 0;
     const present = pj ? pj.presents : 0;
     const conge = jourConge[d] || 0;
+    const ce = jourCE[d] || 0;
     const maladie = jourMaladie[d] || 0;
-    const absence = Math.max(0, ouvrable * ids.length - present - conge - maladie);
+    const absence = Math.min(absJours[d] || 0, ids.length);
     const rma = rmaMap[d] || null;
-    const isRmaDemiCA = rma && rmaDemiMap[d] && rma.split('/').includes('CA');
-    const rma_couleur = rma ? (isRmaDemiCA ? '#000000' : (couleurRma[rma.split('/')[0]] || '#64748b')) : null;
+    const isRmaDemi = rma && rmaDemiMap[d] && (rma.split('/').includes('CA') || rma.split('/').includes('DJ'));
+    const rma_couleur = rma ? (isRmaDemi ? '#000000' : (couleurRma[rma.split('/')[0]] || '#64748b')) : null;
     return {
-      date: d, ouvrable, heures: legalMap[d] || 0, badge, present, conge, maladie, absence, demi: jourDemi[d] || 0,
+      date: d, ouvrable, heures: legalMap[d] || 0, badge, present, conge, ce, maladie, absence, demi: jourDemi[d] || 0,
       travaille_secondes: (travailFiltre && travailFiltre[d] ? Math.round(travailFiltre[d] * 3600) : 0) || (badgesFiltre ? badgesFiltre[d] || 0 : 0),
-      rma_code: rma, rma_couleur, rma_demi: isRmaDemiCA ? 1 : 0,
+      rma_code: rma, rma_couleur, rma_demi: isRmaDemi ? 1 : 0,
     };
   }) : [];
 
@@ -638,7 +757,7 @@ router.get('/audit', (req, res) => {
   `).all(...wparams);
 
   return {
-    filtre: { granularite, debut, fin, employe_id, matricule, categorie_id },
+    filtre: { granularite, debut, fin, employe_id, matricule, categorie_id, departement },
     periode: { debut, fin },
     effectif,
     photos_aleatoires,
@@ -653,10 +772,12 @@ router.get('/audit', (req, res) => {
       jours_absence: totAbsence,
       jours_absence_pct,
       jours_conge: totConge,
+      jours_ce: totCE,
       jours_conge_demi: totCongeDemi,
       jours_maladie: totMaladie,
       jours_ouvrables: totOuvrables,
       solde_conge: soldeConge,
+      solde_conge_periode: Object.values(employesDetail).reduce((s, e) => s + (e.solde_conge_periode || 0), 0),
       solde_maladie: soldeMaladie,
       accorde_conge: soldeAgg.accorde_conge,
       consomme_conge: soldeAgg.consomme_conge,
@@ -692,7 +813,13 @@ router.get('/audit', (req, res) => {
     employes: employesDetail,
     alertes,
   };
-  }));
+  });
+  // Codes & couleurs lus à chaque requête (source « Paramètres & Codification ») — hors cache,
+  // pour que toute mise à jour / rectification des codes soit reflétée en temps réel.
+  if (payload && typeof payload === 'object' && 'calendrier' in payload) {
+    payload.codes = db.prepare('SELECT code, libelle, couleur FROM codes_paie ORDER BY code').all();
+  }
+  return res.json(payload);
 });
 
 module.exports = router;

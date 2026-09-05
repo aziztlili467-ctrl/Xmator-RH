@@ -9,6 +9,10 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
+db.pragma('busy_timeout = 5000');
+db.pragma('synchronous = NORMAL');
+db.pragma('cache_size = -64000');
+db.pragma('temp_store = MEMORY');
 db.pragma('foreign_keys = ON');
 
 db.exec(`
@@ -38,7 +42,10 @@ CREATE TABLE IF NOT EXISTS mouvements (
   type_operation TEXT NOT NULL CHECK (type_operation IN
                   ('solde_initial','ajout_annuel','prelevement','maladie','absence')),
   date_operation TEXT NOT NULL,
-  jours          REAL NOT NULL CHECK (jours > 0),
+  date_debut     TEXT,
+  date_fin       TEXT,
+  jours          REAL NOT NULL CHECK ((type_operation = 'solde_initial' AND jours <> 0)
+                                      OR (type_operation != 'solde_initial' AND jours > 0)),
   motif          TEXT,
   solde_apres    REAL NOT NULL,
   solde_type     TEXT NOT NULL DEFAULT 'conge'
@@ -48,6 +55,7 @@ CREATE TABLE IF NOT EXISTS mouvements (
 
 CREATE INDEX IF NOT EXISTS idx_mouvements_employe ON mouvements(employe_id);
 CREATE INDEX IF NOT EXISTS idx_mouvements_date   ON mouvements(date_operation);
+CREATE INDEX IF NOT EXISTS idx_mouvements_solde  ON mouvements(employe_id, solde_type, type_operation);
 
 CREATE TABLE IF NOT EXISTS demandes_conge (
   id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -316,8 +324,56 @@ function migrate() {
   if (!cols.includes('solde_type')) {
     db.exec("ALTER TABLE mouvements ADD COLUMN solde_type TEXT NOT NULL DEFAULT 'conge'");
   }
+  // Période [début → fin] d'une dotation de solde (Éditer solde de congé).
+  // Pour les lignes existantes, on initialise la période à la date d'opération.
+  if (!cols.includes('date_debut')) {
+    db.exec('ALTER TABLE mouvements ADD COLUMN date_debut TEXT');
+  }
+  if (!cols.includes('date_fin')) {
+    db.exec('ALTER TABLE mouvements ADD COLUMN date_fin TEXT');
+  }
+  db.exec("UPDATE mouvements SET date_debut = COALESCE(date_debut, date_operation), date_fin = COALESCE(date_fin, date_operation)");
   if (!cols.includes('arret_id')) {
     db.exec('ALTER TABLE mouvements ADD COLUMN arret_id INTEGER REFERENCES arrets_maladie(id)');
+  }
+
+  // Autorise les soldes initiaux NÉGATIFS (dette/avance consommée, soustraits des droits annuels futurs) :
+  // l'ancien CHECK « jours > 0 » interdit les valeurs négatives. On reconstruit la table (aucune autre
+  // table ne référence mouvements) en remplaçant la contrainte par une règle conditionnelle
+  // (solde_initial ≠ 0, autres mouvements > 0).
+  const sqlMvt = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='mouvements'").get() || {}).sql || '';
+  if (/CHECK\s*\(\s*jours\s*>\s*0\s*\)/.test(sqlMvt) && !/type_operation\s*=\s*'solde_initial'/.test(sqlMvt)) {
+    db.pragma('foreign_keys = OFF');
+    const tx = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE mouvements_new (
+          id             INTEGER PRIMARY KEY AUTOINCREMENT,
+          employe_id     INTEGER NOT NULL REFERENCES employes(id),
+          type_operation TEXT NOT NULL CHECK (type_operation IN
+                            ('solde_initial','ajout_annuel','prelevement','maladie','absence')),
+          date_operation TEXT NOT NULL,
+          date_debut     TEXT,
+          date_fin       TEXT,
+          jours          REAL NOT NULL CHECK ((type_operation = 'solde_initial' AND jours <> 0)
+                                              OR (type_operation != 'solde_initial' AND jours > 0)),
+          motif          TEXT,
+          solde_apres    REAL NOT NULL,
+          solde_type     TEXT NOT NULL DEFAULT 'conge'
+                         CHECK (solde_type IN ('conge','maladie')),
+          arret_id       INTEGER REFERENCES arrets_maladie(id),
+          created_at     TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+        );
+        INSERT INTO mouvements_new (id, employe_id, type_operation, date_operation, date_debut, date_fin, jours, motif, solde_apres, solde_type, arret_id, created_at)
+          SELECT id, employe_id, type_operation, date_operation, date_debut, date_fin, jours, motif, solde_apres, solde_type, arret_id, created_at FROM mouvements;
+        DROP TABLE mouvements;
+        ALTER TABLE mouvements_new RENAME TO mouvements;
+        CREATE INDEX IF NOT EXISTS idx_mouvements_employe ON mouvements(employe_id);
+        CREATE INDEX IF NOT EXISTS idx_mouvements_date   ON mouvements(date_operation);
+        CREATE INDEX IF NOT EXISTS idx_mouvements_solde  ON mouvements(employe_id, solde_type, type_operation);
+      `);
+    });
+    tx();
+    db.pragma('foreign_keys = ON');
   }
   const empCols = db.prepare('PRAGMA table_info(employes)').all().map((c) => c.name);
   if (!empCols.includes('date_naissance')) db.exec('ALTER TABLE employes ADD COLUMN date_naissance TEXT');
@@ -327,6 +383,43 @@ function migrate() {
   if (!empCols.includes('grade')) db.exec("ALTER TABLE employes ADD COLUMN grade TEXT NOT NULL DEFAULT ''");
   if (!empCols.includes('classe')) db.exec("ALTER TABLE employes ADD COLUMN classe TEXT NOT NULL DEFAULT ''");
   if (!empCols.includes('echelon')) db.exec("ALTER TABLE employes ADD COLUMN echelon TEXT NOT NULL DEFAULT ''");
+  if (!empCols.includes('adresse')) db.exec("ALTER TABLE employes ADD COLUMN adresse TEXT");
+  if (!empCols.includes('telephone')) db.exec("ALTER TABLE employes ADD COLUMN telephone TEXT");
+  if (!empCols.includes('situation_familiale')) db.exec("ALTER TABLE employes ADD COLUMN situation_familiale TEXT");
+  if (!empCols.includes('nombre_enfants')) db.exec("ALTER TABLE employes ADD COLUMN nombre_enfants INTEGER DEFAULT 0");
+  if (!empCols.includes('lieu_naissance')) db.exec("ALTER TABLE employes ADD COLUMN lieu_naissance TEXT");
+  if (!empCols.includes('sexe')) db.exec("ALTER TABLE employes ADD COLUMN sexe TEXT");
+  if (!empCols.includes('nationalite')) db.exec("ALTER TABLE employes ADD COLUMN nationalite TEXT");
+  if (!empCols.includes('groupe_sanguin')) db.exec("ALTER TABLE employes ADD COLUMN groupe_sanguin TEXT");
+  if (!empCols.includes('cin')) db.exec("ALTER TABLE employes ADD COLUMN cin TEXT");
+  if (!empCols.includes('date_emission_cin')) db.exec("ALTER TABLE employes ADD COLUMN date_emission_cin TEXT");
+  if (!empCols.includes('service_militaire')) db.exec("ALTER TABLE employes ADD COLUMN service_militaire TEXT");
+  if (!empCols.includes('cnss')) db.exec("ALTER TABLE employes ADD COLUMN cnss TEXT");
+  if (!empCols.includes('rue')) db.exec("ALTER TABLE employes ADD COLUMN rue TEXT");
+  if (!empCols.includes('code_postal')) db.exec("ALTER TABLE employes ADD COLUMN code_postal TEXT");
+  if (!empCols.includes('localite')) db.exec("ALTER TABLE employes ADD COLUMN localite TEXT");
+  if (!empCols.includes('gouvernorat')) db.exec("ALTER TABLE employes ADD COLUMN gouvernorat TEXT");
+  if (!empCols.includes('gsm')) db.exec("ALTER TABLE employes ADD COLUMN gsm TEXT");
+  if (!empCols.includes('adresse_electronique')) db.exec("ALTER TABLE employes ADD COLUMN adresse_electronique TEXT");
+  if (!empCols.includes('conjoint_nom')) db.exec("ALTER TABLE employes ADD COLUMN conjoint_nom TEXT");
+  if (!empCols.includes('conjoint_date_naissance')) db.exec("ALTER TABLE employes ADD COLUMN conjoint_date_naissance TEXT");
+  if (!empCols.includes('enfants_details')) db.exec("ALTER TABLE employes ADD COLUMN enfants_details TEXT");
+  if (!empCols.includes('niveau_etudes')) db.exec("ALTER TABLE employes ADD COLUMN niveau_etudes TEXT");
+  if (!empCols.includes('diplome')) db.exec("ALTER TABLE employes ADD COLUMN diplome TEXT");
+  if (!empCols.includes('date_emission_diplome')) db.exec("ALTER TABLE employes ADD COLUMN date_emission_diplome TEXT");
+  if (!empCols.includes('cnam')) db.exec("ALTER TABLE employes ADD COLUMN cnam TEXT");
+  if (!empCols.includes('type_contrat')) db.exec("ALTER TABLE employes ADD COLUMN type_contrat TEXT");
+  db.exec("UPDATE employes SET type_contrat = 'CDI (Titulaire)' WHERE type_contrat = 'CDI'");
+  if (!empCols.includes('banque')) db.exec("ALTER TABLE employes ADD COLUMN banque TEXT");
+  if (!empCols.includes('titulaire_compte')) db.exec("ALTER TABLE employes ADD COLUMN titulaire_compte TEXT");
+  if (!empCols.includes('type_compte')) db.exec("ALTER TABLE employes ADD COLUMN type_compte TEXT");
+  if (!empCols.includes('rib')) db.exec("ALTER TABLE employes ADD COLUMN rib TEXT");
+  if (!empCols.includes('salaire_base')) db.exec("ALTER TABLE employes ADD COLUMN salaire_base TEXT");
+  if (!empCols.includes('indemnite_presence')) db.exec("ALTER TABLE employes ADD COLUMN indemnite_presence TEXT");
+  if (!empCols.includes('indemnite_transport')) db.exec("ALTER TABLE employes ADD COLUMN indemnite_transport TEXT");
+  if (!empCols.includes('indemnite_fonction')) db.exec("ALTER TABLE employes ADD COLUMN indemnite_fonction TEXT");
+  if (!empCols.includes('intitule_poste')) db.exec("ALTER TABLE employes ADD COLUMN intitule_poste TEXT");
+  if (!empCols.includes('departement')) db.exec("ALTER TABLE employes ADD COLUMN departement TEXT DEFAULT ''");
 
   // Jours fériés : colonne `automatique` (jours fériés auto-gérés, ex. les 2 jours de l'Aïd el-Fitr)
   const jfCols = db.prepare('PRAGMA table_info(jours_feries)').all().map((c) => c.name);
@@ -396,6 +489,23 @@ function migrate() {
       tx();
     }
   }
+
+  // Rémunération : calage du salaire de base depuis la grille de salaire (grade / classe / echelon)
+  // pour tous les profils — valeur de la grille (aucune indemnité : saisie manuelle). Idempotent.
+  db.exec(`
+    UPDATE employes
+    SET salaire_base = (SELECT g.valeur FROM grille_salaire g
+                        WHERE g.grade = employes.grade AND g.classe = employes.classe AND g.echelon = employes.echelon
+                        LIMIT 1),
+        rubrique = CASE WHEN employes.rubrique = '' THEN
+                    (SELECT g.rubrique FROM grille_salaire g
+                     WHERE g.grade = employes.grade AND g.classe = employes.classe AND g.echelon = employes.echelon
+                     LIMIT 1)
+                   ELSE employes.rubrique END
+    WHERE employes.grade <> '' AND employes.classe <> '' AND employes.echelon <> ''
+      AND EXISTS (SELECT 1 FROM grille_salaire g2
+                  WHERE g2.grade = employes.grade AND g2.classe = employes.classe AND g2.echelon = employes.echelon)
+  `);
 }
 
 migrate();
@@ -406,6 +516,7 @@ const codesParDefaut = [
   ['P1', 'PRÉSENT', '#10b981'],
   ['A1', 'ABSENT', '#f59e0b'],
   ['CA', 'CONGÉ ANNUEL', '#0ea5e9'],
+  ['DJ', 'DEMI-JOURNÉE', '#000000'],
   ['MA', 'MALADIE', '#f43f5e'],
   ['RP', 'REPOS', '#64748b'],
   ['R3', 'REPOS PAYÉ', '#8b5cf6'],
@@ -437,6 +548,11 @@ const TYPES = [...TYPES_CREDIT, ...TYPES_DEBIT_CONGE, ...TYPES_DEBIT_MALADIE, ..
 const TYPES_DEBIT = [...TYPES_DEBIT_CONGE, ...TYPES_DEBIT_MALADIE];
 
 const isDebit = (type) => TYPES_DEBIT.includes(type);
+
+// Le prélèvement CA/DJ du congé se calcule exclusivement depuis la grille RMA (`codes_importes`) :
+// TOUTE cellule CA/DJ qui y figure est un jour de congé consommé (CA = 1, DJ / demi-journée = 0,5).
+// Aucune exclusion calendaire (férié/week-end) ni couverture par demande acceptée : la grille RMA
+// est le miroir exact des indicateurs (tableau de bord, fiche, Mon Espace, « Éditer solde de congé »).
 
 function balanceSql(soldeType) {
   const debits = soldeType === 'maladie' ? ["'maladie'"] : ["'prelevement'"];
@@ -471,14 +587,164 @@ function soldeEmployeAt(employeId, date, soldeType = 'conge') {
   return row ? Math.round(row.solde * 1000) / 1000 : 0;
 }
 
-function insertMouvement({ employe_id, type_operation, date_operation, jours, motif, solde_type, arret_id }) {
+// Solde de congé restant « synchronisé à une date » (par défaut aujourd'hui) selon la règle RH :
+//   solde restant = (solde_initial + ajout_annuel) − prélèvements de congé du journal RMA,
+// Le « prélèvement CA du journal RMA » est compté depuis la source de vérité des congés RMA
+// (codes_importes) : TOUTE cellule CA/DJ de la grille est un jour de congé consommé (`CA` = 1 jour,
+// demi-journée / `DJ` = 0,5) — aucune exclusion calendaire (férié/week-end) ni couverture par une
+// demande acceptée, afin que la grille RMA soit le miroir exact du tableau de bord et du journal.
+// Tous les mouvements créditeurs et les jours CA sont bornés à date (date_operation/demi ≤ date).
+function soldeCongeRestantDate(employeId, date) {
+  const d = (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) ? date : '9999-12-31';
+  // Les mouvements de compensation « RMA — restauration » (créés par le journal RMA quand un jour CA/DJ
+  // est retiré/rectifié) ne sont PAS recomptés ici : le journal RMA recalcule déjà les prélèvements depuis
+  // codes_importes, sinon chaque correction créditerait deux fois le solde dans « Éditer solde de congé ».
+  const credits = db.prepare(`
+    SELECT COALESCE(SUM(jours),0) AS c FROM mouvements
+    WHERE employe_id = ? AND solde_type = 'conge'
+      AND type_operation IN ('solde_initial','ajout_annuel') AND date_operation <= ?
+      AND (motif IS NULL OR motif NOT LIKE 'RMA%restauration%')
+  `).get(employeId, d).c;
+  // Prélèvement CA/DJ du journal RMA (source de vérité : codes_importes) : dans la période,
+  // CA = 1 jour, DJ / demi-journée = 0,5 — sans exclusion calendaire ni couverture par demande.
+  const prlv = db.prepare(`
+    SELECT COALESCE(SUM(CASE WHEN ci.code = 'DJ' THEN 0.5 WHEN ci.demi_journee = 1 THEN 0.5 ELSE 1 END),0) AS c
+    FROM codes_importes ci
+    WHERE ci.employe_id = ? AND ci.code IN ('CA','DJ') AND ci.date <= ?
+  `).get(employeId, d).c;
+  return Math.round((credits - prlv) * 1000) / 1000;
+}
+
+// « Journal du solde de congé » par employé — combinaison en lecture seule, triée chronologiquement :
+//   • dotations crédit (solde_initial / ajout_annuel) issues de `mouvements`,
+//   • prélèvements CA/DJ synchronisés depuis le journal RMA (`codes_importes` — source de vérité) :
+//     chaque cellule CA/DJ de la grille est une ligne déduite, sans exclusion calendaire.
+// Chaque ligne porte un solde courant recalculé en continu (édition de type « grand livre »).
+function journalSoldeConge(employeId) {
+  const mouvements = db.prepare(`
+    SELECT * FROM mouvements
+    WHERE employe_id = ? AND solde_type = 'conge'
+      AND type_operation IN ('solde_initial','ajout_annuel')
+      AND (motif IS NULL OR motif NOT LIKE 'RMA%restauration%')
+    ORDER BY date_operation ASC, id ASC
+  `).all(employeId);
+
+  const prelevements = db.prepare(`
+    SELECT ci.date, ci.code, ci.demi_journee, ci.id AS codes_importes_id
+    FROM codes_importes ci
+    WHERE ci.employe_id = ? AND ci.code IN ('CA','DJ')
+    ORDER BY ci.date ASC, ci.id ASC
+  `).all(employeId);
+
+  const joursParCode = (r) => {
+    if (r.code === 'DJ') return 0.5;
+    if (r.demi_journee) return 0.5;
+    return 1;
+  };
+
+  const items = [];
+  for (const m of mouvements) {
+    items.push({
+      type: 'dotation',
+      type_operation: m.type_operation,
+      date_operation: m.date_operation,
+      date_debut: m.date_debut || m.date_operation,
+      date_fin: m.date_fin || m.date_operation,
+      jours: m.jours,
+      signe: +1,
+      motif: m.motif || null,
+      source: 'mouvement',
+      mouvement_id: m.id,
+      id: m.id,
+      code: null,
+    });
+  }
+  for (const p of prelevements) {
+    // Chaque cellule CA/DJ de la grille RMA est une ligne déduite du solde (miroir exact de la
+    // grille), cohérente avec soldeCongeRestantDate. Le champ `deduit` reste toujours `true`.
+    const jours = joursParCode(p);
+    items.push({
+      type: 'prelevement_rma',
+      type_operation: 'prelevement',
+      date_operation: p.date,
+      date_debut: p.date,
+      date_fin: p.date,
+      jours,
+      signe: -1,
+      deduit: true,
+      motif: `RMA — Congé ${p.code} du ${p.date}`,
+      source: 'codes_importes',
+      mouvement_id: null,
+      code: p.code,
+    });
+  }
+
+  items.sort((a, b) => (a.date_operation === b.date_operation ? a.signe - b.signe : a.date_operation < b.date_operation ? -1 : 1));
+
+  let running = 0;
+  for (const it of items) {
+    // Toutes les lignes CA/DJ de la grille RMA participent au solde courant.
+    running = Math.round((running + it.signe * it.jours) * 1000) / 1000;
+    it.solde_apres = running;
+  }
+  return { solde: running, lignes: items };
+}
+
+function insertMouvement({ employe_id, type_operation, date_operation, jours, motif, solde_type, arret_id, date_debut, date_fin }) {
   const st = solde_type || (type_operation === 'maladie' ? 'maladie' : 'conge');
   const solde_apres = computeSoldeApres(employe_id, type_operation, jours, st);
   const r = db.prepare(`
-    INSERT INTO mouvements (employe_id, type_operation, date_operation, jours, motif, solde_apres, solde_type, arret_id)
-    VALUES (?,?,?,?,?,?,?,?)
-  `).run(employe_id, type_operation, date_operation, jours, motif || null, solde_apres, st, arret_id || null);
+    INSERT INTO mouvements (employe_id, type_operation, date_operation, date_debut, date_fin, jours, motif, solde_apres, solde_type, arret_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?)
+  `).run(employe_id, type_operation, date_operation, date_debut || date_operation, date_fin || date_operation, jours, motif || null, solde_apres, st, arret_id || null);
   return db.prepare('SELECT * FROM mouvements WHERE id = ?').get(r.lastInsertRowid);
+}
+
+// Recalcule la colonne solde_apres de TOUS les mouvements d'un employé (ordre chronologique),
+// après une création / édition / suppression. Garantit la cohérence du solde courant.
+function recomputeSoldeChain(employeId, soldeType = 'conge') {
+  const rows = db.prepare(`
+    SELECT * FROM mouvements
+    WHERE employe_id = ? AND solde_type = ?
+    ORDER BY date_operation ASC, id ASC
+  `).all(employeId, soldeType);
+  let running = 0;
+  const upd = db.prepare('UPDATE mouvements SET solde_apres = ? WHERE id = ?');
+  for (const m of rows) {
+    if (m.type_operation === 'solde_initial' || m.type_operation === 'ajout_annuel') running += m.jours;
+    else if (m.type_operation === 'prelevement' || m.type_operation === 'maladie') running -= m.jours;
+    upd.run(Math.round(running * 1000) / 1000, m.id);
+  }
+  return Math.round(running * 1000) / 1000;
+}
+
+function updateMouvement(id, { date_operation, date_debut, date_fin, jours, motif }) {
+  const m = db.prepare('SELECT * FROM mouvements WHERE id = ?').get(Number(id));
+  if (!m) return null;
+  const j = jours !== undefined ? Number(jours) : m.jours;
+  // Un solde initial peut être négatif (dette) ; les autres mouvements restent positifs.
+  const initialNegatif = m.type_operation === 'solde_initial' && j < 0;
+  if (!Number.isFinite(j) || j === 0 || (!initialNegatif && j < 0)) {
+    throw new Error(m.type_operation === 'solde_initial' ? 'Le nombre de jours doit être non nul (négatif autorisé pour un solde initial).' : 'Le nombre de jours doit être positif.');
+  }
+  const dOp = date_operation || m.date_operation;
+  const dD = date_debut || m.date_debut || dOp;
+  const dF = date_fin || m.date_fin || dOp;
+  db.prepare(`
+    UPDATE mouvements
+    SET date_operation = ?, date_debut = ?, date_fin = ?, jours = ?, motif = ?, solde_apres = 0
+    WHERE id = ?
+  `).run(dOp, dD, dF, j, motif !== undefined ? (motif || null) : m.motif, Number(id));
+  recomputeSoldeChain(m.employe_id, m.solde_type);
+  return db.prepare('SELECT * FROM mouvements WHERE id = ?').get(Number(id));
+}
+
+function deleteMouvement(id) {
+  const m = db.prepare('SELECT * FROM mouvements WHERE id = ?').get(Number(id));
+  if (!m) return null;
+  db.prepare('DELETE FROM mouvements WHERE id = ?').run(Number(id));
+  recomputeSoldeChain(m.employe_id, m.solde_type);
+  return m;
 }
 
 module.exports = {
@@ -486,10 +752,16 @@ module.exports = {
   soldeEmploye,
   soldeMaladie,
   soldeEmployeAt,
+  soldeCongeRestantDate,
+  journalSoldeConge,
   insertMouvement,
+  updateMouvement,
+  deleteMouvement,
+  recomputeSoldeChain,
   computeSoldeApres,
   TYPES,
   TYPES_CREDIT,
   TYPES_DEBIT,
   isDebit,
+  CODE_RMA_DEMI: 'DJ',
 };

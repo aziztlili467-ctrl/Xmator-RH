@@ -11,6 +11,9 @@ import CalendarJour from '../components/CalendarJour';
 import {
   IconUsers, IconCalendarCheck, IconTrendUp, IconAlert, IconClock,
 } from '../components/icons';
+import Donut3DStat from '../components/ui/Donut3DStat';
+import HoursComboChart from '../components/ui/HoursComboChart';
+import StairsStatsDiagram from '../components/ui/StairsStatsDiagram';
 
 // Mois de travail (règle 21 → 20) — cohérent avec la rubrique Calendrier et le module heures
 function moisTravail(iso) {
@@ -79,53 +82,42 @@ function cartePresence(v) {
   return { bg: '#fee2e2', text: '#991b1b' };
 }
 
-// ---- Carte KPI moderne avec dégradé + badge ----
+// ---- Carte KPI dark premium ----
 function KpiCard({ title, value, sub, icon, chip, accent }) {
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg">
+    <div className="panel">
       <div className="flex items-start justify-between">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white shadow-sm" style={{ background: `linear-gradient(135deg, ${accent.from}, ${accent.to})` }}>
-          {icon}
-        </div>
-        {chip !== undefined && chip !== null && (
-          <span className="rounded-full px-2.5 py-1 text-xs font-bold" style={{ background: chip.bg, color: chip.text }}>
-            {chip.label}
-          </span>
-        )}
+        <div className="icon-badge" style={{ background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`, width: 40, height: 40, color: 'white' }}>{icon}</div>
+        {chip && <span className="badge" style={{ background: chip.bg, color: chip.text }}>{chip.label}</span>}
       </div>
-      <p className="mt-4 truncate text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
-      <p className="mt-1 text-2xl font-black tracking-tight text-slate-900">{value}</p>
-      {sub && <p className="mt-1 truncate text-xs text-slate-500">{sub}</p>}
+      <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--text-secondary)' }}>{title}</p>
+      <p className="mt-1 text-[28px] font-extrabold leading-none" style={{ color: 'var(--text-primary)' }}>{value}</p>
+      {sub && <p className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>{sub}</p>}
     </div>
   );
 }
 
-// ---- Baromètre circulaire (jauge) ----
+// ---- Baromètre 3D glossy ----
 function Barometre({ pct, label, sub, color, compact }) {
   const R = 34;
   const C = 2 * Math.PI * R;
   const val = Math.max(0, Math.min(100, pct === null || pct === undefined ? 0 : pct));
   const angle = val / 100;
   return (
-    <div className={`flex items-center rounded-2xl border border-slate-200/80 bg-white shadow-card ${compact ? 'gap-3 p-3' : 'gap-4 p-4'}`}>
-      <div className={`relative shrink-0 ${compact ? 'h-16 w-16' : 'h-24 w-24'}`}>
+    <div className="panel flex items-center" style={{ filter: 'drop-shadow(0 4px 10px rgba(0,0,0,0.18))' }}>
+      <div className={`relative shrink-0 ${compact ? 'h-20 w-20' : 'h-24 w-24'}`} style={{ transform: 'rotateX(4deg)' }}>
+        <div className="absolute inset-0 rounded-full" style={{ background: 'radial-gradient(ellipse at 30% 20%, rgba(255,255,255,0.25), transparent 55%)', pointerEvents: 'none' }} />
         <svg viewBox="0 0 84 84" className="h-full w-full">
-          <circle cx="42" cy="42" r={R} fill="none" stroke="#e2e8f0" strokeWidth={compact ? 10 : 9} />
-          <circle
-            cx="42" cy="42" r={R} fill="none"
-            stroke={color} strokeWidth={compact ? 10 : 9} strokeLinecap="round"
-            strokeDasharray={`${C * angle} ${C}`}
-            transform="rotate(-90 42 42)"
-            style={{ transition: 'stroke-dasharray 0.7s ease' }}
-          />
+          <circle cx="42" cy="42" r={R} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={compact ? 10 : 9} />
+          <circle cx="42" cy="42" r={R} fill="none" stroke={color} strokeWidth={compact ? 10 : 9} strokeLinecap="round" strokeDasharray={`${C * angle} ${C}`} transform="rotate(-90 42 42)" style={{ transition: 'stroke-dasharray 0.7s ease', filter: `drop-shadow(0 0 6px ${color}80)` }} />
         </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className={`font-black ${compact ? 'text-sm' : 'text-lg'}`} style={{ color }}>{fmtPct(pct)}</span>
+        <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ transform: 'translateZ(10px)' }}>
+          <span className={`${compact ? 'text-[11px]' : 'text-[14px]'} font-bold tracking-tight rounded-full bg-white px-1 py-0.5`} style={{ color: '#8A210A', fontFamily: "'Space Grotesk', Inter, sans-serif", fontWeight: 700, boxShadow: '0 1px 4px rgba(0,0,0,0.15)', lineHeight: 1 }}>{fmtPct(pct)}</span>
         </div>
       </div>
-      <div className="min-w-0">
-        <p className={`font-bold text-slate-800 ${compact ? 'text-xs' : 'text-sm'}`}>{label}</p>
-        <p className="mt-0.5 text-xs text-slate-500">{sub}</p>
+      <div className="min-w-0 ml-3">
+        <p className={`${compact ? 'text-xs' : 'text-sm'} font-semibold`} style={{ color: 'var(--text-primary)', fontFamily: "'Manrope', sans-serif", fontWeight: 600 }}>{label}</p>
+        <p className="mt-0.5 text-[11px]" style={{ color: 'var(--text-secondary)', fontWeight: 400 }}>{sub}</p>
       </div>
     </div>
   );
@@ -170,6 +162,24 @@ function CardTitle({ title, sub, right }) {
         {sub && <p className="mt-0.5 text-xs text-slate-400">{sub}</p>}
       </div>
       {right}
+    </div>
+  );
+}
+
+function HoursComboSection({ barData, k }) {
+  const [zoom, setZoom] = useState(false);
+  return (
+    <div onClick={() => setZoom((v) => !v)} className={`rounded-2xl border bg-white p-5 shadow-sm transition-all duration-300 cursor-pointer ${zoom ? 'scale-[1.02] shadow-xl z-10 border-cyan-200' : 'border-slate-200/80 hover:-translate-y-1 hover:shadow-md hover:border-cyan-100'}`}>
+      <CardTitle title="Heures légales vs travaillées" sub={`${barData.length} période(s) • heures cumulées`} right={<span className="rounded-full border px-2.5 py-1 text-xs font-semibold" style={{ background: 'var(--bg-panel)', borderColor: 'var(--border-panel)' }}>{fmtHeures(k.heures_travaillees)}</span>} />
+      <div className="h-[190px] sm:h-[250px] lg:h-[300px]"><HoursComboChart data={barData} height={260} /></div>
+      <div className="mt-2 flex flex-wrap items-center justify-center gap-4 text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+        <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm" style={{ background: '#cbd5e1' }} /> Heures légales</span>
+        <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm" style={{ background: 'var(--status-approved)' }} /> ≥ 100 %</span>
+        <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm" style={{ background: 'var(--accent-amber)' }} /> 90–99 %</span>
+        <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm" style={{ background: '#fb923c' }} /> 75–89 %</span>
+        <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm" style={{ background: 'var(--status-rejected)' }} /> &lt; 75 %</span>
+      </div>
+      <p className="mt-1 text-center text-[10px]" style={{ color: 'var(--text-muted)' }}>{zoom ? 'Cliquer pour réduire' : 'Survoler la carte • Cliquer pour zoom'}</p>
     </div>
   );
 }
@@ -245,6 +255,7 @@ export default function Dashboard() {
   const [filtresOuverts, setFiltresOuverts] = useState(false);
   const [categoriesList, setCategoriesList] = useState([]);
   const [categorieId, setCategorieId] = useState('');
+  const [departement, setDepartement] = useState('');
   const [alea, setAlea] = useState(0);
 
   useEffect(() => {
@@ -294,11 +305,12 @@ export default function Dashboard() {
       debut: periode.debut,
       fin: periode.fin,
       categorie_id: categorieId ? Number(categorieId) : undefined,
+      departement: departement || undefined,
       employe_id: filtreEmployeId || undefined,
       matricule: filtreEmployeId ? undefined : (employeFiltre ? employeFiltre.matricule : undefined),
       alea: alea || undefined,
     };
-  }, [granularite, periode, categorieId, filtreEmployeId, employeFiltre, matriculeIntrouvable, alea]);
+  }, [granularite, periode, categorieId, departement, filtreEmployeId, employeFiltre, matriculeIntrouvable, alea]);
 
   useEffect(() => {
     if (!auditParams) {
@@ -370,6 +382,12 @@ export default function Dashboard() {
   // Filtres sur le tableau des employés
   const libelleCategorie = (categoriesList.find((c) => String(c.id) === categorieId) || {}).libelle;
 
+  // Départements distincts synchronisés avec la sous-catégorie « Employés »
+  const departementsList = useMemo(() => {
+    const s = new Set((employesList || []).map((e) => (e.departement || '').trim()).filter(Boolean));
+    return [...s].sort((a, b) => a.localeCompare(b, 'fr'));
+  }, [employesList]);
+
   const employesFiltres = useMemo(() => {
     const list = data?.employes || [];
     if (!recherche.trim()) return list;
@@ -378,8 +396,19 @@ export default function Dashboard() {
       `${e.matricule} ${e.nom} ${e.prenom} ${e.categorie}`.toLowerCase().includes(s));
   }, [data, recherche]);
 
+  // Solde de congé restant « selon calendrier » de l'employé filtré — priorité à la valeur
+  // période du fetch d'audit (solde_initial + ajout_annuel − prélèvements RMA sur [début, fin]),
+  // sinon repli sur la liste des employés (employeFiltre.solde).
+  const soldeRestantEmploye = useMemo(() => {
+    if (!employeFiltre) return null;
+    const detail = (data?.employes || []).find((e) => String(e.id) === String(employeFiltre.id));
+    if (detail?.solde_conge_periode !== undefined && detail.solde_conge_periode !== null) return detail.solde_conge_periode;
+    if (detail?.solde_conge !== undefined && detail.solde_conge !== null) return detail.solde_conge;
+    return employeFiltre.solde;
+  }, [employeFiltre, data]);
+
   return (
-    <div className="space-y-6">
+    <div data-theme="dark-premium" className="space-y-6 rounded-[16px] p-4" style={{ background: 'var(--bg-app-gradient)', backgroundColor: 'var(--bg-app)' }}>
       {/* ===== Panneau de filtres global (sidebar) ===== */}
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-4">
         <aside className="xl:col-span-1">
@@ -437,6 +466,20 @@ export default function Dashboard() {
               )}
 
               <div>
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Département</label>
+                <select
+                  className="input w-full text-sm"
+                  value={departement}
+                  onChange={(e) => { setDepartement(e.target.value); setEmployeId(''); setMatricule(''); }}
+                >
+                  <option value="">Tous les départements</option>
+                  {departementsList.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
                 <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Catégorie</label>
                 <select
                   className="input w-full text-sm"
@@ -491,6 +534,32 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <div className="space-y-1.5 bg-slate-50 px-3 py-2.5 text-xs">
+                    {employeFiltre.intitule_poste && (
+                      <p className="flex items-center justify-between text-slate-600">
+                        <span className="text-slate-400">Intitulé du poste</span>
+                        <span className="max-w-[55%] truncate font-semibold text-slate-800">{employeFiltre.intitule_poste}</span>
+                      </p>
+                    )}
+                    {(employeFiltre.rubrique || employeFiltre.grade || employeFiltre.classe || employeFiltre.echelon) && (
+                      <p className="flex items-center justify-between gap-2 text-slate-600">
+                        <span className="text-slate-400">Rub. / Grade / Cl. / Éch.</span>
+                        <span className="max-w-[60%] truncate font-semibold text-slate-800">
+                          {[employeFiltre.rubrique, employeFiltre.grade, employeFiltre.classe, employeFiltre.echelon].filter(Boolean).join(' / ')}
+                        </span>
+                      </p>
+                    )}
+                    {employeFiltre.date_embauche && (
+                      <p className="flex items-center justify-between text-slate-600">
+                        <span className="text-slate-400">Date d'embauche</span>
+                        <span className="font-semibold text-slate-800">{fmtDate(employeFiltre.date_embauche)}</span>
+                      </p>
+                    )}
+                    {(employeFiltre.gsm || employeFiltre.telephone) && (
+                      <p className="flex items-center justify-between text-slate-600">
+                        <span className="text-slate-400">Téléphone</span>
+                        <span className="max-w-[55%] truncate font-semibold text-slate-800">{employeFiltre.gsm || employeFiltre.telephone}</span>
+                      </p>
+                    )}
                     <p className="flex items-center justify-between text-slate-600">
                       <span className="text-slate-400">Catégorie</span>
                       <span className="max-w-[55%] truncate font-semibold text-slate-800">{employeFiltre.categorie}</span>
@@ -593,6 +662,20 @@ export default function Dashboard() {
               icon={<IconCalendarCheck />}
               accent={{ from: '#f43f5e', to: '#ec4899' }}
             />
+            {employeFiltre && (
+              <KpiCard
+                title="Solde congé restant"
+                value={`${fmtJours(soldeRestantEmploye ?? 0)} j`}
+                sub={`${employeFiltre.nom} ${employeFiltre.prenom} · Mat. ${employeFiltre.matricule} · soldes & prélèvements RMA sur la période`}
+                icon={<IconCalendarCheck />}
+                accent={{ from: '#0d9488', to: '#059669' }}
+                chip={(soldeRestantEmploye ?? 0) < 0
+                  ? { label: 'Soldé négatif', bg: '#fee2e2', text: '#991b1b' }
+                  : (soldeRestantEmploye ?? 0) < 5
+                    ? { label: 'Faible solde', bg: '#fef3c7', text: '#92400e' }
+                    : { label: 'Disponible', bg: '#d1fae5', text: '#065f46' }}
+              />
+            )}
           </div>
 
           {/* ===== Calendrier de présence (mois en cours / mois précédent / période personnalisée, filtre par matricule) ===== */}
@@ -601,6 +684,7 @@ export default function Dashboard() {
               debut={data.periode.debut}
               fin={data.periode.fin}
               jours={data.calendrier}
+              codes={data.codes || []}
               nom={employeFiltre.nom}
               prenom={employeFiltre.prenom}
               matricule={employeFiltre.matricule}
@@ -617,9 +701,9 @@ export default function Dashboard() {
             <Barometre pct={data.barometres.ponctualite} label="Ponctualité globale" sub={`${k.journees_presence - k.retards} / ${k.journees_presence} journée(s) sans retard`} color="#8b5cf6" />
           </div>
 
-          {/* ===== Ligne 2 colonnes : ★ Évaluation de la ponctualité + Présence & ponctualité ===== */}
+          {/* ===== Combo Heures légales vs travaillées + ★ Évaluation (échangés) ===== */}
           <div className="grid grid-cols-1 items-stretch gap-6 xl:grid-cols-2">
-            <CarteEvaluationPonctualite k={k} baro={data.barometres} />
+            <HoursComboSection barData={barData} k={k} />
 
             <div className="flex h-full flex-col rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card">
               <CardTitle
@@ -652,36 +736,8 @@ export default function Dashboard() {
 
           {/* ===== Graphiques principaux ===== */}
           <div className="grid grid-cols-1 gap-6 2xl:grid-cols-2">
-            {/* Histogramme heures */}
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card">
-              <CardTitle
-                title="Heures légales vs travaillées"
-                sub={`${data.series.length} période(s) • heures cumulées`}
-                right={<span className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500">{fmtHeures(k.heures_travaillees)}</span>}
-              />
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={barData} margin={{ top: 5, right: 5, left: -12, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#e2e8f0' }} />
-                  <YAxis tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} />
-                  <Tooltip formatter={(v) => [fmtHeures(v), '']} cursor={{ fill: '#f1f5f9' }} labelStyle={{ fontWeight: 700 }} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="Heures légales" fill="#cbd5e1" radius={[4, 4, 0, 0]} maxBarSize={28} />
-                  <Bar dataKey="Heures travaillées" radius={[4, 4, 0, 0]} maxBarSize={28}>
-                    {barData.map((entry, i) => (
-                      <Cell key={i} fill={presenceColor(entry.pct)} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-              <div className="mt-2 flex flex-wrap items-center justify-center gap-4 text-[11px] text-slate-500">
-                <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-slate-300" /> Heures légales</span>
-                <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm" style={{ background: '#10b981' }} /> ≥ 100 %</span>
-                <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm" style={{ background: '#f59e0b' }} /> 90–99 %</span>
-                <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm" style={{ background: '#f97316' }} /> 75–89 %</span>
-                <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm" style={{ background: '#ef4444' }} /> &lt; 75 %</span>
-              </div>
-            </div>
+            {/* ★ Évaluation de la ponctualité */}
+            <CarteEvaluationPonctualite k={k} baro={data.barometres} />
 
             {/* Courbe empilée 100 % */}
             <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card">
@@ -716,25 +772,7 @@ export default function Dashboard() {
                 sub="journées concernées par période"
                 right={<span className="rounded-lg bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-600">{k.retards + k.departs_anticipe} événement(s)</span>}
               />
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={retardData} margin={{ top: 5, right: 5, left: -12, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#e2e8f0' }} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} />
-                  <Tooltip
-                    formatter={(v, n) => (n === 'minutes' ? [`${v} min`, ''] : [v, n])}
-                    cursor={{ fill: '#f1f5f9' }}
-                    labelStyle={{ fontWeight: 700 }}
-                  />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="Jours en retard" fill="#f43f5e" radius={[4, 4, 0, 0]} maxBarSize={26} />
-                  <Bar dataKey="Sorties anticipées" fill="#f59e0b" radius={[4, 4, 0, 0]} maxBarSize={26} />
-                </BarChart>
-              </ResponsiveContainer>
-              <div className="mt-2 flex flex-wrap items-center justify-center gap-4 text-[11px] text-slate-500">
-                <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-rose-500" /> Retards (entrée)</span>
-                <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-amber-500" /> Sorties anticipées</span>
-              </div>
+              <StairsStatsDiagram data={retardData} />
             </div>
 
             {/* Top employés en retard */}
@@ -768,32 +806,28 @@ export default function Dashboard() {
 
           {/* ===== Donut + Répartition par catégorie ===== */}
           <div className="grid grid-cols-1 gap-6 2xl:grid-cols-2">
-            {/* Donut global */}
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card">
+            {/* Donut global 3D */}
+            <div className="panel">
               <CardTitle title="Répartition globale" sub="journées cumulées sur la période" />
-              <div className="flex flex-col items-center gap-4 sm:flex-row">
-                <div className="h-52 w-52 shrink-0">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={58} outerRadius={88} paddingAngle={3} strokeWidth={0}>
-                        {donutData.map((d, i) => <Cell key={i} fill={d.color} />)}
-                      </Pie>
-                      <Tooltip formatter={(v, n, p) => [`${fmtJours(v)} j (${p.payload.pct} %)`, n]} />
-                    </PieChart>
-                  </ResponsiveContainer>
+              {donutData.length === 0 ? (
+                <p className="py-6 text-center text-sm" style={{ color: 'var(--text-secondary)' }}>Aucune donnée sur cette période.</p>
+              ) : (
+                <div className="flex flex-col items-center gap-4 lg:flex-row lg:items-start overflow-hidden">
+                  <div className="shrink-0">
+                    <Donut3DStat data={donutData.map((d) => ({ name: d.name, value: d.value, color: d.color }))} size={200} />
+                  </div>
+                  <div className="w-full min-w-0 space-y-1.5 overflow-hidden">
+                    {donutData.map((d) => (
+                      <div key={d.name} className="flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5" style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-panel)' }}>
+                        <span className="flex min-w-0 items-center gap-1.5 truncate text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: d.color, boxShadow: `0 0 6px ${d.color}60` }} /> <span className="truncate">{d.name}</span>
+                        </span>
+                        <span className="shrink-0 whitespace-nowrap text-xs font-bold" style={{ color: 'var(--text-primary)' }}>{fmtJours(d.value)} j <span className="font-normal" style={{ color: 'var(--text-muted)' }}>({fmtPct(d.pct)})</span></span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="w-full space-y-2">
-                  {donutData.map((d) => (
-                    <div key={d.name} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-100">
-                      <span className="flex items-center gap-2 text-sm text-slate-700">
-                        <span className="h-3 w-3 rounded-full" style={{ background: d.color }} /> {d.name}
-                      </span>
-                      <span className="text-sm font-bold text-slate-800">{fmtJours(d.value)} j <span className="font-normal text-slate-400">({fmtPct(d.pct)})</span></span>
-                    </div>
-                  ))}
-                  {donutData.length === 0 && <p className="py-6 text-center text-sm text-slate-400">Aucune donnée sur cette période.</p>}
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Répartition par catégorie */}

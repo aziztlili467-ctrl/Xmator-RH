@@ -5,6 +5,7 @@ import { fmtDate, fmtJours, today } from '../utils';
 import BadgeType from '../components/BadgeType';
 import SoldeJauge from '../components/SoldeJauge';
 import PresenceHeures from '../components/PresenceHeures';
+import CalendrierPresenceEmploye from '../components/CalendrierPresenceEmploye';
 import { IconArrowDown, IconCalendarCheck, IconAlert } from '../components/icons';
 
 export default function EmployeDetail() {
@@ -202,6 +203,13 @@ export default function EmployeDetail() {
       </div>
 
       <PresenceHeures matricule={emp.matricule} />
+
+      <CalendrierPresenceEmploye
+        employeId={emp.id}
+        matricule={emp.matricule}
+        nom={emp.nom}
+        prenom={emp.prenom}
+      />
 
       <div className="card overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">

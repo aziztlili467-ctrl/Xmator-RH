@@ -241,6 +241,12 @@ export const api = {
   correctionSolde: (body) => request('/mouvements/correction-solde', { method: 'POST', body: JSON.stringify(body) }),
   ajoutAnnuelMasse: (body) => request('/mouvements/ajout-annuel-masse', { method: 'POST', body: JSON.stringify(body) }),
   ajoutMaladieMasse: (body) => request('/mouvements/ajout-maladie-masse', { method: 'POST', body: JSON.stringify(body) }),
+  createSolde: (body) => request('/mouvements/balances', { method: 'POST', body: JSON.stringify(body) }),
+  createSoldeMasse: (body) => request('/mouvements/balances-masse', { method: 'POST', body: JSON.stringify(body) }),
+  clearSoldes: (body) => request('/mouvements/clear-soldes', { method: 'POST', body: JSON.stringify(body) }),
+  updateMouvement: (id, body) => request(`/mouvements/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteMouvement: (id) => request(`/mouvements/${id}`, { method: 'DELETE' }),
+  journalSoldeConge: (id) => request(`/mouvements/journal-solde/${id}`),
 
   arretsMaladie: (params = {}) => request('/arrets-maladie' + buildQuery(params)),
   arretMaladie: (id) => request(`/arrets-maladie/${id}`),
@@ -248,6 +254,9 @@ export const api = {
   validerArretMaladie: (id) => request(`/arrets-maladie/${id}/valider`, { method: 'POST' }),
   rejeterArretMaladie: (id, motif) => request(`/arrets-maladie/${id}/rejeter`, { method: 'POST', body: JSON.stringify({ motif_rejet: motif }) }),
   supprimerArretMaladie: (id) => request(`/arrets-maladie/${id}`, { method: 'DELETE' }),
+
+  editionConges: (params = {}) => request('/edition-conges' + buildQuery(params)),
+  editionCongesPdf: (params = {}) => openPdf('/edition-conges/pdf' + buildQuery(params)),
 
   journalMaladie: (params = {}) => request('/journal-maladie' + buildQuery(params)),
   statsJournal: (params = {}) => request('/stats-journal' + buildQuery(params)),
@@ -296,8 +305,11 @@ export const api = {
 
   // Journal RMA (Repos · Maladie · Absence) — codifications importées fusionnées au journal de paie
   journalRma: (params = {}) => request('/journal-rma' + buildQuery(params)),
+  journalRmaPrint: (params = {}) => printPdf('/journal-rma/pdf' + buildQuery(params)),
   importCodesRma: (texte, periode = {}) => request('/journal-rma/import', { method: 'POST', body: JSON.stringify({ texte, ...periode }) }),
   deleteCodesRma: (params = {}) => request('/journal-rma' + buildQuery(params), { method: 'DELETE' }),
+  updateCodeRma: (body) => request('/journal-rma/update', { method: 'PUT', body: JSON.stringify(body) }),
+  deleteCellRma: (params = {}) => request('/journal-rma/cell' + buildQuery(params), { method: 'DELETE' }),
 
   // Rubrique Horaires › Notification d'Absences : formulaire du supérieur hiérarchique / responsable RH,
   // calcul des jours ouvrables hors repos hebdomadaires et fériés payés, impression PDF, journal
@@ -326,7 +338,7 @@ export const api = {
   importCsv: (csv) => request('/import', { method: 'POST', body: JSON.stringify({ csv }) }),
   importRh: (csv) => request('/employes/import-rh', { method: 'POST', body: JSON.stringify({ csv }) }),
   horaires: (params = {}) => request('/horaires' + buildQuery(params)),
-  importHoraires: (texte) => request('/horaires/import', { method: 'POST', body: JSON.stringify({ texte }) }),
+  viderHoraires: (params = {}) => request('/horaires' + buildQuery(params), { method: 'DELETE' }),
   presence: (params = {}) => request('/presence' + buildQuery(params)),
   importPresence: (texte) => request('/presence/import', { method: 'POST', body: JSON.stringify({ texte }) }),
   presenceExport: (params = {}) => downloadFichier(`/presence/export` + buildQuery(params), `pointages_${params.debut || 'tout'}_${params.fin || 'tout'}.txt`),

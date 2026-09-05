@@ -12,6 +12,7 @@ export default function Employes() {
   const location = useLocation();
   const [employes, setEmployes] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [grille, setGrille] = useState([]);
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState('');
   const [sortKey, setSortKey] = useState('matricule');
@@ -22,7 +23,7 @@ export default function Employes() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(location.state?.msg || '');
 
-  const [form, setForm] = useState({ matricule: '', nom: '', prenom: '', categorie_id: '', rubrique: '', grade: '', classe: '', echelon: '', actif: true });
+  const [form, setForm] = useState({ matricule: '', nom: '', prenom: '', categorie_id: '', rubrique: '', grade: '', classe: '', echelon: '', actif: true, departement: '' });
   const [csvText, setCsvText] = useState('');
   const [importResult, setImportResult] = useState(null);
   const [importing, setImporting] = useState(false);
@@ -40,12 +41,68 @@ export default function Employes() {
   const [delError, setDelError] = useState('');
   const [delSaving, setDelSaving] = useState(false);
 
+  const [deptSavingId, setDeptSavingId] = useState(null);
+
+  const DEPT_OPTIONS = ['', 'Siège', 'Comptoir'];
+
+  // Options des listes déroulantes Rubrique / Grade / Classe / Echelon :
+  // valeurs distinctes des lignes enregistrées dans la « Grille de salaire », filtrées en cascade
+  // (grade selon rubrique, classe selon rubrique+grade, échelon selon rubrique+grade+classe).
+  const GRID_OPT = { rubrique: 'Rubrique', grade: 'Grade', classe: 'Classe', echelon: 'Echelon' };
+  const grilleDistinct = useMemo(() => (rows, k) =>
+    [...new Set(rows.map((l) => String(l[k] ?? '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr')), []);
+  const grilleOptions = (e, field) => {
+    let rows = grille;
+    if (e.rubrique) rows = rows.filter((l) => String(l.rubrique ?? '').trim() === String(e.rubrique).trim());
+    if (field !== 'grade' && e.grade) rows = rows.filter((l) => String(l.grade ?? '').trim() === String(e.grade).trim());
+    if ((field === 'classe' || field === 'echelon') && e.classe) rows = rows.filter((l) => String(l.classe ?? '').trim() === String(e.classe).trim());
+    const list = grilleDistinct(rows, field);
+    const cur = String(e[field] ?? '').trim();
+    if (cur && !list.includes(cur)) list.push(cur);
+    return list;
+  };
+
+  const [grilleDrafts, setGrilleDrafts] = useState({});
+
+  const saveGrilleField = (id, field, value) => {
+    setGrilleDrafts((p) => ({ ...p, [id]: { ...(p[id] || {}), [field]: value } }));
+    api.updateEmploye(id, { [field]: value })
+      .then(() => {
+        const emp = employes.find((x) => x.id === id);
+        setSuccess(`${GRID_OPT[field]} de ${emp ? `${emp.nom} ${emp.prenom}` : 'l\'employé'} mis à jour.`);
+        load();
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setGrilleDrafts((p) => {
+        const n = { ...p };
+        if (n[id]) {
+          const rest = { ...n[id] };
+          delete rest[field];
+          if (Object.keys(rest).length === 0) delete n[id]; else n[id] = rest;
+        }
+        return n;
+      }));
+  };
+
+  const grilleValue = (e, field) => (grilleDrafts[e.id]?.[field] ?? e[field] ?? '');
+
+  const saveDepartement = (e) => {
+    const value = e.target.value;
+    if (value === e.currentTarget.dataset.okval) return;
+    setDeptSavingId(e.currentTarget.dataset.id);
+    api.updateEmploye(Number(e.currentTarget.dataset.id), { departement: value })
+      .then(() => { setSuccess(`Département mis à jour.`); load(); })
+      .catch((err) => setError(err.message))
+      .finally(() => setDeptSavingId(null));
+  };
+
   const load = () => {
     api.employes({ search, categorie: catFilter }).then(setEmployes).catch((e) => setError(e.message));
   };
 
   useEffect(() => {
     api.categories().then(setCategories).catch(() => {});
+    api.grilleSalaire().then(setGrille).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -79,7 +136,7 @@ export default function Employes() {
     setError('');
     try {
       await api.createEmploye({ ...form, categorie_id: Number(form.categorie_id) });
-      setForm({ matricule: '', nom: '', prenom: '', categorie_id: '', rubrique: '', grade: '', classe: '', echelon: '', actif: true });
+      setForm({ matricule: '', nom: '', prenom: '', categorie_id: '', rubrique: '', grade: '', classe: '', echelon: '', actif: true, departement: '' });
       setShowCreate(false);
       setSuccess('Employé créé avec succès.');
       load();
@@ -142,7 +199,7 @@ export default function Employes() {
 
   const openEdit = (e) => {
     setEditTarget(e);
-    setEditForm({ matricule: e.matricule, nom: e.nom, prenom: e.prenom, categorie_id: e.categorie_id, rubrique: e.rubrique || '', grade: e.grade || '', classe: e.classe || '', echelon: e.echelon || '', actif: !!e.actif });
+    setEditForm({ matricule: e.matricule, nom: e.nom, prenom: e.prenom, categorie_id: e.categorie_id, rubrique: e.rubrique || '', grade: e.grade || '', classe: e.classe || '', echelon: e.echelon || '', actif: !!e.actif, departement: e.departement || '' });
     setEditError('');
   };
 
@@ -161,6 +218,7 @@ export default function Employes() {
         classe: editForm.classe,
         echelon: editForm.echelon,
         actif: editForm.actif,
+        departement: editForm.departement,
       });
       setEditTarget(null);
       setSuccess(`Fiche de ${editForm.nom} ${editForm.prenom} modifiée.`);
@@ -190,7 +248,7 @@ export default function Employes() {
   const Th = ({ label, k }) => (
     <th
       onClick={() => toggleSort(k)}
-      className="cursor-pointer select-none px-5 py-3 font-semibold uppercase tracking-wide text-slate-500 hover:text-slate-800"
+      className="cursor-pointer select-none px-3 py-3 font-semibold uppercase tracking-wide text-slate-500 hover:text-slate-800"
     >
       {label}{sortIcon(k)}
     </th>
@@ -239,9 +297,10 @@ export default function Employes() {
         </div>
 
         <div className="table-wrap">
-          <table className="w-max-table text-sm">
+          <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-start">
+                <Th label="DEPT" k="departement" />
                 <Th label="Matricule" k="matricule" />
                 <Th label="Nom et prénom" k="nom" />
                 <Th label="Catégorie" k="categorie" />
@@ -250,26 +309,86 @@ export default function Employes() {
                 <Th label="Classe" k="classe" />
                 <Th label="Echelon" k="echelon" />
                 <Th label="Solde restant" k="solde" />
-                <th className="px-5 py-3 font-semibold uppercase tracking-wide text-slate-500">Actions</th>
+                <th className="px-3 py-3 font-semibold uppercase tracking-wide text-slate-500">Actions</th>
               </tr>
             </thead>
             <tbody>
               {sorted.map((e) => (
                 <tr key={e.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
-                  <td className="px-5 py-3 font-mono font-semibold text-brand-700">{e.matricule}</td>
-                  <td className="px-5 py-3">
+                  <td className="px-3 py-3">
+                    <select
+                      data-id={e.id}
+                      data-okval={e.departement || ''}
+                      value={e.departement || ''}
+                      onChange={saveDepartement}
+                      disabled={deptSavingId === e.id}
+                      className="input w-32 cursor-pointer px-2 py-1.5 text-xs"
+                      title={`Département de ${e.nom} ${e.prenom}`}
+                    >
+                      <option value="">—</option>
+                      {DEPT_OPTIONS.filter((d) => d !== '').map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-3 py-3 font-mono font-semibold text-brand-700">{e.matricule}</td>
+                  <td className="px-3 py-3">
                     <Link to={`/employes/${e.id}`} className="font-semibold text-slate-800 hover:text-brand-700">
                       {e.nom} {e.prenom}
                     </Link>
                   </td>
-                  <td className="px-5 py-3">
+                  <td className="px-3 py-3">
                     <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">{e.categorie}</span>
                   </td>
-                  <td className="px-5 py-3 text-xs text-slate-600">{e.rubrique || '—'}</td>
-                  <td className="px-5 py-3 text-xs text-slate-600">{e.grade || '—'}</td>
-                  <td className="px-5 py-3 text-xs text-slate-600">{e.classe || '—'}</td>
-                  <td className="px-5 py-3 text-xs text-slate-600">{e.echelon || '—'}</td>
-                  <td className="px-5 py-3">
+                  <td className="px-3 py-3 text-xs text-slate-600">
+                    <select
+                      value={grilleValue(e, 'rubrique')}
+                      disabled={grilleDrafts[e.id] !== undefined}
+                      onChange={(ev) => saveGrilleField(e.id, 'rubrique', ev.target.value)}
+                      className="input w-28 cursor-pointer px-2 py-1.5 text-xs"
+                      title={`Rubrique de ${e.nom} ${e.prenom}`}
+                    >
+                      <option value="">—</option>
+                      {grilleOptions(e, 'rubrique').map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-3 py-3 text-xs text-slate-600">
+                    <select
+                      value={grilleValue(e, 'grade')}
+                      disabled={grilleDrafts[e.id] !== undefined}
+                      onChange={(ev) => saveGrilleField(e.id, 'grade', ev.target.value)}
+                      className="input w-28 cursor-pointer px-2 py-1.5 text-xs"
+                      title={`Grade de ${e.nom} ${e.prenom}`}
+                    >
+                      <option value="">—</option>
+                      {grilleOptions(e, 'grade').map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-3 py-3 text-xs text-slate-600">
+                    <select
+                      value={grilleValue(e, 'classe')}
+                      disabled={grilleDrafts[e.id] !== undefined}
+                      onChange={(ev) => saveGrilleField(e.id, 'classe', ev.target.value)}
+                      className="input w-28 cursor-pointer px-2 py-1.5 text-xs"
+                      title={`Classe de ${e.nom} ${e.prenom}`}
+                    >
+                      <option value="">—</option>
+                      {grilleOptions(e, 'classe').map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-3 py-3 text-xs text-slate-600">
+                    <select
+                      value={grilleValue(e, 'echelon')}
+                      disabled={grilleDrafts[e.id] !== undefined}
+                      onChange={(ev) => saveGrilleField(e.id, 'echelon', ev.target.value)}
+                      className="input w-28 cursor-pointer px-2 py-1.5 text-xs"
+                      title={`Echelon de ${e.nom} ${e.prenom}`}
+                    >
+                      <option value="">—</option>
+                      {grilleOptions(e, 'echelon').map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-3 py-3">
                     <div className="flex items-center gap-3">
                       <span className={`w-14 shrink-0 text-end font-bold ${e.solde < 0 ? 'text-red-600' : e.solde < 5 ? 'text-amber-600' : 'text-slate-700'}`}>
                         {fmtJours(e.solde)} j
@@ -278,7 +397,7 @@ export default function Employes() {
                       <div className="w-28 shrink-0"><SoldeJauge solde={e.solde} reference={30} showLabel={false} /></div>
                     </div>
                   </td>
-                  <td className="px-5 py-3">
+                  <td className="px-3 py-3">
                     <div className="flex items-center gap-1.5">
                       <button
                         className="rounded-md px-2.5 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-50"
@@ -297,7 +416,7 @@ export default function Employes() {
                 </tr>
               ))}
               {sorted.length === 0 && (
-                <tr><td colSpan={9} className="px-5 py-10 text-center text-slate-500">Aucun employé trouvé.</td></tr>
+                <tr><td colSpan={10} className="px-5 py-10 text-center text-slate-500">Aucun employé trouvé.</td></tr>
               )}
             </tbody>
           </table>
@@ -326,6 +445,14 @@ export default function Employes() {
               <select className="input" value={form.categorie_id} onChange={(e) => setForm({ ...form, categorie_id: e.target.value })} required>
                 <option value="">Sélectionner…</option>
                 {categories.map((c) => <option key={c.id} value={c.id}>{c.libelle}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">Département</label>
+              <select className="input" value={form.departement} onChange={(e) => setForm({ ...form, departement: e.target.value })}>
+                <option value="">—</option>
+                <option value="Siège">Siège</option>
+                <option value="Comptoir">Comptoir</option>
               </select>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
@@ -488,6 +615,14 @@ export default function Employes() {
               <select className="input" value={editForm.categorie_id} onChange={(e) => setEditForm({ ...editForm, categorie_id: e.target.value })} required>
                 <option value="">Sélectionner…</option>
                 {categories.map((c) => <option key={c.id} value={c.id}>{c.libelle}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">Département</label>
+              <select className="input" value={editForm.departement} onChange={(e) => setEditForm({ ...editForm, departement: e.target.value })}>
+                <option value="">—</option>
+                <option value="Siège">Siège</option>
+                <option value="Comptoir">Comptoir</option>
               </select>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
