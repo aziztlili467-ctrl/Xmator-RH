@@ -4,7 +4,7 @@ import { writeFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 // --- Génération du service worker PWA au build (sans dépendance) ---
-const SW_CACHE = 'xmator-rh-v5';
+const SW_CACHE = `xmator-rh-${Date.now().toString(36)}`;
 
 const SW_TEMPLATE = `const CACHE = '${SW_CACHE}';
 const PRECACHE = __PRECACHE_MANIFEST__;
@@ -22,6 +22,9 @@ self.addEventListener('activate', (e) => {
     caches.keys()
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
+      // Recharge les pages déjà ouvertes pour éviter d'afficher l'ancienne version
+      .then(() => self.clients.matchAll({ type: 'window' }))
+      .then((clients) => clients.forEach((c) => c.navigate(c.url)))
   );
 });
 

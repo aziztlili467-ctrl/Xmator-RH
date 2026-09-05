@@ -264,14 +264,14 @@ export default function Layout() {
         id="menu-principal"
         aria-label="Menu principal"
         aria-hidden={!menuOuvert ? undefined : false}
-        className={`fixed inset-y-0 start-0 z-40 flex w-[min(84vw,300px)] max-w-[300px] flex-col items-stretch gap-0 overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom,0px)] pt-[env(safe-area-inset-top,0px)] text-white transition-transform duration-200 ease-out lg:w-[290px] lg:py-0 xl:w-[290px] ${menuOuvert ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'}`}
-        style={{ background: '#25447D', borderRight: `1px solid rgba(255,255,255,0.12)` }}
+        className={`app-sidebar fixed inset-y-0 start-0 z-[60] flex w-[min(86vw,288px)] max-w-[288px] flex-col items-stretch gap-0 overflow-y-auto overscroll-contain pb-[var(--safe-bottom)] pt-[var(--safe-top)] transition-transform duration-200 ease-out lg:z-40 lg:w-[288px] lg:py-0 xl:w-[288px] ${menuOuvert ? 'translate-x-0 shadow-xl' : '-translate-x-full lg:translate-x-0'}`}
+        style={{ borderRight: '1px solid rgba(255,255,255,0.08)' }}
       >
         <div className="flex items-center gap-3 px-4 py-4 lg:px-5 lg:py-6">
-          <div className="icon-badge shrink-0 text-white" style={{ background: 'var(--primary-600)' }}>A</div>
+          <div className="icon-badge shrink-0 font-bold text-white" style={{ background: 'linear-gradient(135deg, var(--accent-400), var(--accent-600))' }}>A</div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-bold leading-tight text-white">Amicale du Personnel</p>
-            <p className="truncate text-xs" style={{ color: 'var(--text-secondary)' }}>Banque Centrale — RH</p>
+            <p className="truncate text-xs" style={{ color: 'var(--text-on-sidebar)' }}>Banque Centrale — RH</p>
           </div>
           <button
             type="button"
@@ -299,23 +299,23 @@ export default function Layout() {
                   handleGroupClick(g);
                 }}
                 title={g.label}
-                className={`group flex min-h-touch w-auto cursor-pointer flex-row items-center gap-2.5 rounded-lg px-3 py-2.5 text-start text-[13px] no-underline transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 lg:min-h-0 lg:py-2.5 ${isActive ? 'shadow' : 'hover:translate-y-[-1px]'}`}
-                style={isActive ? { background: 'var(--primary-50)', color: 'var(--primary-700)' } : { color: '#cbd5e1' }}
+                data-active={isActive}
+                className="nav-item group flex min-h-touch w-auto cursor-pointer flex-row items-center gap-2.5 px-3 py-2.5 text-start text-[13px] no-underline lg:min-h-0" 
               >
-                <span className="icon-badge flex h-8 w-8 shrink-0 items-center justify-center border lg:h-9 lg:w-9" style={{ background: 'white', color: accent, borderColor: isActive ? accent : 'transparent', boxShadow: isActive ? 'var(--shadow-sm)' : 'none' }}>
+                <span className="icon-badge flex h-8 w-8 shrink-0 items-center justify-center lg:h-9 lg:w-9" style={{ background: isActive ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.07)', color: isActive ? '#fff' : 'var(--text-on-sidebar)' }}>
                   <GIcon />
                 </span>
                 <span className="flex-1 whitespace-normal break-words text-start text-[12.5px] font-semibold leading-[1.15] tracking-tight">{g.label}</span>
-                {g.items.length > 1 && <span className={`ms-auto rounded-full px-1.5 py-0.5 text-[10px] font-bold ${isActive ? 'bg-white text-slate-500' : 'bg-white/10 text-white/70'}`}>{g.items.length}</span>}
+                {g.items.length > 1 && <span className={`ms-auto rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular ${isActive ? 'bg-white/20 text-white' : 'bg-white/10 text-white/60'}`}>{g.items.length}</span>}
               </a>
             );
           })}
         </nav>
-        <div className="border-t border-white/10 px-5 py-4 text-xs" style={{ color: 'var(--text-secondary)' }}>Module congés — v1.1<br />Authentification par rôle · <span style={{ color: ROLE_ACCENT[role] }}>{ROLE_LABELS[role]}</span></div>
+        <div className="border-t border-white/10 px-5 py-4 text-xs" style={{ color: 'var(--text-on-sidebar)' }}>Module congés — v1.1<br />Authentification par rôle · <span style={{ color: ROLE_ACCENT[role] }}>{ROLE_LABELS[role]}</span></div>
       </aside>
 
       <div className="flex min-h-screen min-w-0 flex-1 flex-col ps-0 lg:ps-[290px] xl:ps-[290px]">
-        <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 pt-[env(safe-area-inset-top,0px)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
+        <header className="sticky top-0 z-30 border-b pt-[var(--safe-top)] backdrop-blur-md" style={{ borderColor: 'var(--border)', background: 'var(--bg-topbar)' }}>
           <div className="flex items-center justify-between gap-3 px-3 py-2 sm:px-6 sm:py-3">
             <div className="flex min-w-0 items-center gap-2">
               <button
@@ -336,7 +336,7 @@ export default function Layout() {
             <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               {role === 'employe' && <NavLink to="/mon-espace" className="hidden text-sm font-semibold text-brand-600 hover:underline sm:block">Mon espace</NavLink>}
               <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-700 text-xs font-bold text-white sm:h-9 sm:w-9">{user?.login?.slice(0, 1)?.toUpperCase() || 'A'}</div>
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg, var(--brand-500), var(--brand-700))' }}>{user?.login?.slice(0, 1)?.toUpperCase() || 'A'}</div>
                 <div className="hidden sm:block text-end">
                   <p className="text-sm font-semibold leading-tight text-slate-800">{user?.login}</p>
                   <p className="text-xs text-slate-500">{ROLE_LABELS[role] || role}</p>
@@ -347,17 +347,22 @@ export default function Layout() {
           </div>
           {/* Sous-catégories — couleur demandée #8A210A */}
           {(subItems.length > 1 || subGroups.length > 0) && (
-            <div className="border-t" style={{ background: '#8A210A', borderColor: '#7a1e09' }}>
+            <div className="app-subnav">
               <div className="flex items-center gap-2 overflow-x-auto px-2 py-1.5 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible sm:px-6 sm:py-2 [&::-webkit-scrollbar]:hidden">
                 {subItems.length > 0 && (
                   <div className="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                    <span className="hidden shrink-0 text-[10px] font-bold uppercase tracking-widest text-white/70 sm:block">{activeGroup.label} :</span>
+                    <span className="hidden shrink-0 text-[10px] font-bold uppercase tracking-widest sm:block" style={{ color: 'var(--text-muted)' }}>{activeGroup.label}</span>
                     <div className="flex items-center gap-1.5">
                       {subItems.map((it) => {
                         const subAccent = GROUP_ACCENT[activeGroup.id] || 'var(--primary-600)';
                         return (
-                        <NavLink key={it.to} to={it.to} end={it.end} className={({ isActive }) => `inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-semibold transition ${isActive ? 'text-white shadow' : 'bg-white text-slate-600 hover:bg-slate-50'}`} style={({ isActive }) => isActive ? { background: subAccent, borderColor: subAccent } : { borderColor: 'var(--border)' }}>
-                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white" style={{ color: subAccent }}><it.icon /></span>
+                        <NavLink
+                          key={it.to}
+                          to={it.to}
+                          end={it.end}
+                          className={({ isActive }) => `subnav-chip shrink-0 ${isActive ? 'is-active' : ''}`}
+                        >
+                          <span className="flex h-4 w-4 shrink-0 items-center justify-center"><it.icon /></span>
                           {it.label}
                         </NavLink>
                         );

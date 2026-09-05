@@ -105,7 +105,7 @@ export default function Donut3DStat({ data = [], size = 220, interactive = true 
 
         {/* center label - légende seule sans chiffres */}
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 pointer-events-none px-2">
-          <span className="text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color: '#92400e', fontFamily: "'Manrope', Inter, sans-serif" }}>{centerLabel}</span>
+          <span className="text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color: '#92400e', fontFamily: "var(--font-sans)" }}>{centerLabel}</span>
         </div>
       </div>
 
@@ -151,7 +151,7 @@ export default function Donut3DStat({ data = [], size = 220, interactive = true 
             style={{
               left: x, top: y, transform: 'translate(-50%,-50%)',
               background: 'white', borderColor: d.color, color: d.color,
-              fontFamily: "'Manrope', sans-serif",
+              fontFamily: "var(--font-sans)",
             }}
             onMouseEnter={() => setHoveredIdx(i)}
             onMouseLeave={() => setHoveredIdx(null)}

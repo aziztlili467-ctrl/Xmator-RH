@@ -87,12 +87,12 @@ function KpiCard({ title, value, sub, icon, chip, accent }) {
   return (
     <div className="panel">
       <div className="flex items-start justify-between gap-2">
-        <div className="icon-badge shrink-0 h-8 w-8 sm:h-10 sm:w-10" style={{ background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`, color: 'white' }}>{icon}</div>
-        {chip && <span className="badge shrink-0 !px-2 !py-0.5 text-[10px] leading-tight sm:!px-3 sm:text-xs" style={{ background: chip.bg, color: chip.text }}>{chip.label}</span>}
+        <div className="icon-badge shrink-0" style={{ background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`, color: 'white' }}>{icon}</div>
+        {chip && <span className="badge shrink-0" style={{ background: chip.bg, color: chip.text }}>{chip.label}</span>}
       </div>
-      <p className="mt-2.5 text-[10px] font-semibold uppercase leading-tight tracking-[0.06em] sm:mt-4 sm:text-[11px] sm:tracking-[0.08em]" style={{ color: 'var(--text-secondary)' }}>{title}</p>
-      <p className="mt-1 text-[clamp(18px,5vw,28px)] font-extrabold leading-none [overflow-wrap:anywhere]" style={{ color: 'var(--text-primary)' }}>{value}</p>
-      {sub && <p className="mt-1 text-[11px] leading-snug sm:text-xs" style={{ color: 'var(--text-secondary)' }}>{sub}</p>}
+      <p className="kpi-label mt-3">{title}</p>
+      <p className="kpi-value mt-1">{value}</p>
+      {sub && <p className="kpi-sub mt-1">{sub}</p>}
     </div>
   );
 }
@@ -104,20 +104,20 @@ function Barometre({ pct, label, sub, color, compact }) {
   const val = Math.max(0, Math.min(100, pct === null || pct === undefined ? 0 : pct));
   const angle = val / 100;
   return (
-    <div className="panel flex items-center" style={{ filter: 'drop-shadow(0 4px 10px rgba(0,0,0,0.18))' }}>
+    <div className="panel flex items-center">
       <div className={`relative shrink-0 ${compact ? 'h-16 w-16 sm:h-20 sm:w-20' : 'h-16 w-16 sm:h-24 sm:w-24'}`} style={{ transform: 'rotateX(4deg)' }}>
         <div className="absolute inset-0 rounded-full" style={{ background: 'radial-gradient(ellipse at 30% 20%, rgba(255,255,255,0.25), transparent 55%)', pointerEvents: 'none' }} />
         <svg viewBox="0 0 84 84" className="h-full w-full">
-          <circle cx="42" cy="42" r={R} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={compact ? 10 : 9} />
-          <circle cx="42" cy="42" r={R} fill="none" stroke={color} strokeWidth={compact ? 10 : 9} strokeLinecap="round" strokeDasharray={`${C * angle} ${C}`} transform="rotate(-90 42 42)" style={{ transition: 'stroke-dasharray 0.7s ease', filter: `drop-shadow(0 0 6px ${color}80)` }} />
+          <circle cx="42" cy="42" r={R} fill="none" stroke="var(--neutral-200)" strokeWidth={compact ? 10 : 9} />
+          <circle cx="42" cy="42" r={R} fill="none" stroke={color} strokeWidth={compact ? 10 : 9} strokeLinecap="round" strokeDasharray={`${C * angle} ${C}`} transform="rotate(-90 42 42)" style={{ transition: 'stroke-dasharray 0.7s ease', filter: 'none' }} />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ transform: 'translateZ(10px)' }}>
-          <span className={`${compact ? 'text-[11px]' : 'text-[14px]'} font-bold tracking-tight rounded-full bg-white px-1 py-0.5`} style={{ color: '#8A210A', fontFamily: "'Space Grotesk', Inter, sans-serif", fontWeight: 700, boxShadow: '0 1px 4px rgba(0,0,0,0.15)', lineHeight: 1 }}>{fmtPct(pct)}</span>
+          <span className={`${compact ? 'text-[11px]' : 'text-[13px]'} tabular font-bold tracking-tight`} style={{ color: 'var(--text-primary)', lineHeight: 1 }}>{fmtPct(pct)}</span>
         </div>
       </div>
       <div className="min-w-0 ms-2.5 sm:ms-3">
-        <p className={`${compact ? 'text-xs' : 'text-sm'} font-semibold`} style={{ color: 'var(--text-primary)', fontFamily: "'Manrope', sans-serif", fontWeight: 600 }}>{label}</p>
-        <p className="mt-0.5 text-[11px]" style={{ color: 'var(--text-secondary)', fontWeight: 400 }}>{sub}</p>
+        <p className={`${compact ? 'text-xs' : 'text-sm'} font-semibold`} style={{ color: 'var(--text-primary)' }}>{label}</p>
+        <p className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--text-secondary)' }}>{sub}</p>
       </div>
     </div>
   );
