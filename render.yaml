@@ -7,7 +7,7 @@ services:
     runtime: node
     plan: starter # « free » n'autorise pas de disque persistant (voir la note plus bas)
     region: frankfurt
-    branch: arena/01a07659-xmator-rh
+    branch: arena/01a076a6-xmator-rh
     buildCommand: npm run install:all && npm run build
     startCommand: node server/index.js
     healthCheckPath: /api/health
