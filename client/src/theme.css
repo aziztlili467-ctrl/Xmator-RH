@@ -1,208 +1,276 @@
 /* ============================================================================
-   XMATOR RH — Système de design
+   XMATOR RH — Système de design « chaleur & lisibilité »
    ----------------------------------------------------------------------------
-   Thème « human first » : lisible, calme, dense sans être étouffant.
-   Conçu mobile d'abord — chaque valeur est pensée pour un écran de 390px
-   avant d'être élargie sur bureau.
+   Amicale du Personnel de la Banque Centrale de Tunisie.
 
-   PALETTE
-   Le thème précédent opposait un bleu marine (#25447D) à un rouge brique
-   (#8A210A) : deux couleurs saturées qui se disputaient l'attention et
-   n'appartenaient pas à la même famille chromatique.
+   Ce fichier est le point central du design system. Les valeurs du bloc 1
+   sont contractuelles (issues du document de référence) et ne doivent pas
+   être modifiées au fil des pages. Les blocs suivants déclinent ces valeurs
+   en tokens d'usage (statuts, graphiques, chrome applicatif).
 
-   Ici, une seule teinte porteuse — un bleu ardoise professionnel, adapté à
-   un outil bancaire — déclinée en 11 nuances, plus un accent teal réservé
-   aux actions et aux éléments actifs. Le reste est neutre. La couleur ne
-   sert qu'à hiérarchiser l'information, jamais à décorer.
-
-   ACCESSIBILITÉ
-   Tous les couples texte/fond visent au minimum le ratio AA (4.5:1).
-   Les teintes 600+ sur blanc et les teintes 50–100 sur 800+ sont conformes.
+   Règles d'usage rappelées :
+   • Une seule couleur d'accent chaude par écran : bordeaux, brun et rouge
+     ne se mélangent jamais dans un même bloc sans hiérarchie claire.
+   • Le rouge (Saas-Fee) est réservé aux alertes réelles : absence non
+     justifiée, erreur, dépassement. Jamais en décoration.
+   • Pas de dégradés ni d'ombres portées colorées. Surfaces plates,
+     séparateurs fins.
+   • Chiffres clés mis en valeur par la typographie (Fraunces 500 + taille),
+     jamais par des fonds saturés.
+   • Sur fond coloré (badge, pastille) : texte plus foncé de la même famille,
+     jamais de noir générique.
    ========================================================================= */
 
 :root {
-  /* ---- Teinte porteuse : bleu ardoise ---- */
-  --brand-50: #eef4ff;
-  --brand-100: #dbe6fe;
-  --brand-200: #bfd3fe;
-  --brand-300: #93b4fd;
-  --brand-400: #608cfa;
-  --brand-500: #3b6af6;
-  --brand-600: #2549eb;
-  --brand-700: #1d37d8;
-  --brand-800: #1e2faf;
-  --brand-900: #1e2f8a;
-  --brand-950: #172054;
+  /* ==========================================================================
+     Bloc 1 — Valeurs contractuelles du design system (source de vérité)
+     ========================================================================= */
+  --bg-page: #F8F6F2;
+  --bg-surface: #FFFFFF;
+  --border-subtle: #EAE4D9;
+  --text-primary: #2B2420;
+  --text-secondary: #928C7E;
 
-  /* ---- Accent teal : actions, états actifs, mise en avant ---- */
-  --accent-50: #eefdfa;
-  --accent-100: #d3f9f2;
-  --accent-200: #abf1e7;
-  --accent-300: #71e4d7;
-  --accent-400: #30cdbf;
-  --accent-500: #14b1a5;
-  --accent-600: #0d8e87;
-  --accent-700: #0f716d;
-  --accent-800: #115a58;
-  --accent-900: #124b49;
+  --brand-primary: #00917f;
+  --brand-primary-bg: #E1F3F0;
+  --brand-secondary: #87582d;
+  --brand-secondary-bg: #F3ECE1;
+  --brand-dark: #862845;
+  --brand-dark-bg: #F6E9EE;
+  --danger: #de1925;
+  --danger-bg: #FDEAEA;
 
-  /* ---- Neutres légèrement bleutés (s'accordent à la teinte porteuse) ---- */
-  --neutral-0: #ffffff;
-  --neutral-50: #f8fafc;
-  --neutral-100: #f1f5f9;
-  --neutral-200: #e2e8f0;
-  --neutral-300: #cbd5e1;
-  --neutral-400: #94a3b8;
-  --neutral-500: #64748b;
-  --neutral-600: #475569;
-  --neutral-700: #334155;
-  --neutral-800: #1e293b;
-  --neutral-900: #0f172a;
-  --neutral-950: #020617;
+  --radius-card: 12px;
+  --radius-control: 8px;
+  --radius-pill: 20px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 14px;
+  --space-lg: 20px;
+  --space-xl: 28px;
 
-  /* ---- Couleurs sémantiques (statuts métier) ----
-     Volontairement désaturées par rapport aux rouges/verts « alerte » :
-     un solde négatif doit se remarquer sans agresser l'œil toute la journée. */
-  --success: #0f9d63;
-  --success-bg: #e7f8f0;
-  --success-border: #a7e8ca;
-  --success-text: #08633e;
+  /* ==========================================================================
+     Bloc 2 — Statuts sémantiques (usage métier)
+     Fond -bg très clair + texte foncé de la même famille (jamais de noir),
+     conforme AA. Le rouge ne sert qu'aux absences/erreurs/urgences réels.
+     --------------------------------------------------------------------------
+     vert   → présence, ponctualité, validation, soldes positifs
+     brun   → en attente, catégories secondaires (congés, paie)
+     bordeaux → rubriques de navigation, en-têtes de section
+     rouge  → absence non justifiée, refus, erreur, badge « urgent »
+     ========================================================================= */
+  --success: var(--brand-primary);
+  --success-bg: var(--brand-primary-bg);
+  --success-text: #00705f;          /* vert foncé de la même famille (AA 5.2:1) */
+  --success-border: #C7E8E1;
 
-  --warning: #c2740a;
-  --warning-bg: #fdf5e6;
-  --warning-border: #f5d9a3;
-  --warning-text: #7c4a06;
+  --warning: var(--brand-secondary);
+  --warning-bg: var(--brand-secondary-bg);
+  --warning-text: #6b441f;          /* brun foncé de la même famille (AA 7.2:1) */
+  --warning-border: #E4D3B6;
 
-  --danger: #d4353b;
-  --danger-bg: #fdeef0;
-  --danger-border: #f7c4c8;
-  --danger-text: #8f1e23;
+  --danger-text: #a8101a;           /* rouge foncé de la même famille (AA 6.6:1) */
+  --danger-border: #F6C8C6;
 
-  --info: #2549eb;
-  --info-bg: #eef4ff;
-  --info-border: #bfd3fe;
-  --info-text: #1e2f8a;
+  --info: #575149;                  /* neutre chaud : « info » n'a pas de couleur propre */
+  --info-bg: #F2EEE5;
+  --info-text: #4A443C;
+  --info-border: #E0D9C9;
 
-  --neutral-chip-bg: #f1f5f9;
-  --neutral-chip-text: #475569;
+  --neutral-chip-bg: #F2EEE5;
+  --neutral-chip-text: #6E675B;
 
-  /* ---- Rôles applicatifs ---- */
-  --bg-app: #f6f8fc;
-  --bg-card: #ffffff;
-  --bg-subtle: var(--neutral-50);
-  --bg-inset: var(--neutral-100);
-  --bg-sidebar: #16224a;
-  --bg-sidebar-hover: rgba(255, 255, 255, 0.07);
-  --bg-sidebar-active: rgba(255, 255, 255, 0.13);
-  --bg-topbar: rgba(255, 255, 255, 0.88);
-
-  --border: #e4e9f2;
-  --border-strong: var(--neutral-300);
-  --border-focus: var(--brand-500);
-
-  --text-primary: var(--neutral-900);
-  --text-secondary: var(--neutral-500);
-  --text-muted: var(--neutral-400);
-  --text-inverse: #ffffff;
-  --text-on-sidebar: #c7d2e8;
-
-  /* Compatibilité : anciens noms de variables encore utilisés dans le code */
-  --primary-50: var(--brand-50);
-  --primary-500: var(--brand-500);
-  --primary-600: var(--brand-600);
-  --primary-700: var(--brand-700);
-  --accent-cyan: var(--accent-500);
-  --accent-emerald: var(--success);
-  --accent-amber: var(--warning);
-  --accent-rose: var(--danger);
-  --accent-violet: #7c5cf5;
-  --accent-orange: #e06c2b;
-  --accent-blue: var(--brand-500);
   --status-approved: var(--success);
   --status-pending: var(--warning);
   --status-rejected: var(--danger);
   --status-draft: var(--neutral-400);
 
-  /* ---- Couleurs de graphiques : distinguables, y compris en daltonisme ---- */
-  --chart-1: #2549eb;
-  --chart-2: #14b1a5;
-  --chart-3: #e06c2b;
-  --chart-4: #7c5cf5;
-  --chart-5: #0f9d63;
-  --chart-6: #c2740a;
+  /* ==========================================================================
+     Bloc 3 — Échelles neutres chaudes
+     Légèrement crèmes (jamais bleutées) pour s'accorder au fond #F8F6F2.
+     ========================================================================= */
+  --neutral-0: #ffffff;
+  --neutral-50: #FBF9F5;
+  --neutral-100: #F2EEE5;
+  --neutral-200: #E8E1D4;
+  --neutral-300: #D7CDBB;
+  --neutral-400: #A79D8C;
+  --neutral-500: #8F8778;
+  --neutral-600: #6E675B;
+  --neutral-700: #575149;
+  --neutral-800: #403B34;
+  --neutral-900: #2B2420;
+  --neutral-950: #1F1A16;
 
-  /* ---- Typographie ----
-     Stack système : rendu natif sur chaque plateforme, aucun téléchargement,
-     donc aucun texte invisible au chargement (FOIT) et un affichage immédiat
-     même sur réseau lent ou intranet fermé. */
-  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
-    'Helvetica Neue', 'Noto Sans', 'Liberation Sans', Arial, sans-serif;
-  --font-numeric: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas,
-    'Liberation Mono', monospace;
+  /* ==========================================================================
+     Bloc 4 — Échelle de marque « vert » et compatibilité des anciens noms
+     Les anciens tokens --brand-50…950, --primary-*, --accent-* pointaient sur
+     des bleus indigo. Ils sont re-branchés sur la famille verte afin qu'aucun
+     bleu ne subsiste ; les composants les consomment encore en attendant leur
+     refonte dédiée (étapes 2 à 7), où ils seront remplacés par les tokens du
+     bloc 1.
+     ========================================================================= */
+  --brand-50: var(--brand-primary-bg);
+  --brand-100: #CFE9E4;
+  --brand-200: #A7D7CF;
+  --brand-300: #77C0B4;
+  --brand-400: #44A293;
+  --brand-500: #0F9484;
+  --brand-600: var(--brand-primary);
+  --brand-700: #007568;   /* survol du bouton principal (assombrissement léger) */
+  --brand-800: #005F52;
+  --brand-900: #00493F;
+  --brand-950: #00332C;
 
-  /* Échelle fluide : la même variable s'adapte du mobile au bureau */
-  --text-2xs: clamp(0.625rem, 0.6rem + 0.12vw, 0.6875rem);
-  --text-xs: clamp(0.6875rem, 0.66rem + 0.14vw, 0.75rem);
-  --text-sm: clamp(0.8125rem, 0.79rem + 0.14vw, 0.875rem);
-  --text-base: clamp(0.875rem, 0.85rem + 0.16vw, 1rem);
-  --text-lg: clamp(1rem, 0.96rem + 0.22vw, 1.125rem);
-  --text-xl: clamp(1.125rem, 1.06rem + 0.32vw, 1.375rem);
-  --text-2xl: clamp(1.375rem, 1.26rem + 0.55vw, 1.75rem);
-  --text-3xl: clamp(1.625rem, 1.44rem + 0.9vw, 2.25rem);
-  /* Chiffres clés des cartes KPI */
-  --text-kpi: clamp(1.25rem, 0.95rem + 1.5vw, 1.75rem);
+  /* Anciens noms encore utilisés dans le code (boutons, accents, icônes) */
+  --primary-50: var(--brand-50);
+  --primary-500: var(--brand-500);
+  --primary-600: var(--brand-600);
+  --primary-700: var(--brand-700);
 
-  /* ---- Espacement ---- */
-  --space-1: 0.25rem;
-  --space-2: 0.5rem;
-  --space-3: 0.75rem;
-  --space-4: 1rem;
-  --space-5: 1.25rem;
-  --space-6: 1.5rem;
-  --space-8: 2rem;
-  /* Rembourrage des surfaces : compact sur mobile, aéré sur bureau */
+  /* Anciennes couleurs « confettis » des groupes de navigation : rebranchées
+     sur les familles chaudes (bordeaux/brun/vert) en attendant leur retrait
+     lors de la refonte de la sidebar (étape 2) et des graphiques (étape 4). */
+  --accent-50: #E7F4F2;
+  --accent-100: #D3EBE7;
+  --accent-200: #AADAD2;
+  --accent-300: #7CC5BA;
+  --accent-400: #45AB9D;
+  --accent-500: #11A08F;
+  --accent-600: #0C8A7B;
+  --accent-700: #0B7266;
+  --accent-800: #0C5D54;
+  --accent-900: #0C4A43;
+  --accent-cyan: var(--brand-600);
+  --accent-emerald: var(--brand-600);
+  --accent-blue: var(--brand-700);
+  --accent-amber: var(--brand-secondary);   /* brun — en attente, secondaire */
+  --accent-orange: var(--brand-secondary);  /* brun */
+  --accent-violet: var(--brand-dark);       /* bordeaux */
+  --accent-rose: var(--brand-dark);         /* bordeaux (jamais de rouge ici) */
+
+  /* ==========================================================================
+     Bloc 5 — Rôles applicatifs (fonds, filets, textes, chrome)
+     ========================================================================= */
+  --bg-app: var(--bg-page);
+  --bg-card: var(--bg-surface);
+  --bg-subtle: #F3EFE7;            /* léger creux (fond de section, en-têtes) */
+  --bg-inset: var(--neutral-100);  /* champs désactivés, zones en retrait */
+  --bg-panel: var(--bg-surface);   /* lignes sélectionnables dans les cartes */
+  --bg-panel-hover: var(--bg-page);
+  --bg-topbar: rgba(255, 255, 255, 0.92);
+  --bg-app-gradient: linear-gradient(180deg, #FFFFFF 0%, #F8F6F2 100%);
+
+  /* Sidebar : refonte complète à l'étape 2. Les règles .app-sidebar actuelles
+     (dégradé bleu marine) sont conservées telles quelles jusqu'à cette étape ;
+     les tokens ci-dessous deviendront alors la source unique. */
+  --bg-sidebar: var(--brand-dark);            /* bordeaux (étape 2) */
+  --bg-sidebar-hover: rgba(255, 255, 255, 0.08);
+  --bg-sidebar-active: rgba(255, 255, 255, 0.14);
+  --text-on-sidebar: #C7D2E8;                 /* valeur legacy conservée jusqu'à l'étape 2 */
+  --sidebar-inactive: #D9A6B8;                /* rose désaturé pour les icônes inactives (étape 2) */
+  --sidebar-w: 220px;
+
+  --text-muted: var(--neutral-400);
+  --text-inverse: #ffffff;
+
+  /* Filets et focus */
+  --border: var(--border-subtle);
+  --border-strong: #CFC5B1;
+  --border-panel: var(--border-subtle);
+  --border-panel-glow: var(--brand-primary);
+  --border-focus: var(--brand-primary);
+  --focus-ring: 2px solid var(--brand-primary);
+
+  /* Piste des barres de progression (graphiques) */
+  --track: #F0EDE6;
+
+  /* ==========================================================================
+     Bloc 6 — Typographie
+     Fraunces 500 : titres et chiffres clés. Inter 400/500 : tout le reste.
+     Casse phrase normale partout (les classes .uppercase seront retirées des
+     composants au fil des étapes).
+     ========================================================================= */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
+    Roboto, 'Helvetica Neue', 'Noto Sans', 'Liberation Sans', Arial, sans-serif;
+  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-numeric: var(--font-sans);
+
+  /* Échelle : micro-label 11 / label-métadonnée 12 / courant 14 /
+     titre section-carte 15 / titre page 22–26 / chiffre KPI 24–28 */
+  --text-2xs: 0.6875rem;                       /* 11 px — micro-label */
+  --text-xs: 0.75rem;                          /* 12 px — label, métadonnée */
+  --text-sm: 0.875rem;                         /* 14 px — texte courant */
+  --text-base: 0.875rem;
+  --text-lg: 0.9375rem;                        /* 15 px — titre de section/carte */
+  --text-xl: 1.0625rem;                        /* 17 px */
+  --text-2xl: 1.25rem;                         /* 20 px */
+  --text-3xl: clamp(1.375rem, 1.2rem + 0.8vw, 1.625rem);  /* 22–26 px — titre de page */
+  --text-kpi: clamp(1.5rem, 1.3rem + 0.9vw, 1.75rem);     /* 24–28 px — chiffre KPI */
+
+  /* ==========================================================================
+     Bloc 7 — Espacement, rayons, ombres, mouvement, tactile
+     ========================================================================= */
+  --space-1: var(--space-xs);
+  --space-2: var(--space-sm);
+  --space-3: var(--space-md);
+  --space-4: var(--space-lg);
+  --space-5: var(--space-xl);
+  --space-6: 32px;
+  --space-8: 40px;
   --pad-card: clamp(0.875rem, 0.65rem + 1.1vw, 1.5rem);
   --gap-grid: clamp(0.625rem, 0.45rem + 0.85vw, 1.25rem);
 
-  /* ---- Rayons ---- */
-  --radius-xs: 6px;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
+  /* Un seul rayon pour les cartes (12), un pour les petits contrôles (8),
+     un pour les pastilles (20). */
+  --radius-xs: var(--radius-control);
+  --radius-sm: var(--radius-control);
+  --radius-md: var(--radius-card);
+  --radius-lg: var(--radius-card);
+  --radius-xl: var(--radius-pill);
   --radius-full: 999px;
-  --radius-card: var(--radius-lg);
-  --radius-panel: var(--radius-lg);
+  --radius-panel: var(--radius-card);
 
-  /* ---- Ombres : teintées de bleu, jamais de gris pur ---- */
-  --shadow-xs: 0 1px 2px rgba(16, 30, 66, 0.05);
-  --shadow-sm: 0 1px 3px rgba(16, 30, 66, 0.07), 0 1px 2px rgba(16, 30, 66, 0.04);
-  --shadow-md: 0 4px 12px rgba(16, 30, 66, 0.08), 0 2px 4px rgba(16, 30, 66, 0.04);
-  --shadow-lg: 0 12px 28px rgba(16, 30, 66, 0.12), 0 4px 8px rgba(16, 30, 66, 0.05);
-  --shadow-xl: 0 24px 48px rgba(16, 30, 66, 0.16);
-  --shadow-focus: 0 0 0 3px rgba(59, 106, 246, 0.22);
+  /* Ombres neutres uniquement (jamais teintées), discrètes : surfaces plates */
+  --shadow-xs: 0 1px 2px rgba(58, 48, 39, 0.05);
+  --shadow-sm: 0 1px 3px rgba(58, 48, 39, 0.06), 0 1px 2px rgba(58, 48, 39, 0.04);
+  --shadow-md: 0 4px 12px rgba(58, 48, 39, 0.07), 0 2px 4px rgba(58, 48, 39, 0.04);
+  --shadow-lg: 0 12px 28px rgba(58, 48, 39, 0.11), 0 4px 8px rgba(58, 48, 39, 0.05);
+  --shadow-xl: 0 24px 48px rgba(58, 48, 39, 0.14);
   --shadow-panel: var(--shadow-sm);
+  --shadow-focus: 0 0 0 2px var(--brand-primary);
 
-  /* ---- Mouvement : bref et discret ---- */
+  /* Mouvement : bref et discret */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --dur-fast: 120ms;
   --dur-base: 200ms;
   --dur-slow: 320ms;
 
-  /* ---- Ergonomie tactile ---- */
+  /* Ergonomie tactile */
   --tap-target: 44px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
 
-  /* ---- Chrome applicatif ---- */
-  --sidebar-w: 288px;
+  /* Chrome applicatif */
   --z-header: 30;
   --z-drawer: 60;
   --z-overlay: 50;
   --z-modal: 70;
+
+  /* ==========================================================================
+     Bloc 8 — Couleurs des graphiques (mapping sémantique métier)
+     présence = vert · congés = bordeaux · maladie = brun · absence = rouge
+     Les composants de graphiques seront rebranchés sur ces valeurs à l'étape 4.
+     ========================================================================= */
+  --chart-1: var(--brand-primary);   /* présence */
+  --chart-2: var(--brand-dark);      /* congés */
+  --chart-3: var(--brand-secondary); /* maladie */
+  --chart-4: var(--danger);          /* absence — jamais en décoration */
+  --chart-5: #7FBFB4;                /* variante claire verte (séries sup.) */
+  --chart-6: #A97845;                /* variante claire brune (séries sup.) */
 }
 
 /* ============================================================================
@@ -229,7 +297,10 @@
 }
 
 /* ============================================================================
-   Barre latérale — dégradé profond, lisible, sans concurrencer le contenu
+   Barre latérale — refonte complète à l'étape 2 (bordeaux, icônes blanches
+   actives / rose désaturé inactives, barre basse < 768 px).
+   Les règles ci-dessous sont conservées à l'identique jusqu'à cette étape
+   pour ne pas mélanger deux états de design.
    ========================================================================= */
 
 .app-sidebar {
@@ -258,7 +329,7 @@
   font-weight: 600;
 }
 
-/* Repère visuel de la rubrique active — remplace l'ancien aplat coloré */
+/* Repère visuel de la rubrique active */
 .app-sidebar .nav-item[data-active='true']::before {
   content: '';
   position: absolute;
@@ -271,9 +342,7 @@
   background: var(--accent-400);
 }
 
-/* Bandeau de sous-navigation : neutre et discret.
-   L'ancien rouge brique #8A210A saturé sur toute la largeur écrasait
-   visuellement le contenu de la page. */
+/* Bandeau de sous-navigation : neutre et discret */
 .app-subnav {
   background: var(--neutral-100);
   border-top: 1px solid var(--border);
@@ -285,13 +354,13 @@
   align-items: center;
   gap: 0.375rem;
   white-space: nowrap;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   background: var(--bg-card);
   color: var(--neutral-600);
   padding: 0.4rem 0.75rem;
   font-size: var(--text-xs);
-  font-weight: 600;
+  font-weight: 500;
   transition: all var(--dur-fast) var(--ease-out);
 }
 
@@ -315,9 +384,10 @@
    Accessibilité et confort
    ========================================================================= */
 
-/* Anneau de focus visible et cohérent — indispensable au clavier */
+/* Anneau de focus visible et cohérent — indispensable au clavier.
+   Règle : 2px solid var(--brand-primary), pas de « glow ». */
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 2px solid var(--brand-500);
+  outline: 2px solid var(--brand-primary);
   outline-offset: 2px;
   border-radius: var(--radius-xs);
 }
