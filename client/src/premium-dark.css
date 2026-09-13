@@ -86,7 +86,6 @@
   --brand-primary: var(--dp-gold);
   --brand-600: var(--dp-gold);
   --brand-700: var(--dp-gold-bright);
-  --brand-700/10: rgba(227, 185, 77, 0.1);
   --status-approved: var(--dp-emerald);
   --status-pending: var(--dp-amber);
   --status-rejected: var(--dp-rose);
@@ -474,7 +473,7 @@
 }
 [data-theme='dark-premium'] select.input {
   appearance: none;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23b9a05e' stroke-width='2.4' stroke-linecap='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23b9a05e' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 12px center;
   padding-right: 34px;

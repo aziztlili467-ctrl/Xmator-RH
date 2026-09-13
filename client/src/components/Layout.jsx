@@ -35,8 +35,8 @@ import {
 import { useAuth } from '../AuthContext';
 import { api, getToken, getSessionId } from '../api';
 import PwaInstall from './PwaInstall';
-import AvatarMenu from './ui/AvatarMenu';
 import ChatWidget from './ChatWidget';
+import ToastHost from './ToastHost';
 
 const NAV = [
   { to: '/', label: 'Tableau de bord', icon: IconDashboard, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
@@ -248,13 +248,13 @@ export default function Layout() {
     }
   };
 
-  // Mode « cockpit » : le tableau de bord est un espace dark premium ;
-  // le chrome (sidebar, topbar) adopte la même direction artistique sur cette route
-  // uniquement, sans toucher aux autres pages.
-  const darkCockpit = location.pathname === '/';
+  // Chrome global unifié « Prestige / Luxe & Tech » : la sidebar chocolat et la
+  // topbar crème restent identiques sur TOUTES les pages (le tableau de bord
+  // « cockpit » porte lui-même son propre thème sombre dans son contenu).
+  const isDashboard = location.pathname === '/';
 
   return (
-    <div className="flex min-h-screen bg-[var(--bg-app)]" data-theme={darkCockpit ? 'dark-premium' : undefined}>
+    <div className="flex min-h-screen bg-[var(--bg-app)]">
       {/* Voile sombre pour tiroir mobile (< 768px) */}
       {menuOuvert && (
         <div
@@ -264,10 +264,11 @@ export default function Layout() {
         />
       )}
 
-      {/* Barre latérale bordeaux #862845 :
+      {/* Barre latérale chocolat profond #37261A :
           - Mobile (< 768px) : tiroir coulissant (drawer)
           - Tablette (768–1023px) : rail d'icônes compact (w-[72px])
-          - Bureau (>= 1024px) : barre latérale complète (w-[288px]) */}
+          - Bureau (>= 1024px) : barre latérale complète (w-[288px])
+          L'élément actif porte un dégradé or brossé, identique sur toutes les pages. */}
       <aside
         id="menu-principal"
         aria-label="Menu principal"
@@ -284,8 +285,8 @@ export default function Layout() {
         <div className="flex items-center justify-between px-4 py-4 md:flex-col md:justify-center md:px-2 md:py-4 lg:flex-row lg:justify-start lg:gap-3 lg:px-5 lg:py-6">
           <div className="flex items-center gap-3 md:flex-col md:gap-0 lg:flex-row lg:gap-3">
             <div
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sm font-bold shadow-sm md:h-10 md:w-10"
-              style={{ background: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: '1px solid rgba(255, 255, 255, 0.2)' }}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sm font-extrabold md:h-10 md:w-10"
+              style={{ background: 'var(--gold-grad)', color: '#2E2013', border: '1px solid rgba(255,236,175,0.55)', boxShadow: 'var(--shadow-gold)' }}
             >
               A
             </div>
@@ -328,22 +329,22 @@ export default function Layout() {
                 <span
                   className="icon-badge nav-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg md:h-10 md:w-10 lg:h-8 lg:w-8"
                   style={{
-                    background: isActive ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.06)',
-                    color: isActive ? '#ffffff' : 'var(--sidebar-inactive)',
+                    background: isActive ? 'rgba(46, 32, 19, 0.24)' : 'rgba(255,255,255,0.06)',
+                    color: isActive ? '#2E2013' : 'var(--sidebar-inactive)',
                   }}
                 >
                   <GIcon />
                 </span>
                 <span
                   className="hidden flex-1 whitespace-normal break-words text-start text-[12.5px] font-medium leading-[1.15] tracking-tight md:hidden lg:block"
-                  style={{ color: isActive ? '#ffffff' : 'var(--sidebar-inactive)', fontWeight: isActive ? 600 : 500 }}
+                  style={{ color: isActive ? '#2E2013' : 'var(--sidebar-inactive)', fontWeight: isActive ? 700 : 500 }}
                 >
                   {g.label}
                 </span>
                 {g.items.length > 1 && (
                   <span
                     className={`hidden ms-auto rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular md:hidden lg:inline-flex ${
-                      isActive ? 'bg-white/20 text-white' : 'bg-white/10 text-white/70'
+                      isActive ? 'bg-[#2E2013]/85 text-[#F3D27A]' : 'bg-white/10 text-white/70'
                     }`}
                   >
                     {g.items.length}
@@ -362,7 +363,7 @@ export default function Layout() {
             color: 'var(--sidebar-inactive)',
           }}
         >
-          <p className="font-semibold text-white/90">Module congés — v1.2</p>
+          <p className="font-semibold text-[#F5E9D0]">Module congés — v1.2</p>
           <p className="mt-0.5 text-[11px]" style={{ color: 'var(--sidebar-inactive)' }}>
             Rôle : <span className="font-semibold text-white">{ROLE_LABELS[role]}</span>
           </p>
@@ -403,35 +404,31 @@ export default function Layout() {
             </div>
             <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               {role === 'employe' && (
-                <NavLink to="/mon-espace" className="hidden text-sm font-semibold text-brand-600 hover:underline sm:block">
+                <NavLink to="/mon-espace" className="hidden text-sm font-semibold text-brand-600 hover:text-brand-700 hover:underline sm:block">
                   Mon espace
                 </NavLink>
               )}
-              {darkCockpit ? (
-                <AvatarMenu user={user} onLogout={deconnexion} />
-              ) : (
-                <div className="flex items-center gap-2">
-                  <div
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm"
-                    style={{ background: 'var(--brand-primary)' }}
-                  >
-                    {user?.login?.slice(0, 1)?.toUpperCase() || 'A'}
-                  </div>
-                  <div className="hidden text-end sm:block">
-                    <p className="text-sm font-semibold leading-tight text-stone-800">{user?.login}</p>
-                    <p className="text-xs text-stone-600">{ROLE_LABELS[role] || role}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={deconnexion}
-                    title="Se déconnecter"
-                    aria-label="Se déconnecter"
-                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100 hover:text-stone-800"
-                  >
-                    <IconLogout />
-                  </button>
+              <div className="flex items-center gap-2">
+                <div
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-extrabold shadow-sm"
+                  style={{ background: 'var(--gold-grad)', color: '#2E2013', border: '1px solid rgba(255,236,175,0.55)' }}
+                >
+                  {user?.login?.slice(0, 1)?.toUpperCase() || 'A'}
                 </div>
-              )}
+                <div className="hidden text-end sm:block">
+                  <p className="text-sm font-semibold leading-tight text-stone-800">{user?.login}</p>
+                  <p className="text-xs text-stone-600">{ROLE_LABELS[role] || role}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={deconnexion}
+                  title="Se déconnecter"
+                  aria-label="Se déconnecter"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-stone-500 hover:bg-brand-50 hover:text-brand-700"
+                >
+                  <IconLogout />
+                </button>
+              </div>
             </div>
           </div>
 
@@ -478,16 +475,16 @@ export default function Layout() {
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`transition-transform ${ficheOpen ? 'rotate-180' : ''}`}><path d="M6 9l6 6 6-6"/></svg>
                     </a>
                     {ficheOpen && (
-                      <div className="absolute start-0 top-full z-20 mt-1 flex w-[min(84vw,260px)] min-w-0 sm:min-w-[260px] flex-col gap-1 rounded-xl border border-stone-200 bg-white p-1.5 shadow-xl">
+                      <div className="submenu-slide absolute start-0 top-full z-20 mt-1 flex w-[min(84vw,260px)] min-w-0 sm:min-w-[260px] flex-col gap-1 rounded-xl border border-[#E5D5B5] bg-white/95 p-1.5 shadow-xl backdrop-blur-md">
                         {sg.items.map((it) => (
                           <NavLink
                             key={it.to}
                             to={it.to}
                             end={it.end}
                             onClick={() => setFicheOpen(false)}
-                            className={({ isActive }) => `flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition ${isActive ? 'bg-[var(--brand-primary-bg)] text-[var(--brand-primary)]' : 'text-stone-700 hover:bg-stone-50'}`}
+                            className={({ isActive }) => `flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition ${isActive ? 'bg-[var(--brand-primary-bg)] text-[#75581A]' : 'text-stone-700 hover:bg-[var(--brand-50)]'}`}
                           >
-                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-stone-100 text-[var(--brand-primary)]"><it.icon /></span>
+                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--brand-50)] text-[#8F701E]"><it.icon /></span>
                             {it.label}
                           </NavLink>
                         ))}
@@ -500,13 +497,17 @@ export default function Layout() {
           )}
         </header>
 
-        <main className="w-full min-w-0 max-w-full flex-1 overflow-x-hidden px-3 pb-24 pt-4 sm:px-6 sm:pb-6 sm:pt-6">
-          <Outlet />
+        <main className={`w-full min-w-0 max-w-full flex-1 overflow-x-hidden px-3 pt-4 sm:px-6 sm:pt-6 ${isDashboard ? 'pb-6' : 'pb-24 sm:pb-6'}`}>
+          {/* Transition de page : fondu de 200 ms à chaque navigation entre catégories */}
+          <div key={location.pathname} className="page-fade min-w-0">
+            <Outlet />
+          </div>
         </main>
       </div>
 
       <PwaInstall />
       <ChatWidget user={user} />
+      <ToastHost />
     </div>
   );
 }

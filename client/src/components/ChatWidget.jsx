@@ -91,12 +91,12 @@ export default function ChatWidget({ user }) {
         aria-label="Chat en direct avec l'administrateur"
       >
         {/* En-tête */}
-        <div className="flex items-center gap-3 bg-gradient-to-r from-brand-700 to-brand-500 px-4 py-3 text-white">
+        <div className="flex items-center gap-3 px-4 py-3 text-white" style={{ background: 'linear-gradient(135deg, #3B2A1E 0%, #573F24 100%)', borderBottom: '2px solid var(--gold-grad)' }}>
           <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-white/15">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" /></svg>
           </span>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold">Assistance — Super Admin</p>
+            <p className="truncate text-sm font-bold" style={{ color: '#F3D27A' }}>Assistance — Super Admin</p>
             <p className="flex items-center gap-1.5 text-xs text-white/80">
               <span className={`inline-block h-2 w-2 rounded-full ${adminEnLigne ? 'bg-emerald-400' : 'bg-slate-300'}`} />
               {adminEnLigne ? 'Admin en ligne' : 'Admin hors ligne — réponse dès retour'}
@@ -157,7 +157,8 @@ export default function ChatWidget({ user }) {
         <button
           onClick={() => setOuvert(true)}
           title="Chat en direct avec l'administrateur"
-          className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] end-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-brand-600 to-brand-800 text-white shadow-xl ring-2 ring-white/60 transition-transform duration-150 hover:scale-105 active:scale-95"
+          className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] end-4 z-40 flex h-14 w-14 items-center justify-center rounded-full shadow-xl transition-transform duration-150 hover:scale-105 active:scale-95"
+          style={{ background: 'var(--gold-grad)', color: '#2E2013', border: '1px solid rgba(255,236,175,0.55)', boxShadow: 'var(--shadow-gold)' }}
         >
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" /></svg>
           {nonLus > 0 && (

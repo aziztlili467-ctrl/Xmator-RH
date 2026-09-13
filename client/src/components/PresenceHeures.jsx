@@ -97,7 +97,7 @@ function Barometre({ pct }) {
   return (
     <div className="relative mx-auto h-40 w-40">
       <svg viewBox="0 0 160 160" className="h-full w-full">
-        <circle cx="80" cy="80" r={R} fill="none" stroke="#e2e8f0" strokeWidth="14" />
+        <circle cx="80" cy="80" r={R} fill="none" stroke="#ECE5D6" strokeWidth="14" />
         <circle
           cx="80" cy="80" r={R} fill="none"
           stroke={color} strokeWidth="14" strokeLinecap="round"
@@ -282,7 +282,7 @@ export default function PresenceHeures({ matricule }) {
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <CartesianGrid strokeDasharray="3 3" stroke="#ECE5D6" />
                       <XAxis dataKey="libelle" tick={{ fontSize: 8 }} interval={mode === 'jour' ? 'preserveStartEnd' : 0} />
                       <YAxis tick={{ fontSize: 10 }} />
                       <Tooltip
@@ -298,7 +298,7 @@ export default function PresenceHeures({ matricule }) {
                         }}
                       />
                       <Legend wrapperStyle={{ fontSize: 12 }} />
-                      <Bar dataKey="Légales" fill="#94a3b8" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="Légales" fill="#D8CCB4" radius={[4, 4, 0, 0]} />
                       <Bar dataKey="Travaillées" radius={[4, 4, 0, 0]}>
                         {chartData.map((entry, idx) => (
                           <Cell key={idx} fill={presenceColor(entry.pct)} />

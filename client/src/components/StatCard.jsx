@@ -1,8 +1,9 @@
 const COLORS = {
-  blue: 'bg-brand-50 text-brand-700 ring-brand-100',
+  blue: 'bg-blue-50 text-blue-700 ring-blue-200',
+  gold: 'bg-brand-50 text-brand-700 ring-brand-200',
   green: 'bg-emerald-50 text-emerald-700 ring-emerald-100',
   amber: 'bg-amber-50 text-amber-700 ring-amber-100',
-  red: 'bg-red-50 text-red-700 ring-red-100',
+  red: 'bg-red-50 text-red-700 ring-red-200',
 };
 
 export default function StatCard({ title, value, sub, icon, color = 'blue' }) {
@@ -12,9 +13,9 @@ export default function StatCard({ title, value, sub, icon, color = 'blue' }) {
         {icon}
       </div>
       <div className="min-w-0">
-        <p className="truncate text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
-        <p className="text-2xl font-bold text-slate-900">{value}</p>
-        {sub && <p className="truncate text-xs text-slate-500">{sub}</p>}
+        <p className="truncate text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>{title}</p>
+        <p className="text-2xl font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>{value}</p>
+        {sub && <p className="truncate text-xs" style={{ color: 'var(--text-muted)' }}>{sub}</p>}
       </div>
     </div>
   );

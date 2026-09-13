@@ -4,6 +4,7 @@ import { fmtDate, fmtJours } from '../utils';
 import BadgeStatut from '../components/BadgeStatut';
 import { IconDownload, IconAlert, IconTrash, IconEdit } from '../components/icons';
 import { useAuth } from '../AuthContext';
+import { toast } from '../components/ToastHost';
 
 export default function DemandesInstance() {
   const { user } = useAuth();
@@ -13,7 +14,6 @@ export default function DemandesInstance() {
   const [filters, setFilters] = useState({ statut: '', employe: '', categorie: '', debut: '', fin: '', search: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
 
   const [decision, setDecision] = useState(null); // { type: 'accepter'|'rejeter', demande }
   const [motifRejet, setMotifRejet] = useState('');
@@ -59,11 +59,11 @@ export default function DemandesInstance() {
     try {
       if (decision.type === 'accepter') {
         await api.accepterDemande(decision.demande.id);
-        setSuccess(`Demande N°${String(decision.demande.numero_sequentiel).padStart(3, '0')} acceptée. ${fmtJours(decision.demande.nombre_jours)} j déduits du solde et journalisés.`);
+        toast.success(`Demande N°${String(decision.demande.numero_sequentiel).padStart(3, '0')} acceptée — ${fmtJours(decision.demande.nombre_jours)} j déduits du solde et journalisés.`);
       } else {
         await api.rejeterDemande(decision.demande.id, motifRejet);
         const restauration = decision.demande.statut === 'acceptee' ? ` Solde restauré de ${fmtJours(decision.demande.nombre_jours)} j.` : ' Aucune déduction effectuée.';
-        setSuccess(`Demande N°${String(decision.demande.numero_sequentiel).padStart(3, '0')} rejetée.${restauration}`);
+        toast.warning(`Demande N°${String(decision.demande.numero_sequentiel).padStart(3, '0')} rejetée.${restauration}`);
       }
       setDecision(null);
       load();
@@ -80,7 +80,7 @@ export default function DemandesInstance() {
     try {
       await api.supprimerDemande(aSupprimer.id);
       const msgRestauration = aSupprimer.statut === 'acceptee' ? ` Solde restauré de ${fmtJours(aSupprimer.nombre_jours)} j.` : '';
-      setSuccess(`Demande N°${String(aSupprimer.numero_sequentiel).padStart(3, '0')} supprimée.${msgRestauration}`);
+      toast.info(`Demande N°${String(aSupprimer.numero_sequentiel).padStart(3, '0')} supprimée.${msgRestauration}`);
       setASupprimer(null);
       load();
     } catch (e) {
@@ -100,7 +100,6 @@ export default function DemandesInstance() {
         </div>
       </div>
 
-      {success && <p className="rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700 ring-1 ring-emerald-200">{success}</p>}
       {error && <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-200">{error}</p>}
 
       <div className="card p-4">

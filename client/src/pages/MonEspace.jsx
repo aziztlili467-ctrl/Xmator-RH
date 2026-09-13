@@ -25,7 +25,7 @@ const STATUT_LABELS = {
   '—': '—',
 };
 
-const CHART_COLORS = { conge: '#0284c7', maladie: '#e11d48', absence: '#64748b' };
+const CHART_COLORS = { conge: '#2563EB', maladie: '#7C3AED', absence: '#8A7D6D' };
 
 function periodePreset(preset) {
   const now = new Date();
@@ -208,7 +208,7 @@ export default function MonEspace() {
               <div className="h-40">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={key === 'conge' ? congeChart : key === 'maladie' ? maladieChart : absenceChart}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ECE5D6" />
                     <XAxis dataKey="mois" tick={{ fontSize: 10 }} />
                     <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
                     <Tooltip formatter={(v) => [`${v} jour(s)`, titre]} />

@@ -137,7 +137,7 @@ export default function ChatDirectAdmin() {
             </div>
           ) : (
             <>
-              <div className="border-b border-slate-200 bg-gradient-to-r from-brand-700 to-brand-500 px-4 py-3 text-white">
+              <div className="flex items-center gap-3 px-4 py-3 text-white" style={{ background: 'linear-gradient(135deg, #3B2A1E 0%, #573F24 100%)', borderBottom: '2px solid var(--gold-grad)' }}>
                 <p className="text-sm font-bold">{selection.login}</p>
                 <p className="text-xs text-white/80">Rôle : {selection.role || '—'}</p>
               </div>
