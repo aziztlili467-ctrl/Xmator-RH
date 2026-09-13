@@ -265,7 +265,8 @@ export default function Layout() {
       {/* Barre latérale chocolat profond #37261A :
           - Mobile (< 768px) : tiroir coulissant (drawer)
           - Tablette (768–1023px) : rail d'icônes compact (w-[72px])
-          - Bureau (>= 1024px) : barre latérale complète (w-[288px]) */}
+          - Bureau (>= 1024px) : barre latérale complète (w-[288px])
+          L'élément actif porte un dégradé or brossé, identique sur toutes les pages. */}
       <aside
         id="menu-principal"
         aria-label="Menu principal"
