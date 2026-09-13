@@ -25,7 +25,7 @@ const STATUT_LABELS = {
   '—': '—',
 };
 
-const CHART_COLORS = { conge: '#0284c7', maladie: '#e11d48', absence: '#64748b' };
+const CHART_COLORS = { conge: '#2563EB', maladie: '#7C3AED', absence: '#8A7D6D' };
 
 function periodePreset(preset) {
   const now = new Date();
@@ -208,11 +208,17 @@ export default function MonEspace() {
               <div className="h-40">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={key === 'conge' ? congeChart : key === 'maladie' ? maladieChart : absenceChart}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <defs>
+                      <linearGradient id={`bar-${key}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={color} stopOpacity={0.96} />
+                        <stop offset="100%" stopColor={color} stopOpacity={0.55} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ECE5D6" />
                     <XAxis dataKey="mois" tick={{ fontSize: 10 }} />
                     <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
                     <Tooltip formatter={(v) => [`${v} jour(s)`, titre]} />
-                    <Bar dataKey="jours" fill={color} radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="jours" fill={`url(#bar-${key})`} radius={[6, 6, 0, 0]} maxBarSize={38} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

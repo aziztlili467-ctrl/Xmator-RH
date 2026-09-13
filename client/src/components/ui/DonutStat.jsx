@@ -1,13 +1,13 @@
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 export default function DonutStat({ pct, label, data, colors }) {
   const d = data || [{ value: pct }, { value: 100 - pct }];
-  const c = colors || ['var(--chart-1)', 'rgba(255,255,255,0.08)'];
+  const c = colors || ['var(--chart-1)', 'rgba(212, 175, 55, 0.14)'];
   return (
     <div className="flex flex-col items-center">
       <div className="relative h-40 w-40">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
-            <Pie data={d} dataKey="value" innerRadius={60} outerRadius={78} startAngle={90} endAngle={-270} strokeWidth={0} isAnimationActive>
+            <Pie data={d} dataKey="value" innerRadius={60} outerRadius={78} startAngle={90} endAngle={-270} stroke="#fff" strokeWidth={1.5} isAnimationActive>
               {d.map((_, i) => <Cell key={i} fill={c[i % c.length]} />)}
             </Pie>
           </PieChart>

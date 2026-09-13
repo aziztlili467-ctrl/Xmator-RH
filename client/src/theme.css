@@ -1,44 +1,51 @@
 /* ============================================================================
-   XMATOR RH — Système de design « chaleur & lisibilité »
+   XMATOR RH — Système de design « PRESTIGE / LUXE & TECH »
    ----------------------------------------------------------------------------
    Amicale du Personnel de la Banque Centrale de Tunisie.
 
-   Ce fichier est le point central du design system. Les valeurs du bloc 1
-   sont contractuelles (issues du document de référence) et ne doivent pas
-   être modifiées au fil des pages. Les blocs suivants déclinent ces valeurs
-   en tokens d'usage (statuts, graphiques, chrome applicatif).
+   Direction artistique : luminosité crème (blanc cassé), marron chocolat
+   profond (navigation), or brossé (#D4AF37, dégradés métalliques) pour les
+   accents et actions, bleu cobalt (#2563EB) et violet vif (#7C3AED) pour la
+   visualisation de données. États métier : vert émeraude (validé / présence),
+   ambre (en attente / alerte), rouge rubis (refusé / absence).
 
    Règles d'usage rappelées :
-   • Une seule couleur d'accent chaude par écran : bordeaux, brun et rouge
-     ne se mélangent jamais dans un même bloc sans hiérarchie claire.
-   • Le rouge (Saas-Fee) est réservé aux alertes réelles : absence non
-     justifiée, erreur, dépassement. Jamais en décoration.
-   • Pas de dégradés ni d'ombres portées colorées. Surfaces plates,
-     séparateurs fins.
-   • Chiffres clés mis en valeur par la typographie (Fraunces + taille),
-     jamais par des fonds saturés.
-   • Sur fond coloré (badge, pastille) : texte plus foncé de la même famille,
-     jamais de noir générique.
+   • Le fond de page reste clair (#F9F8F6) : le contraste vient du chocolat
+     de la sidebar, des filets dorés (#E5D5B5) et des dégradés or brossé.
+   • L'or est l'accent majeur : boutons d'action, élément actif, focus.
+     Il ne s'applique jamais en aplat plein sur de grandes surfaces.
+   • Les graphiques tracent la donnée en cobalt / violet ; le rouge rubis
+     reste réservé aux absences non justifiées, refus et erreurs réels.
+   • Sur fond coloré (badge, pill) : texte plus foncé de la même famille,
+     jamais de noir générique ni de blanc sur or.
    ========================================================================= */
 
 :root {
   /* ==========================================================================
      Bloc 1 — Valeurs contractuelles du design system (source de vérité)
      ========================================================================= */
-  --bg-page: #F8F6F2;
+  --bg-page: #F4F5F7;
   --bg-surface: #FFFFFF;
-  --border-subtle: #EAE4D9;
-  --text-primary: #2B2420;
-  --text-secondary: #686156;       /* Conforme WCAG AA (ratio > 5.6:1 sur #FFF et #F8F6F2) */
+  --border-subtle: #E5D5B5;         /* filet doré brossé 1px */
+  --text-primary: #33261A;          /* brun-noir chaud (AA 12.5:1 sur blanc) */
+  --text-secondary: #6B5F52;        /* brun moyen (AA 5.7:1 sur blanc) */
 
-  --brand-primary: #00917f;
-  --brand-primary-bg: #E1F3F0;
-  --brand-secondary: #87582d;
-  --brand-secondary-bg: #F3ECE1;
-  --brand-dark: #862845;
-  --brand-dark-bg: #F6E9EE;
-  --danger: #de1925;
-  --danger-bg: #FDEAEA;
+  --brand-primary: #D4AF37;         /* or brossé — accents, focus, filets */
+  --brand-primary-bg: #FAF5E6;      /* lavage doré très clair */
+  --brand-secondary: #8A6A3C;       /* marron chaud — contours secondaires */
+  --brand-secondary-bg: #F6F0E4;
+  --brand-dark: #3B2A1E;            /* marron chocolat profond */
+  --brand-dark-bg: #F3EDE2;
+  --danger: #E11D48;                /* rouge rubis */
+  --danger-bg: #FFF1F2;
+
+  /* Or brossé — dégradés métalliques riches (version métal lumineux) */
+  --gold: #D4AF37;
+  --gold-bright: #FFE08A;
+  --gold-deep: #A97F26;
+  --gold-grad: linear-gradient(135deg, #FFE08A 0%, #F6C84E 34%, #D4AF37 62%, #B4851B 100%);
+  --gold-grad-soft: linear-gradient(135deg, #FFF3CE 0%, #F5E3A8 55%, #E9CE82 100%);
+  --gold-text-grad: linear-gradient(100deg, #8F701E 0%, #B08A2E 38%, #75581A 70%, #A98627 100%);
 
   --radius-card: 12px;
   --radius-control: 8px;
@@ -52,33 +59,33 @@
   /* ==========================================================================
      Bloc 2 — Statuts sémantiques (usage métier)
      Fond -bg très clair + texte foncé de la même famille (jamais de noir),
-     conforme AA. Le rouge ne sert qu'aux absences/erreurs/urgences réels.
+     conforme AA. Le rouge rubis ne sert qu'aux absences / erreurs / refus.
      --------------------------------------------------------------------------
-     vert   → présence, ponctualité, validation, soldes positifs
-     brun   → en attente, catégories secondaires (congés, paie)
-     bordeaux → rubriques de navigation, en-têtes de section
-     rouge  → absence non justifiée, refus, erreur, badge « urgent »
+     émeraude → présence, ponctualité, validation, soldes positifs
+     ambre    → en attente, alerte, catégories secondaires
+     rubis    → absence non justifiée, refus, erreur, badge « urgent »
+     violet   → information, lien de données, référentiel
      ========================================================================= */
-  --success: var(--brand-primary);
-  --success-bg: var(--brand-primary-bg);
-  --success-text: #00705f;          /* vert foncé de la même famille (AA 5.2:1) */
-  --success-border: #C7E8E1;
+  --success: #10B981;
+  --success-bg: #ECFDF5;
+  --success-text: #047857;          /* émeraude foncé (AA 5.5:1) */
+  --success-border: #A7F3D0;
 
-  --warning: var(--brand-secondary);
-  --warning-bg: var(--brand-secondary-bg);
-  --warning-text: #6b441f;          /* brun foncé de la même famille (AA 7.2:1) */
-  --warning-border: #E4D3B6;
+  --warning: #F59E0B;
+  --warning-bg: #FFFBEB;
+  --warning-text: #B45309;          /* ambre foncé (AA 5.7:1) */
+  --warning-border: #FDE68A;
 
-  --danger-text: #a8101a;           /* rouge foncé de la même famille (AA 6.6:1) */
-  --danger-border: #F6C8C6;
+  --danger-text: #BE123C;           /* rubis foncé (AA 5.9:1) */
+  --danger-border: #FECDD3;
 
-  --info: #575149;                  /* neutre chaud : « info » n'a pas de couleur propre */
-  --info-bg: #F2EEE5;
-  --info-text: #4A443C;
-  --info-border: #E0D9C9;
+  --info: #7C3AED;                  /* violet — « info » porté par la donnée */
+  --info-bg: #F5F3FF;
+  --info-text: #6D28D9;
+  --info-border: #DDD6FE;
 
-  --neutral-chip-bg: #F2EEE5;
-  --neutral-chip-text: #6E675B;
+  --neutral-chip-bg: #F5F1E8;
+  --neutral-chip-text: #6B5F52;
 
   --status-approved: var(--success);
   --status-pending: var(--warning);
@@ -86,36 +93,38 @@
   --status-draft: var(--neutral-400);
 
   /* ==========================================================================
-     Bloc 3 — Échelles neutres chaudes
-     Légèrement crèmes (jamais bleutées) pour s'accorder au fond #F8F6F2.
+     Bloc 3 — Échelles neutres chaudes (ivoire / café au lait)
+     Légèrement crèmes (jamais bleutées) pour s'accorder au fond #F9F8F6.
      ========================================================================= */
   --neutral-0: #ffffff;
-  --neutral-50: #FBF9F5;
-  --neutral-100: #F2EEE5;
-  --neutral-200: #E8E1D4;
-  --neutral-300: #D7CDBB;
-  --neutral-400: #A79D8C;
-  --neutral-500: #8F8778;
-  --neutral-600: #686156;
-  --neutral-700: #575149;
-  --neutral-800: #403B34;
-  --neutral-900: #2B2420;
-  --neutral-950: #1F1A16;
+  --neutral-50: #FCFBF8;
+  --neutral-100: #F5F1E8;
+  --neutral-200: #ECE5D6;
+  --neutral-300: #E0D5BF;
+  --neutral-400: #BFB197;
+  --neutral-500: #A08F73;
+  --neutral-600: #6B5F52;
+  --neutral-700: #574A3D;
+  --neutral-800: #40362B;
+  --neutral-900: #33261A;
+  --neutral-950: #241A10;
 
   /* ==========================================================================
-     Bloc 4 — Échelle de marque « vert » et compatibilité des anciens noms
+     Bloc 4 — Échelle de marque « or brossé » et compatibilité des anciens noms
+     50–300 : lavages dorés (fonds, survols). 400 : l'or #D4AF37.
+     500–950 : bronzes de plus en plus foncés, lisibles en texte (AA ≥ 4.5).
      ========================================================================= */
-  --brand-50: var(--brand-primary-bg);
-  --brand-100: #CFE9E4;
-  --brand-200: #A7D7CF;
-  --brand-300: #77C0B4;
-  --brand-400: #44A293;
-  --brand-500: #0F9484;
-  --brand-600: var(--brand-primary);
-  --brand-700: #007568;   /* survol du bouton principal */
-  --brand-800: #005F52;
-  --brand-900: #00493F;
-  --brand-950: #00332C;
+  --brand-50: #FBF7EA;
+  --brand-100: #F6EDD2;
+  --brand-200: #EDDBA4;
+  --brand-300: #E2C672;
+  --brand-400: #D4AF37;
+  --brand-500: #B08A2E;
+  --brand-600: #8F701E;   /* texte doré lisible / bordures actives */
+  --brand-700: #75581A;   /* survol des boutons texte / liens appuyés */
+  --brand-800: #5C4413;
+  --brand-900: #453310;
+  --brand-950: #2C220A;
 
   /* Anciens noms encore utilisés dans le code (boutons, accents, icônes) */
   --primary-50: var(--brand-50);
@@ -123,70 +132,79 @@
   --primary-600: var(--brand-600);
   --primary-700: var(--brand-700);
 
-  --accent-50: #E7F4F2;
-  --accent-100: #D3EBE7;
-  --accent-200: #AADAD2;
-  --accent-300: #7CC5BA;
-  --accent-400: #45AB9D;
-  --accent-500: #11A08F;
-  --accent-600: #0C8A7B;
-  --accent-700: #0B7266;
-  --accent-800: #0C5D54;
-  --accent-900: #0C4A43;
-  --accent-cyan: var(--brand-600);
-  --accent-emerald: var(--brand-600);
-  --accent-blue: var(--brand-700);
-  --accent-amber: var(--brand-secondary);   /* brun */
-  --accent-orange: var(--brand-secondary);  /* brun */
-  --accent-violet: var(--brand-dark);       /* bordeaux */
-  --accent-rose: var(--brand-dark);         /* bordeaux */
+  --accent-50: #EFF6FF;
+  --accent-100: #DBEAFE;
+  --accent-200: #BFDBFE;
+  --accent-300: #93C5FD;
+  --accent-400: #60A5FA;
+  --accent-500: #3B82F6;
+  --accent-600: #2563EB;
+  --accent-700: #1D4ED8;
+  --accent-800: #1E40AF;
+  --accent-900: #1E3A8A;
+  --accent-cyan: #3B82F6;           /* bleu cobalt — séries de données */
+  --accent-emerald: #10B981;        /* émeraude — présence */
+  --accent-blue: #2563EB;           /* cobalt profond */
+  --accent-amber: #F59E0B;          /* ambre lumineux */
+  --accent-orange: #F59E0B;
+  --accent-violet: #8B5CF6;         /* violet électrique — séries de données */
+  --accent-rose: #EF4444;           /* rouge rubis intense */
+  --accent-cyan-dark: #1E40AF;
 
   /* ==========================================================================
      Bloc 5 — Rôles applicatifs (fonds, filets, textes, chrome)
      ========================================================================= */
   --bg-app: var(--bg-page);
   --bg-card: var(--bg-surface);
-  --bg-subtle: #F3EFE7;            /* léger creux */
+  --bg-subtle: #F6F0E4;            /* marron glacé très clair (en-têtes de tableaux) */
   --bg-inset: var(--neutral-100);  /* champs désactivés, zones en retrait */
   --bg-panel: var(--bg-surface);   /* lignes sélectionnables */
-  --bg-panel-hover: var(--bg-page);
-  --bg-topbar: rgba(255, 255, 255, 0.94);
-  --bg-app-gradient: linear-gradient(180deg, #FFFFFF 0%, #F8F6F2 100%);
+  --bg-panel-hover: var(--brand-50);
+  --bg-topbar: rgba(255, 255, 255, 0.9);
+  --bg-app-gradient:
+    radial-gradient(1100px 520px at 85% -10%, rgba(212, 175, 55, 0.10), transparent 60%),
+    radial-gradient(900px 480px at -10% 6%, rgba(47, 107, 255, 0.07), transparent 55%),
+    linear-gradient(180deg, #F7F8FA 0%, #F4F5F7 100%);
 
-  /* Barre latérale bordeaux moderne (#862845 plat) */
-  --bg-sidebar: var(--brand-dark);            /* Fond bordeaux plat #862845 */
-  --bg-sidebar-hover: rgba(255, 255, 255, 0.09);
-  --bg-sidebar-active: rgba(255, 255, 255, 0.16);
-  --text-on-sidebar: #FFFFFF;
-  --sidebar-inactive: #D9A6B8;                /* Rose désaturé (conforme WCAG AA sur #862845) */
-  --sidebar-active: #FFFFFF;                  /* Blanc pur */
-  --sidebar-active-indicator: #FFFFFF;        /* Filet blanc */
-  --sidebar-border: rgba(255, 255, 255, 0.12);
+  /* Barre latérale chocolat satiné — dégradé chaud profond, identique partout */
+  --bg-sidebar: #2B1810;                        /* chocolat profond enrichi */
+  --bg-sidebar-gradient:
+    radial-gradient(140% 56% at 50% 0%, rgba(212, 175, 55, 0.16), transparent 60%),
+    linear-gradient(180deg, #2B1810 0%, #24140C 48%, #1F100A 100%);
+  --bg-sidebar-hover: rgba(255, 255, 255, 0.10);
+  --bg-sidebar-active: var(--gold-grad);        /* dégradé or métallique */
+  --text-on-sidebar: #FFEDB3;                   /* blanc cassé doré */
+  --sidebar-inactive: #E6B800;                  /* doré brillant (AA 7.4:1 sur #2B1810) */
+  --sidebar-active: #2E2013;                    /* texte chocolat sur or */
+  --sidebar-active-indicator: #FFE9A2;          /* filet or clair */
+  --sidebar-border: rgba(212, 175, 55, 0.28);
   --sidebar-w: 288px;
   --sidebar-rail-w: 72px;
 
-  --text-muted: #7A7265;                      /* Conforme WCAG AA */
+  --text-muted: #8A7D6D;                      /* Conforme WCAG AA */
   --text-inverse: #ffffff;
 
-  /* Filets et focus */
+  /* Filets et focus : la bordure s'illumine en doré */
   --border: var(--border-subtle);
-  --border-strong: #CFC5B1;
+  --border-strong: #D6C69E;
   --border-panel: var(--border-subtle);
   --border-panel-glow: var(--brand-primary);
   --border-focus: var(--brand-primary);
-  --focus-ring: 2px solid var(--brand-primary);
+  --focus-ring: 2px solid #B8962B;
+  --shadow-focus: 0 0 0 3px rgba(212, 175, 55, 0.22);
 
   /* Piste des barres de progression */
-  --track: #F0EDE6;
+  --track: #F0EAE0;
 
   /* ==========================================================================
      Bloc 6 — Typographie
-     Fraunces : titres et chiffres clés. Inter : tout le reste.
+     Plus Jakarta Sans : titres et chiffres clés (luxe, géométrie affirmée).
+     Inter : texte courant. Chiffres en largeur fixe (tabular).
      ========================================================================= */
   --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
     Roboto, 'Helvetica Neue', 'Noto Sans', 'Liberation Sans', Arial, sans-serif;
-  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
-  --font-numeric: var(--font-sans);
+  --font-display: 'Plus Jakarta Sans', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-numeric: 'Inter', ui-sans-serif, system-ui, sans-serif;
 
   /* Échelle typographique */
   --text-2xs: 0.6875rem;                       /* 11 px — micro-label */
@@ -220,13 +238,13 @@
   --radius-full: 999px;
   --radius-panel: var(--radius-card);
 
-  --shadow-xs: 0 1px 2px rgba(58, 48, 39, 0.05);
-  --shadow-sm: 0 1px 3px rgba(58, 48, 39, 0.06), 0 1px 2px rgba(58, 48, 39, 0.04);
-  --shadow-md: 0 4px 12px rgba(58, 48, 39, 0.07), 0 2px 4px rgba(58, 48, 39, 0.04);
-  --shadow-lg: 0 12px 28px rgba(58, 48, 39, 0.11), 0 4px 8px rgba(58, 48, 39, 0.05);
-  --shadow-xl: 0 24px 48px rgba(58, 48, 39, 0.14);
+  --shadow-xs: 0 1px 2px rgba(51, 38, 26, 0.05);
+  --shadow-sm: 0 1px 2px rgba(51, 38, 26, 0.04), 0 2px 6px rgba(51, 38, 26, 0.04);
+  --shadow-md: 0 4px 20px -2px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(51, 38, 26, 0.05);
+  --shadow-lg: 0 10px 30px -6px rgba(51, 38, 26, 0.14), 0 4px 10px rgba(51, 38, 26, 0.06);
+  --shadow-xl: 0 20px 45px -10px rgba(51, 38, 26, 0.20);
   --shadow-panel: var(--shadow-sm);
-  --shadow-focus: 0 0 0 2px var(--brand-primary);
+  --shadow-gold: 0 3px 12px rgba(212, 175, 55, 0.45), 0 1px 2px rgba(51, 38, 26, 0.10);
 
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
@@ -244,16 +262,17 @@
   --z-drawer: 60;
   --z-overlay: 50;
   --z-modal: 70;
+  --z-toast: 90;
 
   /* ==========================================================================
-     Bloc 8 — Couleurs des graphiques
+     Bloc 8 — Couleurs des graphiques (cobalt néon, violet électrique, or)
      ========================================================================= */
-  --chart-1: var(--brand-primary);   /* présence */
-  --chart-2: var(--brand-dark);      /* congés */
-  --chart-3: var(--brand-secondary); /* maladie */
-  --chart-4: var(--danger);          /* absence */
-  --chart-5: #7FBFB4;                /* variante claire verte */
-  --chart-6: #A97845;                /* variante claire brune */
+  --chart-1: #2F6BFF;   /* cobalt néon — présence, série principale */
+  --chart-2: #8B5CF6;   /* violet électrique — congés */
+  --chart-3: #D4AF37;   /* or — maladie, highlight */
+  --chart-4: #EF4444;   /* rubis intense — absence */
+  --chart-5: #60A5FA;   /* cobalt clair */
+  --chart-6: #A78BFA;   /* violet clair */
 }
 
 /* ============================================================================
@@ -264,7 +283,10 @@
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-panel);
-  box-shadow: var(--shadow-sm);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 4px 20px -2px rgba(0, 0, 0, 0.06),
+    0 1px 3px rgba(51, 38, 26, 0.05);
   padding: var(--pad-card);
   transition: box-shadow var(--dur-base) var(--ease-out),
     border-color var(--dur-base) var(--ease-out);
@@ -272,28 +294,43 @@
 
 @media (hover: hover) and (pointer: fine) {
   .panel:hover {
-    box-shadow: var(--shadow-md);
-    border-color: var(--neutral-300);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.95),
+      0 8px 26px -4px rgba(0, 0, 0, 0.10);
+    border-color: #D9C48E;
   }
 }
 
 /* ============================================================================
-   Barre latérale — fond bordeaux #862845 plat, icônes actives blanches /
-   inactives rose désaturé #D9A6B8, filet blanc de repère
+   Barre latérale — fond chocolat profond #37261A sur toutes les pages,
+   élément actif en dégradé or brossé avec texte chocolat contrasté.
    ========================================================================= */
 
 .app-sidebar {
   background-color: var(--bg-sidebar);
-  background-image: none;
+  background-image: var(--bg-sidebar-gradient);
   color: var(--sidebar-inactive);
+}
+
+/* Reflet satiné lumineux sur la tranche supérieure + halo doré */
+.app-sidebar::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(212, 175, 55, 0.55), transparent);
+  pointer-events: none;
 }
 
 .app-sidebar .nav-item {
   position: relative;
   color: var(--sidebar-inactive);
   border-radius: var(--radius-md);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
   transition: background var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out);
+    color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
 }
 
 .app-sidebar .nav-item .icon-badge,
@@ -306,26 +343,29 @@
 @media (hover: hover) and (pointer: fine) {
   .app-sidebar .nav-item:hover {
     background: var(--bg-sidebar-hover);
-    color: #ffffff;
+    color: #FFEDB3;
   }
   .app-sidebar .nav-item:hover .icon-badge,
   .app-sidebar .nav-item:hover .nav-icon {
-    color: #ffffff;
+    color: #FFD700;
   }
 }
 
+/* Onglet actif : fond dégradé or métallique, texte chocolat contrasté */
 .app-sidebar .nav-item[data-active='true'] {
   background: var(--bg-sidebar-active);
-  color: #ffffff;
-  font-weight: 600;
+  color: var(--sidebar-active);
+  font-weight: 700;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+  box-shadow: var(--shadow-gold);
 }
 
 .app-sidebar .nav-item[data-active='true'] .icon-badge,
 .app-sidebar .nav-item[data-active='true'] .nav-icon {
-  color: #ffffff;
+  color: #2E2013;
 }
 
-/* Repère visuel de la rubrique active : filet blanc franc */
+/* Repère visuel de la rubrique active : filet or clair */
 .app-sidebar .nav-item[data-active='true']::before {
   content: '';
   position: absolute;
@@ -335,12 +375,12 @@
   width: 3px;
   height: 60%;
   border-radius: 0 var(--radius-full) var(--radius-full) 0;
-  background: #ffffff;
+  background: var(--sidebar-active-indicator);
 }
 
-/* Bandeau de sous-navigation : neutre et discret */
+/* Bandeau de sous-navigation : crème épuré, discret */
 .app-subnav {
-  background: var(--neutral-100);
+  background: linear-gradient(180deg, #FCFAF5 0%, #F7F3EA 100%);
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
 }
@@ -368,11 +408,13 @@
   }
 }
 
+/* Sous-catégorie active : dégradé or brossé + texte chocolat */
 .subnav-chip.is-active {
-  background: var(--brand-600);
-  border-color: var(--brand-600);
-  color: #ffffff;
-  box-shadow: var(--shadow-xs);
+  background: var(--gold-grad);
+  border-color: var(--gold-deep);
+  color: #2E2013;
+  font-weight: 700;
+  box-shadow: var(--shadow-gold);
 }
 
 /* ============================================================================
@@ -380,7 +422,7 @@
    ========================================================================= */
 
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 2px solid var(--brand-primary);
+  outline: 2px solid #B8962B;
   outline-offset: 2px;
   border-radius: var(--radius-xs);
 }

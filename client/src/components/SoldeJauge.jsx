@@ -3,7 +3,7 @@ export function jaugeColor(solde, reference, variant = 'emerald') {
   const pct = reference > 0 ? solde / reference : 1;
   if (pct < 0.2) return 'bg-red-500';
   if (pct < 0.5) return 'bg-amber-500';
-  return variant === 'cyan' ? 'bg-[#27C5F5]' : 'bg-emerald-500';
+  return variant === 'cyan' ? 'bg-[#2563EB]' : 'bg-emerald-500';
 }
 
 export function jaugePct(solde, reference) {

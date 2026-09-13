@@ -4,6 +4,8 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './theme.css';
 import './index.css';
+import './premium-dark.css';
+import './premium-light.css';
 
 // PWA : enregistrement du service worker (production uniquement).
 // Les navigations sont « réseau d'abord » : la version fraîche est toujours servie en ligne,

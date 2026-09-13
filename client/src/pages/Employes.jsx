@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { api } from '../api';
 import { fmtJours, downloadFile } from '../utils';
-import SoldeJauge from '../components/SoldeJauge';
 import { IconUsers, IconDownload, IconUpload, IconAlert, IconUserCheck, IconTrash, IconCamera } from '../components/icons';
 import { ouvrirFluxVideo, arreterFluxVideo, MESSAGES_CAMERA } from '../utils/camera';
 
@@ -53,6 +52,8 @@ export default function Employes() {
 
   const [deptSavingId, setDeptSavingId] = useState(null);
   const [catSavingId, setCatSavingId] = useState(null);
+  const [chefSavingId, setChefSavingId] = useState(null);
+  const [enfantsSavingId, setEnfantsSavingId] = useState(null);
 
   const [visageTarget, setVisageTarget] = useState(null);
 
@@ -117,6 +118,26 @@ export default function Employes() {
       .then(() => { setSuccess('Catégorie mise à jour (synchronisée dans toutes les vues).'); load(); })
       .catch((err) => setError(err.message))
       .finally(() => setCatSavingId(null));
+  };
+
+  const saveChefFamille = (e) => {
+    const value = e.target.value;
+    if (value === e.currentTarget.dataset.okval) return;
+    setChefSavingId(e.currentTarget.dataset.id);
+    api.updateEmploye(Number(e.currentTarget.dataset.id), { chef_famille: value })
+      .then(() => { setSuccess('Chef de famille mis à jour.'); load(); })
+      .catch((err) => setError(err.message))
+      .finally(() => setChefSavingId(null));
+  };
+
+  const saveEnfantsCharge = (e) => {
+    const value = e.target.value;
+    if (value === e.currentTarget.dataset.okval) return;
+    setEnfantsSavingId(e.currentTarget.dataset.id);
+    api.updateEmploye(Number(e.currentTarget.dataset.id), { enfants_a_charge: Number(value) })
+      .then(() => { setSuccess("Enfants à charge mis à jour."); load(); })
+      .catch((err) => setError(err.message))
+      .finally(() => setEnfantsSavingId(null));
   };
 
   // Liste déroulante des catégories de la ligne : garantit que la catégorie actuelle reste
@@ -337,13 +358,14 @@ export default function Employes() {
                 <Th label="DEPT" k="departement" />
                 <Th label="Matricule" k="matricule" />
                 <Th label="Nom et prénom" k="nom" />
+                <Th label="Chef de famille" k="chef_famille" />
+                <Th label="Enfants à charge" k="enfants_a_charge" />
                 <Th label="Catégorie" k="categorie" />
                 <Th label="Rubrique" k="rubrique" />
                 <Th label="Grade" k="grade" />
                 <Th label="Classe" k="classe" />
                 <Th label="Echelon" k="echelon" />
                 <Th label="Salaire de base" k="salaire_base" />
-                <Th label="Solde restant" k="solde" />
                 <th className="px-3 py-3 font-semibold uppercase tracking-wide text-slate-500">Visage</th>
                 <th className="px-3 py-3 font-semibold uppercase tracking-wide text-slate-500">Actions</th>
               </tr>
@@ -372,6 +394,37 @@ export default function Employes() {
                     <Link to={`/employes/${e.id}`} className="font-semibold text-slate-800 hover:text-brand-700">
                       {e.nom} {e.prenom}
                     </Link>
+                  </td>
+                  <td className="px-3 py-3 text-xs text-slate-600">
+                    <select
+                      data-id={e.id}
+                      data-okval={e.chef_famille || ''}
+                      value={e.chef_famille || ''}
+                      onChange={saveChefFamille}
+                      disabled={chefSavingId === e.id}
+                      className="input w-24 cursor-pointer px-2 py-1.5 text-xs"
+                      title={`Chef de famille — ${e.nom} ${e.prenom} (enregistré directement)`}
+                    >
+                      <option value="">—</option>
+                      <option value="OUI">OUI</option>
+                      <option value="NON">NON</option>
+                    </select>
+                  </td>
+                  <td className="px-3 py-3 text-xs text-slate-600">
+                    <select
+                      data-id={e.id}
+                      data-okval={e.enfants_a_charge ?? ''}
+                      value={e.enfants_a_charge ?? ''}
+                      onChange={saveEnfantsCharge}
+                      disabled={enfantsSavingId === e.id}
+                      className="input w-24 cursor-pointer px-2 py-1.5 text-xs"
+                      title={`Nombre d'enfants à charge — ${e.nom} ${e.prenom} (enregistré directement)`}
+                    >
+                      <option value="">—</option>
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                        <option key={n} value={n}>{n}</option>
+                      ))}
+                    </select>
                   </td>
                   <td className="px-3 py-3">
                     <select
@@ -438,15 +491,6 @@ export default function Employes() {
                   </td>
                   <td className="px-3 py-3 text-end font-mono text-xs tabular text-slate-700" title={`Salaire de base de ${e.nom} ${e.prenom} (grille de salaire)`}>
                     {fmtSalaireBase(e.salaire_base)}
-                  </td>
-                  <td className="px-3 py-3">
-                    <div className="flex items-center gap-3">
-                      <span className={`w-14 shrink-0 text-end font-bold ${e.solde < 0 ? 'text-red-600' : e.solde < 5 ? 'text-amber-600' : 'text-slate-700'}`}>
-                        {fmtJours(e.solde)} j
-                      </span>
-                      {e.solde < 5 && <IconAlert />}
-                      <div className="w-28 shrink-0"><SoldeJauge solde={e.solde} reference={30} showLabel={false} /></div>
-                    </div>
                   </td>
                   <td className="px-3 py-3">
                     <button

@@ -54,6 +54,7 @@ const ReferentielParametresPointage = lazy(() => import('./pages/ReferentielPara
 const ReferentielPromotionNotation = lazy(() => import('./pages/ReferentielPromotionNotation'));
 const ReferentielSaasTableauBord = lazy(() => import('./pages/ReferentielSaasTableauBord'));
 const BorneXmatorEye = lazy(() => import('./pages/BorneXmatorEye'));
+const Maquette = lazy(() => import('./pages/Maquette'));
 
 function Chargement() {
   return (
@@ -102,6 +103,8 @@ function AppRoutes() {
       <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
       <Route path="/acces-refuse" element={<AccesRefuse />} />
       <Route path="/borne" element={<RequireAuth><BorneXmatorEye /></RequireAuth>} />
+      {/* Vitrine design du tableau de bord (données de démo embarquées, aucune API) */}
+      <Route path="/maquette" element={<Maquette />} />
 
       <Route
         element={

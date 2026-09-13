@@ -82,6 +82,7 @@ const BASE = `
          e.date_naissance, e.date_embauche, e.photo_url,
          e.rubrique, e.grade, e.classe, e.echelon,
          e.adresse, e.telephone, e.situation_familiale, e.nombre_enfants,
+         e.chef_famille, e.enfants_a_charge,
          e.lieu_naissance, e.sexe, e.nationalite, e.groupe_sanguin, e.cin, e.date_emission_cin, e.service_militaire, e.cnss,
          e.rue, e.code_postal, e.localite, e.gouvernorat, e.gsm, e.adresse_electronique,
          e.conjoint_nom, e.conjoint_date_naissance, e.enfants_details,
@@ -182,7 +183,7 @@ router.get('/:id', lecture, (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { matricule, nom, prenom, categorie_id, rubrique, grade, classe, echelon, actif, date_naissance, date_embauche, adresse, telephone, situation_familiale, nombre_enfants, lieu_naissance, sexe, nationalite, groupe_sanguin, cin, date_emission_cin, service_militaire, cnss, rue, code_postal, localite, gouvernorat, gsm, adresse_electronique, conjoint_nom, conjoint_date_naissance, enfants_details, niveau_etudes, diplome, date_emission_diplome, cnam, type_contrat, banque, titulaire_compte, type_compte, rib, salaire_base, indemnite_presence, indemnite_transport, indemnite_fonction, intitule_poste } = req.body || {};
+  const { matricule, nom, prenom, categorie_id, rubrique, grade, classe, echelon, actif, date_naissance, date_embauche, adresse, telephone, situation_familiale, nombre_enfants, lieu_naissance, sexe, nationalite, groupe_sanguin, cin, date_emission_cin, service_militaire, cnss, rue, code_postal, localite, gouvernorat, gsm, adresse_electronique, conjoint_nom, conjoint_date_naissance, enfants_details, niveau_etudes, diplome, date_emission_diplome, cnam, type_contrat, banque, titulaire_compte, type_compte, rib, salaire_base, indemnite_presence, indemnite_transport, indemnite_fonction, intitule_poste, departement, chef_famille, enfants_a_charge } = req.body || {};
   if (!matricule || !nom || !prenom || !categorie_id) {
     return res.status(400).json({ error: 'Matricule, nom, prénom et catégorie sont obligatoires.' });
   }
@@ -194,13 +195,14 @@ router.post('/', (req, res) => {
   try {
 const gr = grilleSalaire(rubrique, grade, classe, echelon);
     const rubriqueRef = String(rubrique || '').trim() || (gr ? gr.rubrique : '');
-    const r = db.prepare('INSERT INTO employes (matricule, nom, prenom, categorie_id, rubrique, grade, classe, echelon, actif, date_naissance, date_embauche, adresse, telephone, situation_familiale, nombre_enfants, lieu_naissance, sexe, nationalite, groupe_sanguin, cin, date_emission_cin, service_militaire, cnss, rue, code_postal, localite, gouvernorat, gsm, adresse_electronique, conjoint_nom, conjoint_date_naissance, enfants_details, niveau_etudes, diplome, date_emission_diplome, cnam, type_contrat, banque, titulaire_compte, type_compte, rib, salaire_base, indemnite_presence, indemnite_transport, indemnite_fonction, intitule_poste, departement) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+    const r = db.prepare('INSERT INTO employes (matricule, nom, prenom, categorie_id, rubrique, grade, classe, echelon, actif, date_naissance, date_embauche, adresse, telephone, situation_familiale, nombre_enfants, chef_famille, enfants_a_charge, lieu_naissance, sexe, nationalite, groupe_sanguin, cin, date_emission_cin, service_militaire, cnss, rue, code_postal, localite, gouvernorat, gsm, adresse_electronique, conjoint_nom, conjoint_date_naissance, enfants_details, niveau_etudes, diplome, date_emission_diplome, cnam, type_contrat, banque, titulaire_compte, type_compte, rib, salaire_base, indemnite_presence, indemnite_transport, indemnite_fonction, intitule_poste, departement) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
       .run(mat, String(nom).trim(), String(prenom).trim(), Number(categorie_id),
         rubriqueRef, String(grade || '').trim(), String(classe || '').trim(), String(echelon || '').trim(),
         actif === false ? 0 : 1,
         date_naissance || null, date_embauche || null,
         adresse ? String(adresse).trim() : null, telephone ? String(telephone).trim() : null,
         situation_familiale ? String(situation_familiale).trim() : null, nombre_enfants ? Number(nombre_enfants) : 0,
+        chef_famille ? String(chef_famille).trim() : null, enfants_a_charge !== undefined && enfants_a_charge !== '' ? Number(enfants_a_charge) : null,
         lieu_naissance ? String(lieu_naissance).trim() : null, sexe || null, nationalite ? String(nationalite).trim() : null, groupe_sanguin || null, cin ? String(cin).trim() : null, date_emission_cin || null, service_militaire || null, cnss ? String(cnss).trim() : null,
         rue ? String(rue).trim() : null, code_postal ? String(code_postal).trim() : null, localite ? String(localite).trim() : null, gouvernorat ? String(gouvernorat).trim() : null, gsm ? String(gsm).trim() : null, adresse_electronique ? String(adresse_electronique).trim() : null,
         conjoint_nom ? String(conjoint_nom).trim() : null, conjoint_date_naissance || null, enfants_details ? (typeof enfants_details==='string'? enfants_details : JSON.stringify(enfants_details)) : null,
@@ -299,7 +301,7 @@ router.post('/import-rh', (req, res) => {
 });
 
 router.put('/:id', (req, res) => {
-  const { matricule, nom, prenom, categorie_id, rubrique, grade, classe, echelon, actif, date_naissance, date_embauche, adresse, telephone, situation_familiale, nombre_enfants, lieu_naissance, sexe, nationalite, groupe_sanguin, cin, date_emission_cin, service_militaire, cnss, rue, code_postal, localite, gouvernorat, gsm, adresse_electronique, conjoint_nom, conjoint_date_naissance, enfants_details, niveau_etudes, diplome, date_emission_diplome, cnam, type_contrat, banque, titulaire_compte, type_compte, rib, salaire_base, indemnite_presence, indemnite_transport, indemnite_fonction, intitule_poste, departement } = req.body || {};
+  const { matricule, nom, prenom, categorie_id, rubrique, grade, classe, echelon, actif, date_naissance, date_embauche, adresse, telephone, situation_familiale, nombre_enfants, lieu_naissance, sexe, nationalite, groupe_sanguin, cin, date_emission_cin, service_militaire, cnss, rue, code_postal, localite, gouvernorat, gsm, adresse_electronique, conjoint_nom, conjoint_date_naissance, enfants_details, niveau_etudes, diplome, date_emission_diplome, cnam, type_contrat, banque, titulaire_compte, type_compte, rib, salaire_base, indemnite_presence, indemnite_transport, indemnite_fonction, intitule_poste, departement, chef_famille, enfants_a_charge } = req.body || {};
   const id = Number(req.params.id);
   const e = db.prepare('SELECT id, matricule, rubrique, grade, classe, echelon FROM employes WHERE id = ?').get(id);
   if (!e) return res.status(404).json({ error: 'Employé introuvable.' });
@@ -342,6 +344,8 @@ router.put('/:id', (req, res) => {
       telephone = COALESCE(?, telephone),
       situation_familiale = COALESCE(?, situation_familiale),
       nombre_enfants = COALESCE(?, nombre_enfants),
+      chef_famille = COALESCE(?, chef_famille),
+      enfants_a_charge = COALESCE(?, enfants_a_charge),
       lieu_naissance = COALESCE(?, lieu_naissance),
       sexe = COALESCE(?, sexe),
       nationalite = COALESCE(?, nationalite),
@@ -391,6 +395,8 @@ router.put('/:id', (req, res) => {
     telephone !== undefined ? (telephone ? String(telephone).trim() : null) : null,
     situation_familiale !== undefined ? (situation_familiale ? String(situation_familiale).trim() : null) : null,
     nombre_enfants !== undefined ? (nombre_enfants !== '' ? Number(nombre_enfants) : null) : null,
+    chef_famille !== undefined ? (chef_famille ? String(chef_famille).trim() : null) : null,
+    enfants_a_charge !== undefined ? (enfants_a_charge !== '' ? Number(enfants_a_charge) : null) : null,
     lieu_naissance !== undefined ? (lieu_naissance ? String(lieu_naissance).trim() : null) : null,
     sexe !== undefined ? (sexe || null) : null,
     nationalite !== undefined ? (nationalite ? String(nationalite).trim() : null) : null,

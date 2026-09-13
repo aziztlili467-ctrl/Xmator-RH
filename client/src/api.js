@@ -409,6 +409,7 @@ export const api = {
   presenceCorrection: (body) => request('/presence/correction', { method: 'PUT', body: JSON.stringify(body) }),
   supprimerCorrectionPresence: (params = {}) => request('/presence/correction' + buildQuery(params), { method: 'DELETE' }),
   presenceBiometrique: (params = {}) => request('/presence/biometrique' + buildQuery(params)),
+  presenceBiometriqueDelete: (params = {}) => request('/presence/biometrique' + buildQuery(params), { method: 'DELETE' }),
   presenceBiometriqueXls: (params = {}) => downloadFichier(`/presence/biometrique/xls` + buildQuery(params), `pointages-biometriques_${params.fin || params.debut || 'tout'}.xls`),
   presenceBiometriquePdf: (params = {}) => openPdf(`/presence/biometrique/pdf` + buildQuery(params)),
 

@@ -76,13 +76,13 @@ export default function PwaInstall() {
 
       {/* Halo lumineux derrière la carte */}
       <div
-        className="pointer-events-none absolute -inset-2 rounded-[28px] bg-gradient-to-r from-indigo-600/40 via-fuchsia-500/40 to-cyan-400/40 blur-xl"
+        className="pointer-events-none absolute -inset-2 rounded-[28px] bg-gradient-to-r from-[#D4AF37]/45 via-[#B08A2E]/35 to-[#7C3AED]/35 blur-xl"
         style={{ animation: 'pwa-halo 3s ease-in-out infinite' }}
       />
 
       {/* Bordure dégradée 1px */}
-      <div className="relative rounded-2xl bg-gradient-to-r from-indigo-500/80 via-fuchsia-500/80 to-cyan-400/80 p-px shadow-[0_12px_45px_rgba(99,102,241,0.35)]">
-        <div className="relative overflow-hidden rounded-2xl bg-slate-950/90 backdrop-blur-xl">
+      <div className="relative rounded-2xl bg-gradient-to-r from-[#F3D27A]/90 via-[#D4AF37]/90 to-[#A97F26]/90 p-px shadow-[0_12px_45px_rgba(212,175,55,0.35)]">
+        <div className="relative overflow-hidden rounded-2xl bg-[#241A10]/95 backdrop-blur-xl">
           {/* Reflet balayant */}
           <div
             className="pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-white/15 to-transparent"
@@ -108,7 +108,7 @@ export default function PwaInstall() {
             />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-extrabold tracking-tight text-white sm:text-[15px]">
-                Installez <span className="bg-gradient-to-r from-indigo-300 via-fuchsia-300 to-cyan-300 bg-clip-text text-transparent">XMATOR RH</span> sur votre appareil
+                Installez <span style={{ background: 'var(--gold-grad)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }}>XMATOR RH</span> sur votre appareil
               </p>
               <p className="mt-0.5 text-[11px] font-medium leading-snug text-slate-300">
                 Accès en un clic depuis l’écran d’accueil · rapide · hors ligne
@@ -124,7 +124,7 @@ export default function PwaInstall() {
           <div className="flex items-center gap-3 px-4 pb-4 -mt-1">
             <button
               onClick={installer}
-              className="flex-1 rounded-xl bg-gradient-to-r from-indigo-500 via-violet-500 to-fuchsia-500 px-4 py-2 text-sm font-bold text-white shadow-[0_4px_20px_rgba(139,92,246,0.5)] transition-all duration-200 ease-in-out hover:brightness-110 active:scale-[0.98]"
+              className="flex-1 rounded-xl px-4 py-2 text-sm font-bold transition-all duration-200 ease-in-out hover:brightness-110 active:scale-[0.98]" style={{ background: 'var(--gold-grad)', color: '#2E2013', boxShadow: 'var(--shadow-gold)' }}
             >
               Installer l’application
             </button>
@@ -133,8 +133,8 @@ export default function PwaInstall() {
           {/* Barre de temps : disparition auto après 20 s */}
           <div className="h-0.5 w-full bg-white/10">
             <div
-              className="h-full bg-gradient-to-r from-indigo-400 via-fuchsia-400 to-cyan-300"
-              style={{ animation: `pwa-progression ${DUREE_AFFICHAGE}ms linear forwards` }}
+              className="h-full"
+              style={{ background: 'var(--gold-grad)', animation: `pwa-progression ${DUREE_AFFICHAGE}ms linear forwards` }}
             />
           </div>
         </div>

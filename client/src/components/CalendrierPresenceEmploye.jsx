@@ -211,8 +211,8 @@ export default function CalendrierPresenceEmploye({ employeId, matricule, nom, p
                     <defs>
                       {CATS.map((cat) => (
                         <linearGradient key={cat} id={`grad-${cat}`} x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor={coul.coul[cat]} stopOpacity={0.85} />
-                          <stop offset="100%" stopColor={coul.coul[cat]} stopOpacity={0.35} />
+                          <stop offset="0%" stopColor={coul.coul[cat]} stopOpacity={0.95} />
+                          <stop offset="100%" stopColor={coul.coul[cat]} stopOpacity={0.45} />
                         </linearGradient>
                       ))}
                     </defs>
@@ -232,7 +232,7 @@ export default function CalendrierPresenceEmploye({ employeId, matricule, nom, p
                     <Legend wrapperStyle={{ fontSize: 12 }} />
                     {CATS.map((cat) => (
                       <Area key={cat} type="monotone" dataKey={cat}
-                        stackId="1" stroke={coul.coul[cat]} strokeWidth={2}
+                        stackId="1" stroke={coul.coul[cat]} strokeWidth={2.4}
                         fill={`url(#grad-${cat})`} />
                     ))}
                   </AreaChart>

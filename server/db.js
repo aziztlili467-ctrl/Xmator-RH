@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS employes (
   actif        INTEGER NOT NULL DEFAULT 1,
   face_descriptor TEXT,
   face_enrolled_at TEXT,
+  chef_famille TEXT,
+  enfants_a_charge INTEGER,
   created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
@@ -480,6 +482,8 @@ function migrate() {
   if (!empCols.includes('departement')) db.exec("ALTER TABLE employes ADD COLUMN departement TEXT DEFAULT ''");
   if (!empCols.includes('face_descriptor')) db.exec('ALTER TABLE employes ADD COLUMN face_descriptor TEXT');
   if (!empCols.includes('face_enrolled_at')) db.exec('ALTER TABLE employes ADD COLUMN face_enrolled_at TEXT');
+  if (!empCols.includes('chef_famille')) db.exec('ALTER TABLE employes ADD COLUMN chef_famille TEXT');
+  if (!empCols.includes('enfants_a_charge')) db.exec('ALTER TABLE employes ADD COLUMN enfants_a_charge INTEGER');
 
   // Jours fériés : colonne `automatique` (jours fériés auto-gérés, ex. les 2 jours de l'Aïd el-Fitr)
   const jfCols = db.prepare('PRAGMA table_info(jours_feries)').all().map((c) => c.name);

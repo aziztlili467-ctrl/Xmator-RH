@@ -25,10 +25,17 @@ function CustomTooltip({ active, payload, label }) {
   if (!active || !payload || !payload.length) return null;
   const row = payload[0]?.payload;
   return (
-    <div className="rounded-lg border px-3 py-2 text-xs shadow-lg" style={{ background: 'var(--bg-panel)', borderColor: 'var(--border-panel)', backdropFilter: 'blur(8px)', color: 'var(--text-primary)' }}>
-      <p className="font-bold">{label}</p>
-      <p>Heures légales : <span className="font-bold">{row?.['Heures légales'] ?? row?.legal} h</span></p>
-      <p>Heures travaillées : <span className="font-bold">{row?.['Heures travaillées'] ?? row?.worked} h</span></p>
+    <div className="rounded-xl border px-3.5 py-2.5 text-xs" style={{
+      background: 'rgba(24, 14, 6, 0.92)',
+      borderColor: 'rgba(212, 175, 55, 0.55)',
+      backdropFilter: 'blur(12px) saturate(1.3)',
+      WebkitBackdropFilter: 'blur(12px) saturate(1.3)',
+      color: '#F5E9C6',
+      boxShadow: '0 18px 44px -12px rgba(0,0,0,0.5), 0 0 24px -6px rgba(212,175,55,0.45), inset 0 1px 0 rgba(255,255,255,0.10)',
+    }}>
+      <p className="font-bold" style={{ color: '#FFE08A' }}>{label}</p>
+      <p>Heures légales : <span className="font-bold" style={{ color: '#FFFFFF' }}>{row?.['Heures légales'] ?? row?.legal} h</span></p>
+      <p>Heures travaillées : <span className="font-bold" style={{ color: '#FFFFFF' }}>{row?.['Heures travaillées'] ?? row?.worked} h</span></p>
       <p>Taux : <span className="font-bold" style={{ color: colorForPct(row?.pct) }}>{row?.pct != null ? `${Math.round(row.pct)}%` : '—'}</span></p>
     </div>
   );
@@ -41,13 +48,13 @@ export default function HoursComboChart({ data, height }) {
       <ComposedChart data={data} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
         <defs>
           <linearGradient id="gradWorked" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--accent-cyan)" stopOpacity="0.15" />
+            <stop offset="0%" stopColor="var(--accent-cyan)" stopOpacity="0.35" />
             <stop offset="100%" stopColor="var(--accent-cyan)" stopOpacity="0" />
           </linearGradient>
           <linearGradient id="barVivid" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#6366f1" />
-            <stop offset="50%" stopColor="#06b6d4" />
-            <stop offset="100%" stopColor="#3b82f6" />
+            <stop offset="0%" stopColor="#2F6BFF" />
+            <stop offset="50%" stopColor="#7C5CFF" />
+            <stop offset="100%" stopColor="#8B5CF6" />
           </linearGradient>
           <filter id="barShadow" x="-20%" y="-10%" width="140%" height="130%">
             <feDropShadow dx="0" dy="6" stdDeviation="6" floodColor="rgba(99,102,241,0.35)" />

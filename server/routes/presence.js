@@ -496,6 +496,27 @@ router.get('/biometrique', (req, res) => {
   res.json(construire(req, { source: 'biometrique' }));
 });
 
+// DELETE /api/presence/biometrique — supprime l'historique des badgeages biométriques
+// filtré par période (debut/fin), matricule, employe_id ou categorie_id (aucun filtre = tout).
+router.delete('/biometrique', (req, res) => {
+  const { debut, fin, where, vals } = filtresDir(req, { source: 'biometrique' });
+  const r = db.prepare(`
+    DELETE FROM pointages
+    WHERE source = 'biometrique'
+      AND employe_id IN (
+        SELECT p.employe_id
+        FROM pointages p
+        JOIN employes e ON e.id = p.employe_id
+        ${where}
+      )
+  `).run(...vals);
+  res.json({
+    ok: true,
+    supprimes: r.changes,
+    periode: { debut, fin },
+  });
+});
+
 // GET /api/presence/biometrique/xls — export Excel (SpreadsheetML), retards & sorties anticipées en rouge
 const xmlEscape = (s) =>
   String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

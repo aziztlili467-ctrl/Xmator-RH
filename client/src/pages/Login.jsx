@@ -34,7 +34,10 @@ export default function Login() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-stone-900 px-4">
+    <div
+      className="relative flex min-h-screen items-center justify-center overflow-hidden px-4"
+      style={{ background: 'linear-gradient(160deg, #2B1810 0%, #22130B 55%, #1A0E07 100%)' }}
+    >
       {/* Filigrane : image de la Banque Centrale de Tunisie */}
       <div
         className="pointer-events-none absolute inset-0 opacity-40 saturate-125 brightness-[0.95]"
@@ -49,15 +52,15 @@ export default function Login() {
       <div className="pointer-events-none absolute inset-0 bg-stone-950/50 backdrop-blur-[1px]" />
 
       <div className="relative z-10 w-full max-w-md">
-        <div className="overflow-hidden rounded-2xl border border-[#EAE4D9] bg-white p-6 shadow-2xl sm:p-8">
-          {/* Liseré supérieur bordeaux #862845 */}
-          <div className="mb-6 h-1.5 w-full rounded-full bg-[#862845]" />
+        <div className="overflow-hidden rounded-2xl border border-[#E5D5B5] bg-white p-6 shadow-2xl sm:p-8">
+          {/* Liseré supérieur : or brossé Prestige */}
+          <div className="mb-6 h-1.5 w-full rounded-full" style={{ background: 'var(--gold-grad)' }} />
 
           <div className="mb-6 flex flex-col items-center gap-1.5 text-center">
-            <h1 className="font-display text-2xl font-semibold tracking-tight text-[#2B2420] sm:text-3xl">
+            <h1 className="font-display text-2xl font-semibold tracking-tight text-[#33261A] sm:text-3xl">
               Espace Amicale
             </h1>
-            <p className="text-sm font-medium text-[#686156]">
+            <p className="text-sm font-medium text-[#6B5F52]">
               Gestion des congés, maladies et absences
             </p>
           </div>
@@ -65,7 +68,7 @@ export default function Login() {
           {error && (
             <div
               role="alert"
-              className="mb-5 rounded-lg border border-[#F6C8C6] bg-[#FDEAEA] px-4 py-3 text-sm font-medium text-[#a8101a]"
+              className="mb-5 rounded-lg border border-[#FECDD3] bg-[#FFF1F2] px-4 py-3 text-sm font-medium text-[#BE123C]"
             >
               {error}
             </div>
@@ -73,12 +76,12 @@ export default function Login() {
 
           <form onSubmit={submit} className="space-y-4">
             <div>
-              <label className="label mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#686156]" htmlFor="login">
+              <label className="label mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#6B5F52]" htmlFor="login">
                 Identifiant
               </label>
               <input
                 id="login"
-                className="input text-base text-[#2B2420] placeholder:text-[#7A7265]"
+                className="input text-base text-[#33261A] placeholder:text-[#8A7D6D]"
                 value={loginVal}
                 onChange={(e) => setLoginVal(e.target.value)}
                 placeholder="Votre identifiant"
@@ -88,14 +91,14 @@ export default function Login() {
             </div>
 
             <div>
-              <label className="label mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#686156]" htmlFor="password">
+              <label className="label mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#6B5F52]" htmlFor="password">
                 Mot de passe
               </label>
               <div className="relative">
                 <input
                   id="password"
                   type={show ? 'text' : 'password'}
-                  className="input pe-20 text-base text-[#2B2420] placeholder:text-[#7A7265]"
+                  className="input pe-20 text-base text-[#33261A] placeholder:text-[#8A7D6D]"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Votre mot de passe"
@@ -105,7 +108,7 @@ export default function Login() {
                 <button
                   type="button"
                   onClick={() => setShow((s) => !s)}
-                  className="absolute end-2 top-1/2 -translate-y-1/2 rounded-md px-2.5 py-1 text-xs font-semibold text-[#686156] hover:bg-stone-100 hover:text-[#2B2420]"
+                  className="absolute end-2 top-1/2 -translate-y-1/2 rounded-md px-2.5 py-1 text-xs font-semibold text-[#6B5F52] hover:bg-stone-100 hover:text-[#33261A]"
                 >
                   {show ? 'Masquer' : 'Afficher'}
                 </button>
@@ -115,7 +118,7 @@ export default function Login() {
             <div className="flex gap-3 pt-2">
               <button
                 type="submit"
-                className="btn-primary flex-1 rounded-lg py-3 text-base font-semibold text-white shadow-sm transition"
+                className="btn-primary flex-1 rounded-lg py-3 text-base transition"
                 disabled={busy}
               >
                 {busy ? 'Connexion…' : 'Se connecter'}
