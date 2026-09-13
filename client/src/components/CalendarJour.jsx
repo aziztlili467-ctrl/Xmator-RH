@@ -71,7 +71,9 @@ export const statutJour = (j) => {
   }
   // Demi-journée de congé : prioritaire sur « présent » pour rester visible même si l'agent a badgeé
   if (j.demi && j.conge > 0) return { st: 'conge_demi', day };
-  if (j.badge > 0) return { st: 'present', day };
+  // Présent : pointage badgeuse OU état « Présent par défaut » (départements configurés, ex. Comptoir :
+  // jour ouvrable sans badge ni codification RMA → P1 remplacé par toute codification insérée)
+  if (j.present > 0 || j.badge > 0) return { st: 'present', day };
   if (j.conge > 0) return { st: 'conge', day };
   if (j.maladie > 0) return { st: 'maladie', day };
   if (j.ouvrable && j.heures > 0) return { st: 'absence', day };

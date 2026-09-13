@@ -1,6 +1,7 @@
 const path = require('path');
 const PDFDocument = require('pdfkit');
 const { db } = require('../db');
+const { loadContext, estOuvrable, reposFor } = require('./jourOuvrable');
 
 function fmtFR(iso) {
   if (!iso) return '';
@@ -53,15 +54,23 @@ function buildPdf({ res, debut, fin, dates, employes, jours, joursDemi, totaux, 
 
   const shortName = (e) => `${e.nom} ${e.prenom}`;
 
-  const legalMapPdf = {};
-  for (const r of db.prepare("SELECT date, heures FROM jours_travail WHERE date >= ? AND date <= ?").all(debut, fin)) legalMapPdf[r.date] = Number(r.heures) || 0;
-  const hasCalPdf = Object.keys(legalMapPdf).length > 0;
-  const isOuvPdf = (iso) => hasCalPdf ? (legalMapPdf[iso] || 0) > 0 : (new Date(iso + 'T00:00:00').getDay() !== 0 && new Date(iso + 'T00:00:00').getDay() !== 6);
+  // Jours de travail PAR CATÉGORIE : le repos hebdomadaire (ex. samedi travaillé de Femme de
+  // ménage) est pris en compte pour les totaux par employé et par date.
+  const ctxPdf = loadContext();
+  const catByEmp = {};
+  for (const e of db.prepare('SELECT id, categorie_id FROM employes WHERE actif = 1').all()) catByEmp[e.id] = e.categorie_id;
+  const legalRowsPdf = db.prepare("SELECT date, heures, source, label FROM jours_travail WHERE date >= ? AND date <= ?").all(debut, fin);
+  const legalByDatePdf = {};
+  for (const r of legalRowsPdf) legalByDatePdf[r.date] = r;
+  const hasCalPdf = legalRowsPdf.length > 0;
+  const isOuvPdf = (empId, iso) => hasCalPdf
+    ? estOuvrable(ctxPdf, catByEmp[empId], iso, legalByDatePdf[iso])
+    : !reposFor(catByEmp[empId]).has(new Date(iso + 'T00:00:00').getDay());
   const totalJours = (id) => {
     if (!jours[id]) return 0;
     let s = 0;
     for (const [iso, cell] of Object.entries(jours[id])) {
-      if (!isOuvPdf(iso)) continue;
+      if (!isOuvPdf(id, iso)) continue;
       for (const c of String(cell).split('/')) {
         if ((c === 'CA' && joursDemi && joursDemi[id] && joursDemi[id][iso]) || c === 'DJ') s += 0.5; else s += 1;
       }
@@ -122,9 +131,9 @@ function buildPdf({ res, debut, fin, dates, employes, jours, joursDemi, totaux, 
 
   const totalsRow = (dc, y) => {
     const countDate = (iso) => {
-      if (!isOuvPdf(iso)) return 0;
       let s = 0;
       for (const e of employes) {
+        if (!isOuvPdf(e.id, iso)) continue;
         const cell = jours[e.id] ? jours[e.id][iso] : null;
         if (!cell) continue;
         for (const c of String(cell).split('/')) {

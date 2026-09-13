@@ -2,6 +2,7 @@ const { Router } = require('express');
 const path = require('path');
 const PDFDocument = require('pdfkit');
 const { db, insertMouvement, isDebit, soldeCongeRestantDate } = require('../db');
+const { loadContext, estOuvrable, reposFor, compteJoursOuvrables } = require('../utils/jourOuvrable');
 const router = Router();
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -13,25 +14,12 @@ function nextNumero() {
   })();
 }
 
-function nbJours(debut, fin) {
-  const d1 = new Date(debut + 'T00:00:00');
-  const d2 = new Date(fin + 'T00:00:00');
-  if (isNaN(d1) || isNaN(d2) || d2 < d1) return null;
-  // Source unique : calendrier administratif (jours_travail.heures > 0)
-  // Si le calendrier n'est pas renseigné pour la période, fallback lun-ven
-  const hasCal = db.prepare('SELECT 1 FROM jours_travail WHERE date >= ? AND date <= ? LIMIT 1').get(debut, fin);
-  if (hasCal) {
-    const r = db.prepare("SELECT COUNT(*) AS c FROM jours_travail WHERE date >= ? AND date <= ? AND heures > 0").get(debut, fin);
-    return r.c;
-  }
-  let count = 0;
-  const cur = new Date(d1);
-  while (cur <= d2) {
-    const wd = cur.getDay();
-    if (wd !== 0 && wd !== 6) count += 1;
-    cur.setDate(cur.getDate() + 1);
-  }
-  return count;
+// Jours ouvrables [debut, fin] pour UNE catégorie (repos hebdomadaires configurables) :
+// source unique partagée = utils/jourOuvrable (compteJoursOuvrables) — jours ouvrés du calendrier
+// administratif (jours_travail.heures > 0) PLUS les jours de semaine que la catégorie travaille
+// (ex. samedi de Femme de ménage) hors fériés, comme partout ailleurs (prélèvements, tableau de bord).
+function nbJours(debut, fin, categorieId) {
+  return compteJoursOuvrables(debut, fin, categorieId);
 }
 
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -43,14 +31,20 @@ const codePourDemande = (d) => d.nature_conge === 'exceptionnel' ? CODE_RMA_CE :
 // Helpers synchronisation Demande ↔ Journal RMA + Journal des mouvements
 function insererRMAForDemande(d) {
   const code = codePourDemande(d);
+  const ctx = loadContext();
+  const cat = db.prepare('SELECT categorie_id FROM employes WHERE id = ?').get(d.employe_id);
+  const categorieId = cat ? cat.categorie_id : null;
+  const repos = reposFor(categorieId);
+  const jours = db.prepare('SELECT date, heures, source, label FROM jours_travail WHERE date >= ? AND date <= ?').all(d.date_debut, d.date_fin);
+  const legalByDate = {};
+  for (const r of jours) legalByDate[r.date] = r;
+  const hasCal = jours.length > 0;
+  const ins = db.prepare('INSERT INTO codes_importes (employe_id, matricule, date, code, demi_journee) VALUES (?,?,?,?,?) ON CONFLICT(employe_id, date, code) DO UPDATE SET demi_journee = excluded.demi_journee');
   const cur = new Date(d.date_debut + 'T00:00:00');
   const end = new Date(d.date_fin + 'T00:00:00');
-  const ins = db.prepare('INSERT INTO codes_importes (employe_id, matricule, date, code, demi_journee) VALUES (?,?,?,?,?) ON CONFLICT(employe_id, date, code) DO UPDATE SET demi_journee = excluded.demi_journee');
-  const legalSet = new Set(db.prepare("SELECT date FROM jours_travail WHERE date >= ? AND date <= ? AND heures > 0").all(d.date_debut, d.date_fin).map(r=>r.date));
-  const hasCal = legalSet.size > 0 || db.prepare('SELECT 1 FROM jours_travail WHERE date >= ? AND date <= ? LIMIT 1').get(d.date_debut, d.date_fin);
   while (cur <= end) {
-    const iso = `${cur.getFullYear()}-${pad2(cur.getMonth() + 1)}-${pad2(cur.getDate())}`;
-    const ouvrable = hasCal ? legalSet.has(iso) : (cur.getDay() !== 0 && cur.getDay() !== 6);
+    const iso = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
+    const ouvrable = hasCal ? estOuvrable(ctx, categorieId, iso, legalByDate[iso]) : !repos.has(cur.getDay());
     if (ouvrable) {
       // Dernier jour en demi-journée → code DJ (Demi-journée, noir) ; sinon le code couru (CA/CE)
       const demi = d.demi_journee && iso === d.date_fin ? 1 : 0;
@@ -111,7 +105,7 @@ router.post('/', (req, res) => {
   if (!['legal', 'exceptionnel'].includes(nature_conge)) {
     return res.status(400).json({ error: 'La nature du congé doit être "legal" ou "exceptionnel".' });
   }
-  const emp = db.prepare('SELECT id, matricule, nom, prenom FROM employes WHERE id = ?').get(Number(employe_id));
+  const emp = db.prepare('SELECT id, matricule, nom, prenom, categorie_id FROM employes WHERE id = ?').get(Number(employe_id));
   if (!emp) return res.status(400).json({ error: 'Employé introuvable.' });
   for (const [k, v] of [['date_demande', date_demande], ['date_debut', date_debut], ['date_fin', date_fin]]) {
     if (!v || !DATE_RE.test(v)) return res.status(400).json({ error: `Date invalide pour ${k} (format AAAA-MM-JJ).` });
@@ -137,7 +131,7 @@ router.post('/', (req, res) => {
     }
     jours = v;
   } else {
-    jours = nbJours(date_debut, date_fin);
+    jours = nbJours(date_debut, date_fin, emp.categorie_id);
     if (!jours) return res.status(400).json({ error: 'La date de fin doit être postérieure ou égale à la date de début.' });
     if (demi_journee) {
       jours -= 0.5;
@@ -147,7 +141,7 @@ router.post('/', (req, res) => {
   // Normalisation demi-journée :
   // - valeur fractionnaire saisie manuellement sans la case => demi-journée sur le dernier jour
   // - case cochée mais valeur pleine saisie => le dernier jour passe à 0,5
-  const plage = nbJours(date_debut, date_fin);
+  const plage = nbJours(date_debut, date_fin, emp.categorie_id);
   let demi = demi_journee ? 1 : 0;
   if (!demi && !Number.isInteger(jours)) demi = 1;
   if (demi && plage !== null && jours === plage) {

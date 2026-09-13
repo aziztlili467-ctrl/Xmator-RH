@@ -17,9 +17,10 @@ db.pragma('foreign_keys = ON');
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS categories (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  libelle    TEXT NOT NULL UNIQUE,
-  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  libelle            TEXT NOT NULL UNIQUE,
+  repos_hebdomadaire TEXT NOT NULL DEFAULT '0,6',
+  created_at         TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
 CREATE TABLE IF NOT EXISTS employes (
@@ -33,6 +34,8 @@ CREATE TABLE IF NOT EXISTS employes (
   classe       TEXT NOT NULL DEFAULT '',
   echelon      TEXT NOT NULL DEFAULT '',
   actif        INTEGER NOT NULL DEFAULT 1,
+  face_descriptor TEXT,
+  face_enrolled_at TEXT,
   created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
@@ -125,6 +128,16 @@ CREATE TABLE IF NOT EXISTS settings (
   valeur TEXT
 );
 
+CREATE TABLE IF NOT EXISTS regles_calcul_paie (
+  id     INTEGER PRIMARY KEY AUTOINCREMENT,
+  code   TEXT NOT NULL,
+  libelle TEXT NOT NULL,
+  ordre  INTEGER NOT NULL,
+  taux   REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_regles_calcul_paie_ordre ON regles_calcul_paie(ordre);
+
 CREATE TABLE IF NOT EXISTS audit_logs (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   utilisateur_id INTEGER REFERENCES utilisateurs(id),
@@ -201,6 +214,17 @@ CREATE TABLE IF NOT EXISTS jours_travail (
   label      TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
   UNIQUE (annee, date)
+);
+
+CREATE TABLE IF NOT EXISTS cycles_calcul (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  annee      INTEGER NOT NULL,
+  mois       INTEGER NOT NULL CHECK (mois BETWEEN 1 AND 12),
+  debut      TEXT NOT NULL,
+  fin        TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  UNIQUE (annee, mois)
 );
 
 CREATE TABLE IF NOT EXISTS pointages (
@@ -316,6 +340,40 @@ CREATE TABLE IF NOT EXISTS grille_salaire (
 );
 CREATE INDEX IF NOT EXISTS idx_grille_rubrique ON grille_salaire(rubrique);
 CREATE INDEX IF NOT EXISTS idx_grille_grade    ON grille_salaire(grade);
+
+-- Paie mensuelle : Indemnités F&V — montants fixes par CATÉGORIE (transport / présence) avec
+-- historique par mois d'effet. Un montant saisi pour (annee, mois) s'applique à ce mois et à
+-- tous les mois SUIVANTS (jusqu'au prochain changement) ; les mois antérieurs conservent le
+-- montant précédemment en vigueur (règle « augmentation annuelle du législateur »).
+CREATE TABLE IF NOT EXISTS indemnites_categorie (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  categorie_id INTEGER NOT NULL REFERENCES categories(id),
+  type         TEXT NOT NULL CHECK (type IN ('transport','presence')),
+  annee        INTEGER NOT NULL CHECK (annee BETWEEN 2000 AND 2100),
+  mois         INTEGER NOT NULL CHECK (mois BETWEEN 1 AND 12),
+  montant      REAL,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  updated_at   TEXT,
+  UNIQUE (categorie_id, type, annee, mois)
+);
+CREATE INDEX IF NOT EXISTS idx_indemnites_cat_effet ON indemnites_categorie(categorie_id, type, annee, mois);
+
+-- Paie mensuelle : Indemnités F&V — surcharges MANUELLES par employé (transport / présence),
+-- versionnées par mois d'effet. Une surcharge saisie pour (annee, mois) prime sur le montant
+-- de la catégorie à partir de ce mois ; les mois antérieurs restent sur le montant de la
+-- catégorie. L'indemnité de Fonction reste une valeur simple sur employes (sans historique).
+CREATE TABLE IF NOT EXISTS indemnites_employe (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  employe_id INTEGER NOT NULL REFERENCES employes(id),
+  type       TEXT NOT NULL CHECK (type IN ('transport','presence')),
+  annee      INTEGER NOT NULL CHECK (annee BETWEEN 2000 AND 2100),
+  mois       INTEGER NOT NULL CHECK (mois BETWEEN 1 AND 12),
+  montant    REAL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  updated_at TEXT,
+  UNIQUE (employe_id, type, annee, mois)
+);
+CREATE INDEX IF NOT EXISTS idx_indemnites_emp_effet ON indemnites_employe(employe_id, type, annee, mois);
 `);
 
 // ---- Migration d'une base existante ----
@@ -420,6 +478,8 @@ function migrate() {
   if (!empCols.includes('indemnite_fonction')) db.exec("ALTER TABLE employes ADD COLUMN indemnite_fonction TEXT");
   if (!empCols.includes('intitule_poste')) db.exec("ALTER TABLE employes ADD COLUMN intitule_poste TEXT");
   if (!empCols.includes('departement')) db.exec("ALTER TABLE employes ADD COLUMN departement TEXT DEFAULT ''");
+  if (!empCols.includes('face_descriptor')) db.exec('ALTER TABLE employes ADD COLUMN face_descriptor TEXT');
+  if (!empCols.includes('face_enrolled_at')) db.exec('ALTER TABLE employes ADD COLUMN face_enrolled_at TEXT');
 
   // Jours fériés : colonne `automatique` (jours fériés auto-gérés, ex. les 2 jours de l'Aïd el-Fitr)
   const jfCols = db.prepare('PRAGMA table_info(jours_feries)').all().map((c) => c.name);
@@ -490,13 +550,19 @@ function migrate() {
     }
   }
 
-  // Rémunération : calage du salaire de base depuis la grille de salaire (grade / classe / echelon)
-  // pour tous les profils — valeur de la grille (aucune indemnité : saisie manuelle). Idempotent.
+  // Rémunération : calage du salaire de base depuis la grille de salaire (Rubrique / Grade /
+  // Classe / Echelon) pour tous les profils — valeur de la grille (aucune indemnité : saisie
+  // manuelle). Correspondance exacte avec la rubrique de l'employé d'abord, repli sans rubrique
+  // si elle n'est pas renseignée. Idempotent.
   db.exec(`
     UPDATE employes
-    SET salaire_base = (SELECT g.valeur FROM grille_salaire g
-                        WHERE g.grade = employes.grade AND g.classe = employes.classe AND g.echelon = employes.echelon
-                        LIMIT 1),
+    SET salaire_base = (
+          SELECT g.valeur FROM grille_salaire g
+          WHERE g.grade = employes.grade AND g.classe = employes.classe AND g.echelon = employes.echelon
+            AND (employes.rubrique = '' OR g.rubrique = employes.rubrique)
+          ORDER BY CASE WHEN g.rubrique = employes.rubrique THEN 0 ELSE 1 END
+          LIMIT 1
+        ),
         rubrique = CASE WHEN employes.rubrique = '' THEN
                     (SELECT g.rubrique FROM grille_salaire g
                      WHERE g.grade = employes.grade AND g.classe = employes.classe AND g.echelon = employes.echelon
@@ -506,6 +572,43 @@ function migrate() {
       AND EXISTS (SELECT 1 FROM grille_salaire g2
                   WHERE g2.grade = employes.grade AND g2.classe = employes.classe AND g2.echelon = employes.echelon)
   `);
+
+  // Catégories professionnelles : séparation de « CADRE ADMINISTRATIF » en deux rubriques
+  // « CADRE ADMINISTRATIF CAT.1 » et « CADRE ADMINISTRATIF CAT.2 ». Les employés du libellé
+  // historique restent rattachés à CAT.1 par défaut ; le passage en CAT.2 se fait manuellement
+  // via la fiche employé (même sélecteur « Catégorie professionnelle »). Idempotent.
+  const cadreLegacy = db.prepare("SELECT id FROM categories WHERE libelle = 'CADRE ADMINISTRATIF'").get();
+  if (cadreLegacy) {
+    db.prepare("UPDATE categories SET libelle = 'CADRE ADMINISTRATIF CAT.1' WHERE id = ?").run(cadreLegacy.id);
+    db.prepare("INSERT OR IGNORE INTO categories (libelle) VALUES ('CADRE ADMINISTRATIF CAT.2')").run();
+  }
+
+  // Repos hebdomadaire PAR CATÉGORIE : jours de la semaine non travaillés (0=dimanche … 6=samedi).
+  // Valeur par défaut « 0,6 » (samedi + dimanche, comportement historique). La catégorie
+  // « FEMME DE MENAGE » travaille le samedi (repos uniquement le dimanche → « 0 ») : son samedi
+  // devient un jour ouvrable compte/déductible du congé annuel. Ces valeurs restent modifiables
+  // depuis la page Catégories. Idempotent.
+  const catCols = db.prepare('PRAGMA table_info(categories)').all().map((c) => c.name);
+  if (!catCols.includes('repos_hebdomadaire')) {
+    db.exec("ALTER TABLE categories ADD COLUMN repos_hebdomadaire TEXT NOT NULL DEFAULT '0,6'");
+  }
+  // Application UNIQUE (balise) : « FEMME DE MENAGE » travaille le samedi → repos dimanche seul
+  // (« 0 »). Une fois posée, l'utilisateur reste libre de la modifier depuis la page Catégories
+  // sans que cette migration ne l'écrase au redémarrage. Idempotent.
+  const fmReposApplique = db.prepare("SELECT valeur FROM settings WHERE cle = 'repos_femme_menage_applique'").get();
+  if (!fmReposApplique) {
+    const fmCategorie = db.prepare("SELECT id FROM categories WHERE UPPER(libelle) = 'FEMME DE MENAGE'").get();
+    if (fmCategorie) db.prepare("UPDATE categories SET repos_hebdomadaire = '0' WHERE id = ?").run(fmCategorie.id);
+    db.prepare("INSERT OR REPLACE INTO settings (cle, valeur) VALUES ('repos_femme_menage_applique', '1')").run();
+  }
+
+  // Paramètre de Salaire → Bulletin de Paie : taux appliqué à chaque rubrique calculée
+  // (CNSS 9,18 %, CSS 1 %, IRPP, retenues sociales 53011/53021/53031…). Éditable et
+  // enregistrable depuis l'onglet « Bulletin de Paie » du Référentiel. Idempotent.
+  const rcCols = db.prepare('PRAGMA table_info(regles_calcul_paie)').all().map((c) => c.name);
+  if (!rcCols.includes('taux')) {
+    db.exec('ALTER TABLE regles_calcul_paie ADD COLUMN taux REAL');
+  }
 }
 
 migrate();
@@ -747,6 +850,50 @@ function deleteMouvement(id) {
   return m;
 }
 
+// ---------------------------------------------------------------------------
+// Indemnités F&V — montants versionnés par mois d'effet (année × 100 + mois).
+// Période = année*100+mois ; la valeur en vigueur pour une période P est le
+// dernier changement enregistré avec (annee*100+mois) <= P. Aucun changement
+// avant P → NULL (le paramétrage de la catégorie ne commence pas encore).
+// ---------------------------------------------------------------------------
+
+// Montant fixe (transport / présence) en vigueur pour une CATÉGORIE à la période P.
+function montantCategorieIndemnite(categorieId, type, periode) {
+  const p = Number(periode);
+  if (!categorieId || !['transport', 'presence'].includes(type) || !Number.isFinite(p)) return null;
+  const r = db.prepare(`
+    SELECT montant FROM indemnites_categorie
+    WHERE categorie_id = ? AND type = ? AND (annee * 100 + mois) <= ?
+    ORDER BY (annee * 100 + mois) DESC, id DESC LIMIT 1
+  `).get(categorieId, type, p);
+  return r ? r.montant : null;
+}
+
+// Dernier montant fixe enregistré pour une catégorie STRICTEMENT AVANT la période
+// (montant précédent historiquement en vigueur avant un changement à la période P).
+function montantCategorieIndemniteAvant(categorieId, type, periode) {
+  const p = Number(periode);
+  if (!categorieId || !['transport', 'presence'].includes(type) || !Number.isFinite(p)) return null;
+  const r = db.prepare(`
+    SELECT montant FROM indemnites_categorie
+    WHERE categorie_id = ? AND type = ? AND (annee * 100 + mois) < ?
+    ORDER BY (annee * 100 + mois) DESC, id DESC LIMIT 1
+  `).get(categorieId, type, p);
+  return r ? r.montant : null;
+}
+
+// Surcharge manuelle (transport / présence) d'un EMPLOYÉ en vigueur à la période P.
+function montantEmployeIndemnite(employeId, type, periode) {
+  const p = Number(periode);
+  if (!employeId || !['transport', 'presence'].includes(type) || !Number.isFinite(p)) return null;
+  const r = db.prepare(`
+    SELECT montant FROM indemnites_employe
+    WHERE employe_id = ? AND type = ? AND (annee * 100 + mois) <= ?
+    ORDER BY (annee * 100 + mois) DESC, id DESC LIMIT 1
+  `).get(employeId, type, p);
+  return r ? r.montant : null;
+}
+
 module.exports = {
   db,
   soldeEmploye,
@@ -759,6 +906,9 @@ module.exports = {
   deleteMouvement,
   recomputeSoldeChain,
   computeSoldeApres,
+  montantCategorieIndemnite,
+  montantCategorieIndemniteAvant,
+  montantEmployeIndemnite,
   TYPES,
   TYPES_CREDIT,
   TYPES_DEBIT,

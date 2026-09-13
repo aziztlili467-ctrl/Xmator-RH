@@ -113,7 +113,7 @@ export default function StatsJournal() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Journal de paie</h2>
+          <h2 className="text-lg font-bold text-slate-900">Journal de présence</h2>
           <p className="text-sm text-slate-500">
             Matrice quotidienne : chaque ligne est un employé, chaque colonne une date. P1 = journée présente (pointage badgeuse),
             complétée par les codifications importées du Journal RMA (A1, CA, MA, R3, RP…).

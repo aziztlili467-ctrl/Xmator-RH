@@ -3,27 +3,73 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const sharp = require('sharp');
-const { db, soldeMaladie, soldeCongeRestantDate, journalSoldeConge } = require('../db');
+const { db, soldeMaladie, soldeCongeRestantDate, journalSoldeConge, montantEmployeIndemnite, montantCategorieIndemnite } = require('../db');
+const { loadContext, estOuvrable, heuresPour } = require('../utils/jourOuvrable');
 const { requireRole } = require('../middleware/auth');
 const router = Router();
 
 const lecture = requireRole('super_admin', 'consultation', 'moderateur');
+// Donnée biométrique : lecture de la signature faciale réservée aux gestionnaires RH
+const gestionFace = requireRole('super_admin', 'moderateur');
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
-// Grille de salaire : valeur (salaire de base) et rubrique correspondant à (grade, classe, echelon)
-function grilleSalaire(grade, classe, echelon) {
+// Indemnités F&V — résolution du montant effectif pour un employé à la période courante.
+// Priorité : surcharge manuelle (indemnites_employe) → montant catégorie (indemnites_categorie) → null.
+// Les anciennes valeurs de la fiche employé (colonnes indemnite_transport / indemnite_presence)
+// ne sont plus utilisées : seul le référentiel « Montants des indemnités F&V » fait foi.
+// L'indemnité de Fonction reste une valeur propre à l'employé.
+function fvPeriodeCourante() {
+  const d = new Date();
+  return d.getFullYear() * 100 + (d.getMonth() + 1);
+}
+function fvPeriodeLabel(p) {
+  const annee = Math.floor(p / 100);
+  const mois = p % 100;
+  return `${String(mois).padStart(2, '0')}/${annee}`;
+}
+function resolverFV(employe, periode) {
+  const surchargeT = montantEmployeIndemnite(employe.id, 'transport', periode);
+  const t = surchargeT !== null ? surchargeT : montantCategorieIndemnite(employe.categorie_id, 'transport', periode);
+  const surchargeP = montantEmployeIndemnite(employe.id, 'presence', periode);
+  const p = surchargeP !== null ? surchargeP : montantCategorieIndemnite(employe.categorie_id, 'presence', periode);
+  return {
+    fv_transport: t,
+    fv_presence: p,
+    fv_fonction: employe.indemnite_fonction,
+    fv_periode: fvPeriodeLabel(periode),
+  };
+}
+
+// Grille de salaire : valeur (salaire de base) et rubrique correspondant à
+// (Rubrique / Grade / Classe / Echelon). Correspondance exacte sur les 4 colonnes d'abord,
+// puis repli sur (grade, classe, echelon) si la rubrique de l'employé n'est pas renseignée
+// ou absente de la grille.
+function grilleSalaire(rubrique, grade, classe, echelon) {
   if (!grade || !classe || !echelon) return null;
-  return db.prepare(
-    'SELECT rubrique, valeur FROM grille_salaire WHERE grade = ? AND classe = ? AND echelon = ?'
-  ).get(String(grade).trim(), String(classe).trim(), String(echelon).trim()) || null;
+  const g = String(grade).trim();
+  const c = String(classe).trim();
+  const ec = String(echelon).trim();
+  const r = rubrique != null ? String(rubrique).trim() : '';
+  let row = null;
+  if (r) {
+    row = db.prepare(
+      'SELECT rubrique, valeur FROM grille_salaire WHERE rubrique = ? AND grade = ? AND classe = ? AND echelon = ?'
+    ).get(r, g, c, ec);
+  }
+  if (!row) {
+    row = db.prepare(
+      'SELECT rubrique, valeur FROM grille_salaire WHERE grade = ? AND classe = ? AND echelon = ? LIMIT 1'
+    ).get(g, c, ec) || null;
+  }
+  return row;
 }
 
 // Consomme les changements de la grille SANS éditer la fiche : recale salaire de base (et rubrique
-// si vide) à la lecture, à partir de (grade / classe / echelon). Appliqué à toutes les lectures d'employé.
+// si vide) à la lecture, à partir de (rubrique / grade / classe / echelon). Appliqué à toutes les lectures d'employé.
 function enrichirGrille(e) {
   if (!e) return e;
-  const g = grilleSalaire(e.grade, e.classe, e.echelon);
+  const g = grilleSalaire(e.rubrique, e.grade, e.classe, e.echelon);
   if (g) {
     e.salaire_base = String(g.valeur);
     if (!e.rubrique) e.rubrique = g.rubrique;
@@ -43,10 +89,41 @@ const BASE = `
          e.cnam, e.type_contrat, e.banque, e.titulaire_compte, e.type_compte, e.rib,
          e.salaire_base, e.indemnite_presence, e.indemnite_transport, e.indemnite_fonction, e.intitule_poste,
          e.departement,
+         (e.face_descriptor IS NOT NULL AND e.face_descriptor <> '') AS has_face,
          c.libelle AS categorie
   FROM employes e
   JOIN categories c ON c.id = e.categorie_id
 `;
+
+// Liste des signatures faciales (descripteurs 128-D) des employés ENRÔLÉS — destiné à la
+// borne de pointage biométrique Xmator-Eye (reconnaissance faciale côté client kiosque).
+// Donnée biométrique : réservée aux gestionnaires RH (même garde que le GET face-descriptor).
+// Retourne uniquement les employés ayant une signature ; neutre sur le reste de la fiche.
+router.get('/descriptors', gestionFace, (req, res) => {
+  const rows = db.prepare(`
+    SELECT e.id, e.matricule, e.nom, e.prenom, e.actif, e.face_descriptor, c.libelle AS categorie
+    FROM employes e
+    JOIN categories c ON c.id = e.categorie_id
+    WHERE e.face_descriptor IS NOT NULL AND e.face_descriptor <> ''
+    ORDER BY CAST(e.matricule AS INTEGER), e.matricule
+  `).all();
+  const employes = [];
+  for (const r of rows) {
+    let descriptor = null;
+    try { descriptor = JSON.parse(r.face_descriptor); } catch { descriptor = null; }
+    if (!descriptor || !Array.isArray(descriptor) || descriptor.length !== 128) continue;
+    employes.push({
+      id: r.id,
+      matricule: r.matricule,
+      nom: r.nom,
+      prenom: r.prenom,
+      actif: !!r.actif,
+      categorie: r.categorie,
+      descriptor,
+    });
+  }
+  res.json({ count: employes.length, employes });
+});
 
 router.get('/', lecture, (req, res) => {
   const { search, categorie, actif } = req.query;
@@ -66,13 +143,17 @@ router.get('/', lecture, (req, res) => {
     params.push(Number(actif));
   }
   sql += ' ORDER BY CAST(e.matricule AS INTEGER), e.matricule';
+  const periode = fvPeriodeCourante();
   const rows = db.prepare(sql).all(...params).map(enrichirGrille);
-  res.json(rows.map((r) => ({ ...r, solde: soldeCongeRestantDate(r.id, todayISO()), solde_maladie: soldeMaladie(r.id) })));
+  res.json(rows.map((r) => ({ ...r, ...resolverFV(r, periode), solde: soldeCongeRestantDate(r.id, todayISO()), solde_maladie: soldeMaladie(r.id) })));
 });
 
 router.get('/:id', lecture, (req, res) => {
   const e = enrichirGrille(db.prepare(BASE + ' WHERE e.id = ?').get(req.params.id));
   if (!e) return res.status(404).json({ error: 'Employé introuvable.' });
+
+  const periode = fvPeriodeCourante();
+  const fv = resolverFV(e, periode);
 
   // Solde de congé cohérent avec le « Journal du solde de congé » (source de vérité RMA) :
   // accorde = dotations crédit, consomme = prélèvements CA/DJ du journal RMA (toute cellule
@@ -97,7 +178,7 @@ router.get('/:id', lecture, (req, res) => {
     ORDER BY m.date_operation DESC, m.id DESC
   `).all(e.id);
 
-  res.json({ ...e, solde, solde_maladie: soldeMaladieSolde, accorde, consomme, accorde_maladie: accordeMaladie, consomme_maladie: consommeMaladie, mouvements, annees_service: anneesService(e.date_embauche) });
+  res.json({ ...e, ...fv, solde, solde_maladie: soldeMaladieSolde, accorde, consomme, accorde_maladie: accordeMaladie, consomme_maladie: consommeMaladie, mouvements, annees_service: anneesService(e.date_embauche) });
 });
 
 router.post('/', (req, res) => {
@@ -111,7 +192,7 @@ router.post('/', (req, res) => {
   const cat = db.prepare('SELECT id FROM categories WHERE id = ?').get(Number(categorie_id));
   if (!cat) return res.status(400).json({ error: 'Catégorie inconnue.' });
   try {
-    const gr = grilleSalaire(grade, classe, echelon);
+const gr = grilleSalaire(rubrique, grade, classe, echelon);
     const rubriqueRef = String(rubrique || '').trim() || (gr ? gr.rubrique : '');
     const r = db.prepare('INSERT INTO employes (matricule, nom, prenom, categorie_id, rubrique, grade, classe, echelon, actif, date_naissance, date_embauche, adresse, telephone, situation_familiale, nombre_enfants, lieu_naissance, sexe, nationalite, groupe_sanguin, cin, date_emission_cin, service_militaire, cnss, rue, code_postal, localite, gouvernorat, gsm, adresse_electronique, conjoint_nom, conjoint_date_naissance, enfants_details, niveau_etudes, diplome, date_emission_diplome, cnam, type_contrat, banque, titulaire_compte, type_compte, rib, salaire_base, indemnite_presence, indemnite_transport, indemnite_fonction, intitule_poste, departement) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
       .run(mat, String(nom).trim(), String(prenom).trim(), Number(categorie_id),
@@ -220,7 +301,7 @@ router.post('/import-rh', (req, res) => {
 router.put('/:id', (req, res) => {
   const { matricule, nom, prenom, categorie_id, rubrique, grade, classe, echelon, actif, date_naissance, date_embauche, adresse, telephone, situation_familiale, nombre_enfants, lieu_naissance, sexe, nationalite, groupe_sanguin, cin, date_emission_cin, service_militaire, cnss, rue, code_postal, localite, gouvernorat, gsm, adresse_electronique, conjoint_nom, conjoint_date_naissance, enfants_details, niveau_etudes, diplome, date_emission_diplome, cnam, type_contrat, banque, titulaire_compte, type_compte, rib, salaire_base, indemnite_presence, indemnite_transport, indemnite_fonction, intitule_poste, departement } = req.body || {};
   const id = Number(req.params.id);
-  const e = db.prepare('SELECT id, matricule FROM employes WHERE id = ?').get(id);
+  const e = db.prepare('SELECT id, matricule, rubrique, grade, classe, echelon FROM employes WHERE id = ?').get(id);
   if (!e) return res.status(404).json({ error: 'Employé introuvable.' });
 
   if (categorie_id && !db.prepare('SELECT id FROM categories WHERE id = ?').get(Number(categorie_id))) {
@@ -235,7 +316,14 @@ router.put('/:id', (req, res) => {
     if (conflict) return res.status(400).json({ error: 'Ce matricule est déjà utilisé par un autre employé.' });
   }
 
-  const gr = grilleSalaire(grade, classe, echelon);
+  // Correspondance grille sur (Rubrique / Grade / Classe / Echelon) : les champs absents du corps
+  // reprennent la valeur déjà enregistrée, afin que le salaire de base soit recalé correctement
+  // même lors d'une modification partielle (liste Employés : Rubrique, Grade, Classe ou Echelon).
+  const rubEff = rubrique !== undefined && rubrique !== null ? String(rubrique).trim() : (e.rubrique || '');
+  const gradeEff = grade !== undefined && grade !== null ? String(grade).trim() : (e.grade || '');
+  const classeEff = classe !== undefined && classe !== null ? String(classe).trim() : (e.classe || '');
+  const echelonEff = echelon !== undefined && echelon !== null ? String(echelon).trim() : (e.echelon || '');
+  const gr = grilleSalaire(rubEff, gradeEff, classeEff, echelonEff);
 
   db.prepare(`
     UPDATE employes SET
@@ -292,7 +380,7 @@ router.put('/:id', (req, res) => {
     nom !== undefined ? String(nom).trim() : null,
     prenom !== undefined ? String(prenom).trim() : null,
     categorie_id !== undefined ? Number(categorie_id) : null,
-    rubrique !== undefined ? (String(rubrique).trim() || (gr ? gr.rubrique : '')) : (gr ? gr.rubrique : null),
+    rubrique !== undefined ? (String(rubrique).trim() || (gr ? gr.rubrique : '')) : null,
     grade !== undefined ? String(grade).trim() : null,
     classe !== undefined ? String(classe).trim() : null,
     echelon !== undefined ? String(echelon).trim() : null,
@@ -372,7 +460,7 @@ router.delete('/:id', (req, res) => {
 
 // Un compte de rôle 'employe' ne peut accéder qu'à SA propre fiche
 function validerAccesMatricule(req, res, next) {
-  const e = db.prepare('SELECT id FROM employes WHERE matricule = ?').get(String(req.params.matricule));
+  const e = db.prepare('SELECT id, categorie_id FROM employes WHERE matricule = ?').get(String(req.params.matricule));
   if (!e) return res.status(404).json({ error: 'Employé introuvable.' });
   req.employe = e;
   if (req.user.role === 'employe') {
@@ -573,6 +661,11 @@ router.get('/:matricule/heures', validerAccesMatricule, (req, res) => {
 
   const arrondi = (v) => Math.round(v * 100) / 100;
 
+  // Jours de travail fondés sur la CATÉGORIE de l'employé : repos hebdomadaire + calendrier
+  // (le samedi travaillé, ex. Femme de ménage, produit des heures légales + jours légaux).
+  const ctxH = loadContext();
+  const catH = req.employe.categorie_id;
+
   const parJour = [];
   const moisMap = {};
   const d = new Date(debutPar + 'T00:00:00');
@@ -580,14 +673,15 @@ router.get('/:matricule/heures', validerAccesMatricule, (req, res) => {
   while (d <= f) {
     const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const legal = legalMap[date];
+    const ouvrable = estOuvrable(ctxH, catH, date, legal);
     const travaille = travailMap[date] || 0;
-    const legalHeures = legal ? legal.heures : null;
+    const legalHeures = ouvrable ? heuresPour(ctxH, catH, date, legal) || null : null;
     const enMaladie = maladieJours.has(date);
     // Jour en arrêt maladie validé : aucune exigence de présence → pas de % négatif
     const presence = legalHeures && !enMaladie && legalHeures > 0 ? Math.round((travaille / legalHeures) * 1000) / 10 : null;
     parJour.push({
       date,
-      jour_type: legal ? legal.source : null,
+      jour_type: legal ? legal.source : (ouvrable ? 'semaine' : null),
       label: legal ? legal.label : null,
       legal_heures: legalHeures,
       travaille_heures: arrondi(travaille),
@@ -674,6 +768,46 @@ router.post('/:matricule/photo', validerAccesMatricule, upload.single('photo'), 
   } catch (e) {
     res.status(400).json({ error: 'Conversion de l\'image impossible : ' + e.message });
   }
+});
+
+// ---- Reconnaissance faciale Xmator-Eye : signature (descriptor 128 floats) liée au matricule ----
+router.get('/:id/face-descriptor', gestionFace, (req, res) => {
+  const e = db.prepare('SELECT id, matricule, face_descriptor, face_enrolled_at FROM employes WHERE id = ?').get(Number(req.params.id));
+  if (!e) return res.status(404).json({ error: 'Employé introuvable.' });
+  let descriptor = null;
+  if (e.face_descriptor) {
+    try { descriptor = JSON.parse(e.face_descriptor); } catch { descriptor = null; }
+  }
+  const enrole = Array.isArray(descriptor) && descriptor.length === 128;
+  res.json({
+    matricule: e.matricule,
+    enrole,
+    descriptor: enrole ? descriptor : null,
+    enrole_le: enrole ? e.face_enrolled_at : null,
+  });
+});
+
+router.put('/:id/face-descriptor', (req, res) => {
+  const id = Number(req.params.id);
+  const e = db.prepare('SELECT id FROM employes WHERE id = ?').get(id);
+  if (!e) return res.status(404).json({ error: 'Employé introuvable.' });
+  const d = req.body && req.body.descriptor;
+  if (!Array.isArray(d) || d.length !== 128 || !d.every((v) => typeof v === 'number' && Number.isFinite(v))) {
+    return res.status(400).json({ error: 'Descriptor facial invalide : tableau de 128 nombres attendu.' });
+  }
+  const compacte = JSON.stringify(Array.from(d, (v) => Number(v.toFixed(6))));
+  const enroleLe = new Date().toISOString();
+  db.prepare('UPDATE employes SET face_descriptor = ?, face_enrolled_at = ? WHERE id = ?')
+    .run(compacte, enroleLe, id);
+  res.json({ ok: true, id, enrole: true, enrole_le: enroleLe });
+});
+
+router.delete('/:id/face-descriptor', (req, res) => {
+  const id = Number(req.params.id);
+  const e = db.prepare('SELECT id FROM employes WHERE id = ?').get(id);
+  if (!e) return res.status(404).json({ error: 'Employé introuvable.' });
+  db.prepare('UPDATE employes SET face_descriptor = NULL, face_enrolled_at = NULL WHERE id = ?').run(id);
+  res.json({ ok: true, id });
 });
 
 module.exports = router;

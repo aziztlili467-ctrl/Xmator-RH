@@ -30,6 +30,7 @@ import {
   IconBanknotes,
   IconAward,
   IconPrinter,
+  IconCamera,
 } from './icons';
 import { useAuth } from '../AuthContext';
 import { api, getToken, getSessionId } from '../api';
@@ -59,11 +60,16 @@ const NAV = [
   { section: 'Paie Mensuelle', roles: ['super_admin', 'consultation', 'moderateur'] },
   { to: '/stats-journal', label: 'Journal de paie', icon: IconTrendUp, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
   { to: '/journal-rma', label: 'Journal RMA', icon: IconClipboardList, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
+  { to: '/calcul-paie', label: 'Calcul de Paie', icon: IconClipboardList, end: true, roles: ['super_admin', 'consultation', 'moderateur'], module: 'paie' },
+  { to: '/indemnites-fv', label: 'Indemnités FV', icon: IconBanknotes, end: true, roles: ['super_admin', 'consultation', 'moderateur'], module: 'paie' },
+  { to: '/simulateur-impot', label: 'Simulateur Impôt', icon: IconTrendUp, end: true, roles: ['super_admin', 'consultation', 'moderateur'], module: 'paie' },
   { to: '/parametres-codification', label: 'Paramètres & Codification', icon: IconSettings, end: true, roles: ['super_admin'] },
   { to: '/grille-salaire', label: 'Grille de Salaire', icon: IconClipboardList, end: true, roles: ['super_admin'] },
   { section: 'Horaires', roles: ['super_admin', 'consultation', 'moderateur'] },
   { to: '/horaires', label: 'Horaires de travail', icon: IconClock, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
   { to: '/presence', label: 'Pointages & présences', icon: IconUserClock, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
+  { to: '/borne', label: 'Borne de pointage (Xmator-Eye)', icon: IconCamera, end: true, roles: ['super_admin', 'consultation', 'moderateur'], module: 'presence' },
+  { to: '/pointage-biometrique', label: 'Pointage biométrique', icon: IconCamera, end: true, roles: ['super_admin', 'consultation', 'moderateur'], module: 'presence' },
   { to: '/notification-absences', label: "Notification d'Absences", icon: IconBellAlert, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
   { section: 'Maladie', roles: ['super_admin', 'moderateur'] },
   { to: '/maladie/nouvel-arret', label: 'Nouvel arrêt maladie', icon: IconStethoscope, end: true, roles: ['super_admin', 'moderateur'], module: 'maladie' },
@@ -85,6 +91,8 @@ const NAV = [
   { to: '/referentiel/parametre-salaire', label: 'Paramètre de Salaire', icon: IconBanknotes, end: true, roles: ['super_admin'] },
   { to: '/referentiel/parametres-conge-maladie', label: 'Paramètres de Congé & Maladie', icon: IconCalendarCheck, end: true, roles: ['super_admin'] },
   { to: '/referentiel/parametres-pointage', label: 'Paramètres de Pointage', icon: IconUserClock, end: true, roles: ['super_admin'] },
+  { to: '/parametres-presence', label: 'Paramètres de présence', icon: IconSettings, end: true, roles: ['super_admin'], module: 'presence' },
+  { to: '/parametres-indemnites', label: 'Paramètres Indemnités', icon: IconBanknotes, end: true, roles: ['super_admin'], module: 'paie' },
   { to: '/referentiel/promotion-notation', label: 'Promotion & Notation', icon: IconAward, end: true, roles: ['super_admin'] },
   { to: '/referentiel/saas-tableau-de-bord', label: 'SaaS & Tableau de Bord', icon: IconDashboard, end: true, roles: ['super_admin'] },
 ];

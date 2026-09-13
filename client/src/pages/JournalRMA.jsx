@@ -248,7 +248,7 @@ tfoot td{border-top:0.8px solid #333;background:#f8fafc;font-weight:700}
         <h2 className="text-lg font-bold text-slate-900">Journal RMA (Repos · Maladie · Absence)</h2>
         <p className="text-sm text-slate-500">
           Codifications complémentaires (A1, CA, MA, R3, RP…) importées par matricule et date. Elles sont fusionnées avec P1
-          dans le Journal de paie ; les couleurs sont celles configurées dans « Paramètres & Codification ».
+          dans le Journal de présence ; les couleurs sont celles configurées dans « Paramètres & Codification ».
         </p>
       </div>
 
@@ -493,7 +493,7 @@ tfoot td{border-top:0.8px solid #333;background:#f8fafc;font-weight:700}
             <p className="mt-2 text-sm text-slate-600">
               Cette action supprimera définitivement toutes les codifications importées du{' '}
               <span className="font-mono">{fmtDate(debut)}</span> au <span className="font-mono">{fmtDate(fin)}</span>.
-              Le Journal de paie redeviendra basé uniquement sur les pointages badgeuse (P1).
+              Le Journal de présence redeviendra basé uniquement sur les pointages badgeuse (P1).
               Elle est consignée au mouchard. Continuer ?
             </p>
             <div className="mt-5 flex justify-end gap-2">

@@ -59,12 +59,14 @@ export function canAccess(role, pathname) {
   if (!role) return false;
   if (pathname === '/login' || pathname === '/acces-refuse') return true;
   if (pathname === '/mon-espace') return role === 'employe' || role === 'super_admin';
+  // Borne kiosk biométrique : réservée au compte kiosque (super_admin)
+  if (pathname === '/borne') return role === 'super_admin';
   if (role === 'super_admin') return true;
   if (role === 'consultation') {
-    return pathname === '/' || pathname === '/stats-journal' || pathname === '/journal-rma' || pathname === '/horaires' || pathname === '/presence' || pathname === '/notification-absences';
+    return pathname === '/' || pathname === '/stats-journal' || pathname === '/journal-rma' || pathname === '/horaires' || pathname === '/presence' || pathname === '/pointage-biometrique' || pathname === '/notification-absences';
   }
   if (role === 'moderateur') {
-    if (pathname === '/mon-espace' || pathname === '/comptes' || pathname === '/maintenance' || pathname === '/mouchard' || pathname === '/parametres-codification') return false;
+    if (pathname === '/mon-espace' || pathname === '/comptes' || pathname === '/maintenance' || pathname === '/mouchard' || pathname === '/parametres-codification' || pathname === '/indemnites-fv' || pathname === '/parametres-indemnites') return false;
     if (pathname.startsWith('/application')) return false;
     return true;
   }

@@ -1,35 +1,48 @@
 const { Router } = require('express');
 const { db } = require('../db');
+const { parseRepos } = require('../utils/jourOuvrable');
 const router = Router();
+
+const REPOS_DEFAULT = '0,6';
+// Canonicalise les jours de repos hebdomadaire (0=dimanche … 6=samedi) : ensemble trié, '0,6' par défaut.
+function normRepos(v) {
+  const set = parseRepos(v);
+  if (v == null || v === '') return REPOS_DEFAULT;
+  return [...set].sort((a, b) => a - b).join(',');
+}
+
+function readBody(req, res) {
+  const libelle = (req.body || {}).libelle;
+  if (!libelle || !String(libelle).trim()) {
+    res.status(400).json({ error: 'Le libellé de la catégorie est obligatoire.' });
+    return null;
+  }
+  return { libelle: String(libelle).trim(), repos: normRepos(req.body.repos_hebdomadaire) };
+}
 
 router.get('/', (req, res) => {
   res.json(db.prepare('SELECT * FROM categories ORDER BY libelle').all());
 });
 
 router.post('/', (req, res) => {
-  const { libelle } = req.body || {};
-  if (!libelle || !String(libelle).trim()) {
-    return res.status(400).json({ error: 'Le libellé de la catégorie est obligatoire.' });
-  }
+  const body = readBody(req, res);
+  if (!body) return;
   try {
-    const r = db.prepare('INSERT INTO categories (libelle) VALUES (?)').run(String(libelle).trim());
-    res.status(201).json({ id: r.lastInsertRowid, libelle: String(libelle).trim() });
+    const r = db.prepare('INSERT INTO categories (libelle, repos_hebdomadaire) VALUES (?, ?)').run(body.libelle, body.repos);
+    res.status(201).json({ id: r.lastInsertRowid, libelle: body.libelle, repos_hebdomadaire: body.repos });
   } catch (e) {
     res.status(400).json({ error: 'Cette catégorie existe déjà.' });
   }
 });
 
 router.put('/:id', (req, res) => {
-  const { libelle } = req.body || {};
-  if (!libelle || !String(libelle).trim()) {
-    return res.status(400).json({ error: 'Le libellé de la catégorie est obligatoire.' });
-  }
-  const lib = String(libelle).trim();
-  const conflict = db.prepare('SELECT id FROM categories WHERE libelle = ? AND id != ?').get(lib, req.params.id);
+  const body = readBody(req, res);
+  if (!body) return;
+  const conflict = db.prepare('SELECT id FROM categories WHERE libelle = ? AND id != ?').get(body.libelle, req.params.id);
   if (conflict) return res.status(400).json({ error: 'Cette catégorie existe déjà.' });
-  const r = db.prepare('UPDATE categories SET libelle = ? WHERE id = ?').run(lib, req.params.id);
+  const r = db.prepare('UPDATE categories SET libelle = ?, repos_hebdomadaire = ? WHERE id = ?').run(body.libelle, body.repos, req.params.id);
   if (r.changes === 0) return res.status(404).json({ error: 'Catégorie introuvable.' });
-  res.json({ ok: true, id: Number(req.params.id), libelle: lib });
+  res.json({ ok: true, id: Number(req.params.id), libelle: body.libelle, repos_hebdomadaire: body.repos });
 });
 
 router.delete('/:id', (req, res) => {

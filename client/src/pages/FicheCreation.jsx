@@ -86,7 +86,7 @@ const FORM_VIDE = {
   conjoint_nom: '', conjoint_date_naissance: '', enfants_details: '[]',
   niveau_etudes: '', diplome: '', date_emission_diplome: '',
   cnam: '', type_contrat: '', banque: '', titulaire_compte: '', type_compte: '', rib: '',
-  salaire_base: '', indemnite_presence: '', indemnite_transport: '', indemnite_fonction: '',
+  salaire_base: '',
   rue: '', code_postal: '', localite: '', gouvernorat: '',
   gsm: '', adresse_electronique: '', actif: 1,
 };
@@ -112,7 +112,7 @@ function fieldicon(id) {
     date_embauche: IconCalendarDays, cnss: IconIdentification, service_militaire: IconShieldCheck,
     niveau_etudes: IconAcademicCap, diplome: IconAward, date_emission_diplome: IconCalendarDays,
     cnam: IconShieldCheck, type_contrat: IconBriefcase, banque: IconBuildingOffice, titulaire_compte: IconUserCheck, type_compte: IconCreditCard, rib: IconCreditCard,
-    salaire_base: IconBanknotes, indemnite_presence: IconUserCheck, indemnite_transport: IconMapPin, indemnite_fonction: IconBriefcase,
+    salaire_base: IconBanknotes,
   })[id] || IconUser;
 }
 
@@ -130,7 +130,7 @@ function iconNameFor(id) {
     date_embauche: 'calendar', cnss: 'id', service_militaire: 'shield',
     niveau_etudes: 'school', diplome: 'award', date_emission_diplome: 'calendar',
     cnam: 'shield', type_contrat: 'briefcase', banque: 'building', titulaire_compte: 'check', type_compte: 'card', rib: 'card',
-    salaire_base: 'bank', indemnite_presence: 'check', indemnite_transport: 'pin', indemnite_fonction: 'briefcase',
+    salaire_base: 'bank',
   })[id] || 'user';
 }
 
@@ -210,9 +210,6 @@ const CHAMPS = {
     { id: 'echelon', label: 'Échelon', type: 'select' },
     { id: 'date_embauche', label: "Date d'embauche", type: 'date' },
     { id: 'salaire_base', label: 'Salaire de base (DT)' },
-    { id: 'indemnite_presence', label: 'Indemnité de présence (DT)' },
-    { id: 'indemnite_transport', label: 'Indemnité de transport (DT)' },
-    { id: 'indemnite_fonction', label: 'Indemnité de fonction (DT)' },
   ],
   sociale: [
     { id: 'cnam', label: 'N° CNAM' },

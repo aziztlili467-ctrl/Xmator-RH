@@ -1,10 +1,19 @@
 const { Router } = require('express');
 const path = require('path');
 const { db } = require('../db');
+const { loadContext, estOuvrable, reposFor } = require('../utils/jourOuvrable');
+const { departementsPresenceDefaut, normaliserDept } = require('../utils/presenceDefaut');
 const { buildPdf } = require('../utils/pdfJournal');
 const router = Router();
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Jour ouvrable pour UN employé : calendrier (fait foi) si l'année est configurée, sinon jour de
+// semaine hors repos hebdomadaire de sa catégorie (le samedi travaillé, ex. Femme de ménage, compte).
+function dayOuvrable(ctx, categorieId, iso, legalByDate) {
+  if (legalByDate && Object.keys(legalByDate).length > 0) return estOuvrable(ctx, categorieId, iso, legalByDate[iso]);
+  return !reposFor(categorieId).has(new Date(iso + 'T00:00:00').getDay());
+}
 
 // Jours ouvrés (hors samedi/dimanche) entre deux dates incluses.
 function nbJours(debut, fin) {
@@ -50,7 +59,7 @@ function isWeekend(iso) {
 // (`codes_importes` : A1/CA/MA/R3/RP…) — plusieurs codes le même jour sont joints par '/'.
 function computeStats(debut, fin) {
   const employes = db.prepare(`
-    SELECT e.id, e.matricule, e.nom, e.prenom, c.libelle AS categorie
+    SELECT e.id, e.matricule, e.nom, e.prenom, e.departement, e.categorie_id, c.libelle AS categorie
     FROM employes e
     JOIN categories c ON c.id = e.categorie_id
     WHERE e.actif = 1
@@ -58,15 +67,14 @@ function computeStats(debut, fin) {
   `).all();
 
   const dates = listDates(debut, fin);
-  // Calendrier administratif : jours ouvrables (heures > 0)
-  const legalRows = db.prepare("SELECT date, heures FROM jours_travail WHERE date >= ? AND date <= ?").all(debut, fin);
-  const legalMap = {};
-  for (const r of legalRows) legalMap[r.date] = Number(r.heures) || 0;
-  const hasCal = legalRows.length > 0;
-  const isOuvrable = (iso) => {
-    if (!hasCal) { const wd = new Date(iso + 'T00:00:00').getDay(); return wd !== 0 && wd !== 6; }
-    return (legalMap[iso] || 0) > 0;
-  };
+  // Calendrier administratif (ligne complète source/label) + repos hebdomadaire par catégorie :
+  // le samedi resté travaillé (ex. Femme de ménage) compte dans CODIFIÉS comme les autres jours.
+  const legalRows = db.prepare("SELECT date, heures, source, label FROM jours_travail WHERE date >= ? AND date <= ?").all(debut, fin);
+  const legalByDate = {};
+  for (const r of legalRows) legalByDate[r.date] = r;
+  const ctx = loadContext();
+  const empCat = Object.fromEntries(employes.map((e) => [e.id, e.categorie_id]));
+  const isOuvrableEmp = (empId, iso) => dayOuvrable(ctx, empCat[empId], iso, legalByDate);
 
   const jours = {};
 
@@ -99,13 +107,34 @@ function computeStats(debut, fin) {
     }
   }
 
+  // Présence par défaut : les employés des départements configurés (ex. Comptoir) sont considérés
+  // PRÉSENTS (P1) sur leurs jours ouvrables selon le calendrier. Une codification déjà insérée
+  // (pointage badgeuse ou Journal RMA : MA, CA, CE, A1…) remplace automatiquement cet état — on
+  // ne remplit que les cases vides, après fusion des pointages et des codifications.
+  // Jours à VENIR : figés — seuls les jours ≤ date système du jour sont « pris par défaut » ;
+  // le lendemain d'un jour s'affiche uniquement quand la date système l'atteint.
+  const deptsDefaut = new Set(departementsPresenceDefaut().map(normaliserDept));
+  const aujourdhui = toISO(new Date());
+  if (deptsDefaut.size) {
+    for (const e of employes) {
+      if (!deptsDefaut.has(normaliserDept(e.departement))) continue;
+      for (const iso of dates) {
+        if (iso > aujourdhui || (jours[e.id] && jours[e.id][iso])) continue;
+        if (isOuvrableEmp(e.id, iso)) {
+          if (!jours[e.id]) jours[e.id] = {};
+          jours[e.id][iso] = 'P1';
+        }
+      }
+    }
+  }
+
   // Totaux synchronisés avec le dashboard : seulement les jours ouvrables comptent.
   // Demi-journée (CA en demi ou DJ) = 0.5 (même règle dashboard) ; P1 sur férié/WE = 0.
   const parCode = {};
   let total = 0;
   for (const [empId, jmap] of Object.entries(jours)) {
     for (const [iso, cell] of Object.entries(jmap)) {
-      if (!isOuvrable(iso)) continue;
+      if (!isOuvrableEmp(empId, iso)) continue;
       for (const c of String(cell).split('/')) {
         if ((c === 'CA' && joursDemi[empId] && joursDemi[empId][iso]) || c === 'DJ') {
           parCode[c] = (parCode[c] || 0) + 0.5;
@@ -193,24 +222,26 @@ router.get('/xls', (req, res) => {
   // Styles générés par code présent dans la période (cellules colorées selon la codification)
   const codesUtilises = Object.keys(stats.totaux.par_code || {}).sort();
 
-  // Totaux XLS synchronisés dashboard : ouvrables uniquement, CA demi = 0.5
-  const legalMapXls = {};
-  for (const r of db.prepare("SELECT date, heures FROM jours_travail WHERE date >= ? AND date <= ?").all(debut, fin)) legalMapXls[r.date]=Number(r.heures)||0;
-  const hasCalXls = Object.keys(legalMapXls).length>0;
-  const isOuvXls = (iso) => hasCalXls ? (legalMapXls[iso]||0)>0 : (new Date(iso+'T00:00:00').getDay()!==0 && new Date(iso+'T00:00:00').getDay()!==6);
+  // Totaux XLS synchronisés dashboard : ouvrables PAR CATÉGORIE uniquement, CA demi = 0.5
+  const legalRowsXls = db.prepare("SELECT date, heures, source, label FROM jours_travail WHERE date >= ? AND date <= ?").all(debut, fin);
+  const legalByDateXls = {};
+  for (const r of legalRowsXls) legalByDateXls[r.date] = r;
+  const ctxXls = loadContext();
+  const empCatXls = Object.fromEntries(employes.map((e) => [e.id, e.categorie_id]));
+  const isOuvEmp = (id, iso) => dayOuvrable(ctxXls, empCatXls[id], iso, legalByDateXls);
   const totalJoursEmp = (id) => {
     if (!jours[id]) return 0;
     let s=0;
     for (const [iso,cell] of Object.entries(jours[id])) {
-      if (!isOuvXls(iso)) continue;
+      if (!isOuvEmp(id, iso)) continue;
       for (const c of String(cell).split('/')) { if ((c==='CA' && joursDemi[id] && joursDemi[id][iso]) || c==='DJ') s+=0.5; else s+=1; }
     }
     return Math.round(s*2)/2;
   };
   const countDate = (iso) => {
-    if (!isOuvXls(iso)) return 0;
     let s=0;
     for (const e of employes) {
+      if (!isOuvEmp(e.id, iso)) continue;
       const cell=jours[e.id]?jours[e.id][iso]:null;
       if (!cell) continue;
       for (const c of String(cell).split('/')) { if ((c==='CA' && joursDemi[e.id] && joursDemi[e.id][iso]) || c==='DJ') s+=0.5; else s+=1; }

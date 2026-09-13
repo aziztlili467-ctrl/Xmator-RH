@@ -109,31 +109,6 @@ export default function Donut3DStat({ data = [], size = 220, interactive = true 
         </div>
       </div>
 
-      {/* légendes circulaires avec flèches */}
-      <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible" viewBox={`0 0 ${size} ${size}`} style={{ transform: `rotateX(${rotateX}deg)` }}>
-        {data.map((d, i) => {
-          const start = data.slice(0, i).reduce((s, x) => s + x.value, 0) / total * 360;
-          const sweep = (d.value / total) * 360;
-          const mid = start - 90 + sweep / 2;
-          const rad = (mid * Math.PI) / 180;
-          const cx = size / 2, cy = size / 2;
-          const rOuter = size * 0.42;
-          const rLabel = size * 0.64;
-          const x1 = cx + Math.cos(rad) * rOuter;
-          const y1 = cy + Math.sin(rad) * rOuter;
-          const x2 = cx + Math.cos(rad) * rLabel;
-          const y2 = cy + Math.sin(rad) * rLabel;
-          if (d.value / total < 0.04) return null;
-          return <line key={`line-${d.name}`} x1={x1} y1={y1} x2={x2} y2={y2} stroke={d.color} strokeWidth="1.2" opacity={hoveredIdx === i ? 1 : 0.7} markerEnd={`url(#arrow-${i})`} />;
-        })}
-        <defs>
-          {data.map((d, i) => (
-            <marker key={i} id={`arrow-${i}`} viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto">
-              <path d="M0,0 L6,3 L0,6 z" fill={d.color} />
-            </marker>
-          ))}
-        </defs>
-      </svg>
       {data.map((d, i) => {
         const start = data.slice(0, i).reduce((s, x) => s + x.value, 0) / total * 360;
         const sweep = (d.value / total) * 360;

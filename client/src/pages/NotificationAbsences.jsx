@@ -59,7 +59,7 @@ export default function NotificationAbsences() {
     if (!form.date_debut || !form.date_fin) return;
     if (form.date_fin < form.date_debut) { setMessageApercu('La date de fin doit être postérieure ou égale à la date de début.'); return; }
     const t = setTimeout(() => {
-      api.joursOuvrablesAbsence({ debut: form.date_debut, fin: form.date_fin })
+      api.joursOuvrablesAbsence({ debut: form.date_debut, fin: form.date_fin, matricule: form.matricule || undefined })
         .then((r) => {
           if (r.jours === null) setMessageApercu(r.message || 'Calendrier non configuré.');
           else { setApercuJours(r); setMessageApercu(''); }

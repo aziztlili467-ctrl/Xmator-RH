@@ -18,17 +18,19 @@ export default function ReferentielPlaceholder({ titre, description, rubriques, 
           </span>
         </div>
 
-        <div className="mt-5">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Réglages prévus</p>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {rubriques.map((r) => (
-              <div key={r} className="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50/50 px-4 py-3 text-sm text-slate-700">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-brand-700 ring-1 ring-slate-200"><IconActivity /></span>
-                {r}
-              </div>
-            ))}
+        {rubriques && rubriques.length > 0 && (
+          <div className="mt-5">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Réglages prévus</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {rubriques.map((r) => (
+                <div key={r} className="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50/50 px-4 py-3 text-sm text-slate-700">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-brand-700 ring-1 ring-slate-200"><IconActivity /></span>
+                  {r}
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 p-8 text-center">

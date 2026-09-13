@@ -1,12 +1,22 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { api } from '../api';
 import { fmtJours, downloadFile } from '../utils';
 import SoldeJauge from '../components/SoldeJauge';
-import { IconUsers, IconDownload, IconUpload, IconAlert } from '../components/icons';
+import { IconUsers, IconDownload, IconUpload, IconAlert, IconUserCheck, IconTrash, IconCamera } from '../components/icons';
+import { ouvrirFluxVideo, arreterFluxVideo, MESSAGES_CAMERA } from '../utils/camera';
+
+// Dossier public des modèles IA de reconnaissance faciale (téléchargés via `npm run models`)
+const MODELS_URL = `${import.meta.env.BASE_URL || '/'}models`;
 
 const CSV_TEMPLATE = 'matricule;nom;prenom;categorie;rubrique;grade;classe;echelon\n46;Tlili;Mohamed Aziz;Cadre administratif;DIRECTION;CASA;1;1';
 const RH_CSV_TEMPLATE = 'matricule;date_naissance;date_embauche\n46;01/02/1980;02/03/2005';
+
+// Salaire de base issu de la Grille de salaire (Rubrique / Grade / Classe / Echelon), saisi en DT
+const fmtSalaireBase = (v) => {
+  if (v == null || String(v).trim() === '') return '—';
+  return Number(v).toLocaleString('fr-FR', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+};
 
 export default function Employes() {
   const location = useLocation();
@@ -42,6 +52,9 @@ export default function Employes() {
   const [delSaving, setDelSaving] = useState(false);
 
   const [deptSavingId, setDeptSavingId] = useState(null);
+  const [catSavingId, setCatSavingId] = useState(null);
+
+  const [visageTarget, setVisageTarget] = useState(null);
 
   const DEPT_OPTIONS = ['', 'Siège', 'Comptoir'];
 
@@ -96,6 +109,26 @@ export default function Employes() {
       .finally(() => setDeptSavingId(null));
   };
 
+  const saveCategorie = (e) => {
+    const value = e.target.value;
+    if (value === e.currentTarget.dataset.okval) return;
+    setCatSavingId(e.currentTarget.dataset.id);
+    api.updateEmploye(Number(e.currentTarget.dataset.id), { categorie_id: Number(value) })
+      .then(() => { setSuccess('Catégorie mise à jour (synchronisée dans toutes les vues).'); load(); })
+      .catch((err) => setError(err.message))
+      .finally(() => setCatSavingId(null));
+  };
+
+  // Liste déroulante des catégories de la ligne : garantit que la catégorie actuelle reste
+  // sélectionnable même si elle n'existe plus dans le paramétrage (repli « Inconnue »).
+  const categorieOptions = (e) => {
+    const opts = [...categories];
+    if (e.categorie_id != null && !opts.some((c) => c.id === e.categorie_id)) {
+      opts.push({ id: e.categorie_id, libelle: e.categorie || 'Inconnue' });
+    }
+    return opts;
+  };
+
   const load = () => {
     api.employes({ search, categorie: catFilter }).then(setEmployes).catch((e) => setError(e.message));
   };
@@ -117,6 +150,7 @@ export default function Employes() {
       let va = a[sortKey];
       let vb = b[sortKey];
       if (sortKey === 'matricule') { va = Number(a.matricule); vb = Number(b.matricule); }
+      if (sortKey === 'salaire_base') { va = Number(a.salaire_base || 0); vb = Number(b.salaire_base || 0); }
       if (sortKey === 'nom') { va = `${a.nom} ${a.prenom}`; vb = `${b.nom} ${b.prenom}`; }
       if (typeof va === 'string') return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
       return sortDir === 'asc' ? va - vb : vb - va;
@@ -308,7 +342,9 @@ export default function Employes() {
                 <Th label="Grade" k="grade" />
                 <Th label="Classe" k="classe" />
                 <Th label="Echelon" k="echelon" />
+                <Th label="Salaire de base" k="salaire_base" />
                 <Th label="Solde restant" k="solde" />
+                <th className="px-3 py-3 font-semibold uppercase tracking-wide text-slate-500">Visage</th>
                 <th className="px-3 py-3 font-semibold uppercase tracking-wide text-slate-500">Actions</th>
               </tr>
             </thead>
@@ -338,7 +374,19 @@ export default function Employes() {
                     </Link>
                   </td>
                   <td className="px-3 py-3">
-                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">{e.categorie}</span>
+                    <select
+                      data-id={e.id}
+                      data-okval={e.categorie_id}
+                      value={e.categorie_id ?? ''}
+                      onChange={saveCategorie}
+                      disabled={catSavingId === e.id}
+                      className="input w-44 cursor-pointer px-2 py-1.5 text-xs"
+                      title={`Catégorie de ${e.nom} ${e.prenom} — enregistrée directement`}
+                    >
+                      {categorieOptions(e).map((c) => (
+                        <option key={c.id} value={c.id}>{c.libelle}</option>
+                      ))}
+                    </select>
                   </td>
                   <td className="px-3 py-3 text-xs text-slate-600">
                     <select
@@ -388,6 +436,9 @@ export default function Employes() {
                       {grilleOptions(e, 'echelon').map((o) => <option key={o} value={o}>{o}</option>)}
                     </select>
                   </td>
+                  <td className="px-3 py-3 text-end font-mono text-xs tabular text-slate-700" title={`Salaire de base de ${e.nom} ${e.prenom} (grille de salaire)`}>
+                    {fmtSalaireBase(e.salaire_base)}
+                  </td>
                   <td className="px-3 py-3">
                     <div className="flex items-center gap-3">
                       <span className={`w-14 shrink-0 text-end font-bold ${e.solde < 0 ? 'text-red-600' : e.solde < 5 ? 'text-amber-600' : 'text-slate-700'}`}>
@@ -396,6 +447,17 @@ export default function Employes() {
                       {e.solde < 5 && <IconAlert />}
                       <div className="w-28 shrink-0"><SoldeJauge solde={e.solde} reference={30} showLabel={false} /></div>
                     </div>
+                  </td>
+                  <td className="px-3 py-3">
+                    <button
+                      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold hover:bg-brand-50 ${e.has_face ? 'text-emerald-700' : 'text-brand-700'}`}
+                      onClick={() => { setError(''); setVisageTarget(e); }}
+                      title={e.has_face ? 'Modifier la signature faciale enrôlée (Xmator-Eye)' : 'Enrôler la signature faciale (Xmator-Eye)'}
+                    >
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${e.has_face ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                      <IconUserCheck />
+                      {e.has_face ? 'Modifier' : 'Enrôler'} visage
+                    </button>
                   </td>
                   <td className="px-3 py-3">
                     <div className="flex items-center gap-1.5">
@@ -416,7 +478,7 @@ export default function Employes() {
                 </tr>
               ))}
               {sorted.length === 0 && (
-                <tr><td colSpan={10} className="px-5 py-10 text-center text-slate-500">Aucun employé trouvé.</td></tr>
+                <tr><td colSpan={12} className="px-5 py-10 text-center text-slate-500">Aucun employé trouvé.</td></tr>
               )}
             </tbody>
           </table>
@@ -678,6 +740,13 @@ export default function Employes() {
           </div>
         </Modal>
       )}
+{visageTarget && (
+        <EnrolerVisage
+          emp={visageTarget}
+          onClose={() => setVisageTarget(null)}
+          onChangement={() => load()}
+        />
+      )}
     </div>
   );
 }
@@ -693,5 +762,452 @@ function Modal({ title, children, onClose, danger }) {
         {children}
       </div>
     </div>
+  );
+}
+
+// Modale d'enrôlement facial (Xmator-Eye) : caméra live, détection ssd_mobilenetv1 +
+// landmarks, signature (descriptor 128 floats) calculée puis sauvegardée sur la fiche employé.
+function EnrolerVisage({ emp, onClose, onChangement }) {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const photoInputRef = useRef(null);
+  const [mode, setMode] = useState('cam'); // cam | photo
+  const [etape, setEtape] = useState('chargement'); // chargement | prêt | erreur
+  const [message, setMessage] = useState('');
+  const [erreur, setErreur] = useState('');
+  const [detecte, setDetecte] = useState(false);
+  const [capture, setCapture] = useState(null); // { dataUrl, descriptor }
+  const [photo, setPhoto] = useState(null); // { dataUrl, nom }
+  const [photoResult, setPhotoResult] = useState(null); // { descriptor, detecte, score }
+  const [analysePhoto, setAnalysePhoto] = useState(false);
+  const [sauvegarde, setSauvegarde] = useState(false);
+  const [dejaEnrole, setDejaEnrole] = useState(!!emp.has_face);
+  const [confirmerRetrait, setConfirmerRetrait] = useState(false);
+
+  const faceapiRef = useRef(null);
+  const faceRef = useRef(null);
+  const stopRef = useRef(false);
+  const timerRef = useRef(null);
+  const loopRef = useRef(null);
+  const captureRef = useRef(null);
+
+  // === Fonctions partagées (mode « Caméra en direct ») ===
+  const dessiner = (video, result) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+    }
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const b = result.detection.box;
+    ctx.strokeStyle = '#10b981';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(b.x, b.y, b.width, b.height);
+    ctx.fillStyle = 'rgba(16,185,129,0.9)';
+    for (const p of result.landmarks.positions) ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3);
+  };
+
+  const effacer = () => {
+    const canvas = canvasRef.current;
+    const ctx = canvas && canvas.getContext('2d');
+    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+  };
+
+  const boucle = async () => {
+    if (stopRef.current || captureRef.current) return;
+    const fapi = faceapiRef.current;
+    const video = videoRef.current;
+    if (!fapi || !video) return;
+    try {
+      const opts = new fapi.SsdMobilenetv1Options({ minConfidence: 0.5 });
+      const r = await fapi.detectSingleFace(video, opts).withFaceLandmarks().withFaceDescriptor();
+      if (stopRef.current || captureRef.current) return;
+      if (r) {
+        faceRef.current = Array.from(r.descriptor);
+        setDetecte(true);
+        dessiner(video, r);
+      } else {
+        faceRef.current = null;
+        setDetecte(false);
+        effacer();
+      }
+    } catch {
+      timerRef.current = setTimeout(boucle, 250);
+      return;
+    }
+    timerRef.current = setTimeout(boucle, 120);
+  };
+
+  useEffect(() => {
+    loopRef.current = boucle;
+  });
+
+  useEffect(() => {
+    let annule = false;
+    // StrictMode (dev) rejoue cet effet : on réarme l'état pour que la boucle de
+    // détection démarre réellement sur l'instance montée.
+    stopRef.current = false;
+    captureRef.current = null;
+
+    const chargerModeles = async () => {
+      try {
+        const mod = await import('@vladmandic/face-api');
+        if (annule) return;
+        faceapiRef.current = mod;
+        // Initialise le backend tfjs (webgl si disponible, sinon wasm/cpu) AVANT tout
+        // chargement de poids : sans `await tf.ready()`, tfjs lève
+        // « The highest priority backend ... has not yet been initialized ».
+        if (mod.tf && typeof mod.tf.ready === 'function') {
+          try {
+            await mod.tf.ready();
+          } catch {
+            try { await mod.tf.setBackend('cpu'); } catch {}
+          }
+        }
+        await mod.nets.ssdMobilenetv1.loadFromUri(MODELS_URL);
+        await mod.nets.faceLandmark68Net.loadFromUri(MODELS_URL);
+        await mod.nets.faceRecognitionNet.loadFromUri(MODELS_URL);
+        if (annule) return;
+        setEtape('prêt');
+      } catch (e) {
+        if (annule) return;
+        stopRef.current = true;
+        setEtape('erreur');
+        setErreur(e && e.message ? e.message : String(e));
+      }
+    };
+
+    chargerModeles();
+    return () => { annule = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Démarrage / arrêt de la caméra selon l'onglet actif (mode 'cam' uniquement).
+  useEffect(() => {
+    if (mode !== 'cam' || etape !== 'prêt') return;
+    let annule = false;
+    let stream = null;
+    // StrictMode (dev) rejoue cet effet : on réarme l'état pour que la boucle de
+    // détection démarre réellement sur l'instance montée.
+    stopRef.current = false;
+    captureRef.current = null;
+
+    const demarrerCamera = async () => {
+      try {
+        stream = await ouvrirFluxVideo();
+        if (annule) { if (stream) stream.getTracks().forEach((t) => t.stop()); return; }
+        const video = videoRef.current;
+        if (!video) { stream.getTracks().forEach((t) => t.stop()); return; }
+        video.srcObject = stream;
+        await video.play();
+        timerRef.current = setTimeout(boucle, 60);
+      } catch (e) {
+        if (annule) return;
+        setErreur(e && e.code === 'permission'
+          ? `${MESSAGES_CAMERA.permission} Vous pouvez aussi utiliser l'onglet « Importer une photo ».`
+          : (e && e.code === 'aucune' ? `${MESSAGES_CAMERA.aucune} Vous pouvez aussi utiliser l'onglet « Importer une photo ».`
+            : (e && e.message ? `${e.message} Vous pouvez aussi utiliser l'onglet « Importer une photo ».` : MESSAGES_CAMERA.indisponible)));
+      }
+    };
+
+    demarrerCamera();
+    return () => {
+      annule = true;
+      stopRef.current = true;
+      if (timerRef.current) clearTimeout(timerRef.current);
+      effacer();
+      arreterFluxVideo(videoRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, etape]);
+
+  const capturer = () => {
+    const d = faceRef.current;
+    if (!d || d.length !== 128) {
+      setMessage('');
+      setErreur('Aucun visage détecté correctement. Restez face à la caméra dans de bonnes conditions de lumière.');
+      return;
+    }
+    setErreur('');
+    const video = videoRef.current;
+    const cv = document.createElement('canvas');
+    cv.width = video.videoWidth || 640;
+    cv.height = video.videoHeight || 480;
+    cv.getContext('2d').drawImage(video, 0, 0, cv.width, cv.height);
+    const cap = { dataUrl: cv.toDataURL('image/jpeg', 0.85), descriptor: d };
+    captureRef.current = cap;
+    setCapture(cap);
+  };
+
+  const reprendre = () => {
+    captureRef.current = null;
+    setCapture(null);
+    setErreur('');
+    timerRef.current = setTimeout(loopRef.current, 60);
+  };
+
+  const enregistrer = async () => {
+    if (!capture) return;
+    setSauvegarde(true);
+    setErreur('');
+    try {
+      await api.sauvegarderFace(emp.id, capture.descriptor);
+      setDejaEnrole(true);
+      setConfirmerRetrait(false);
+      setMessage('Signature faciale enregistrée pour la reconnaissance de pointage (Xmator-Eye).');
+      setCapture(null);
+      captureRef.current = null;
+      if (onChangement) onChangement();
+    } catch (e) {
+      setErreur(e.message);
+    } finally {
+      setSauvegarde(false);
+    }
+  };
+
+  const analyserPhoto = async (dataUrl) => {
+    const fapi = faceapiRef.current;
+    if (!fapi) {
+      setErreur('Modèles IA non chargés. Fermez puis rouvrez la modale.');
+      return;
+    }
+    setAnalysePhoto(true);
+    setMessage('');
+    setErreur('');
+    try {
+      const img = new Image();
+      await new Promise((res, rej) => {
+        img.onload = res;
+        img.onerror = () => rej(new Error('Chargement de l’image impossible.'));
+        img.src = dataUrl;
+      });
+      const opts = new fapi.SsdMobilenetv1Options({ minConfidence: 0.5 });
+      const r = await fapi.detectSingleFace(img, opts).withFaceLandmarks().withFaceDescriptor();
+      setPhotoResult(r
+        ? { descriptor: Array.from(r.descriptor), detecte: true, score: r.detection.score }
+        : { descriptor: null, detecte: false, score: 0 });
+    } catch (e) {
+      setPhotoResult({ descriptor: null, detecte: false, score: 0 });
+      setErreur(e && e.message ? e.message : String(e));
+    } finally {
+      setAnalysePhoto(false);
+    }
+  };
+
+  const importerPhoto = (e) => {
+    const fichier = e.target && e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!fichier) return;
+    if (!fichier.type || !fichier.type.startsWith('image/')) {
+      setPhoto(null);
+      setPhotoResult(null);
+      setMessage('');
+      setErreur('Format non pris en charge : importez une photo JPG ou PNG.');
+      return;
+    }
+    const lecteur = new FileReader();
+    lecteur.onerror = () => setErreur('Lecture du fichier impossible.');
+    lecteur.onload = () => {
+      const dataUrl = lecteur.result;
+      setPhoto({ dataUrl, nom: fichier.name });
+      setPhotoResult(null);
+      analyserPhoto(dataUrl);
+    };
+    lecteur.readAsDataURL(fichier);
+  };
+
+  const enregistrerPhoto = async () => {
+    if (!photoResult || !photoResult.detecte || !photoResult.descriptor || photoResult.descriptor.length !== 128) {
+      setErreur('Aucun visage détecté sur cette photo. Importez une photo avec un visage net et bien visible.');
+      return;
+    }
+    setSauvegarde(true);
+    setErreur('');
+    try {
+      await api.sauvegarderFace(emp.id, photoResult.descriptor);
+      setDejaEnrole(true);
+      setConfirmerRetrait(false);
+      setPhotoResult(null);
+      setMessage('Signature faciale enregistrée pour la reconnaissance de pointage (Xmator-Eye).');
+      if (onChangement) onChangement();
+    } catch (err) {
+      setErreur(err.message);
+    } finally {
+      setSauvegarde(false);
+    }
+  };
+
+  const retirer = async () => {
+    setSauvegarde(true);
+    setErreur('');
+    try {
+      await api.supprimerFace(emp.id);
+      setDejaEnrole(false);
+      setConfirmerRetrait(false);
+      setMessage('Enrôlement facial supprimé (Xmator-Eye).');
+      if (onChangement) onChangement();
+    } catch (e) {
+      setErreur(e.message);
+    } finally {
+      setSauvegarde(false);
+    }
+  };
+
+  const enSuspens = (mode === 'cam' && !!capture) || (mode === 'photo' && !!(photoResult && photoResult.detecte));
+
+  return (
+    <Modal onClose={onClose} title={`Signature faciale — mat. ${emp.matricule} — ${emp.nom} ${emp.prenom}`}>
+      <div className="space-y-4">
+        {etape === 'erreur' && (
+          <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700 ring-1 ring-red-200">
+            <p className="font-semibold">Caméra ou modèles IA indisponibles.</p>
+            <p className="mt-1">{erreur}</p>
+            <p className="mt-2 text-xs text-red-500">
+              Vérifiez que les modèles sont présents (<code className="rounded bg-red-100 px-1">npm run models</code>) et autorisez
+              la caméra (HTTPS requis hors localhost).
+            </p>
+            <div className="mt-3 flex justify-end">
+              <button type="button" className="btn-secondary" onClick={onClose}>Fermer</button>
+            </div>
+          </div>
+        )}
+
+        {etape === 'chargement' && (
+          <div className="flex h-56 items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-500">
+            Chargement des modèles IA…
+          </div>
+        )}
+
+        {etape === 'prêt' && (
+          <div className="flex rounded-lg bg-slate-100 p-1 text-sm font-medium text-slate-600">
+            <button
+              type="button"
+              onClick={() => setMode('cam')}
+              className={`flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 transition-colors ${mode === 'cam' ? 'bg-white text-slate-900 shadow-sm' : 'hover:text-slate-900'}`}
+            >
+              <IconCamera className="h-4 w-4 shrink-0" />
+              Caméra en direct
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('photo')}
+              className={`flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 transition-colors ${mode === 'photo' ? 'bg-white text-slate-900 shadow-sm' : 'hover:text-slate-900'}`}
+            >
+              <IconUpload className="h-4 w-4 shrink-0" />
+              Importer une photo
+            </button>
+          </div>
+        )}
+
+        {etape === 'prêt' && mode === 'cam' && (
+          <>
+            <div className="relative overflow-hidden rounded-lg bg-slate-900">
+              <video ref={videoRef} muted playsInline className="block aspect-[4/3] w-full opacity-90" />
+              <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" />
+            </div>
+            <div className="flex min-h-6 items-center justify-between gap-2 text-xs">
+              <span className={capture ? 'text-slate-500' : detecte ? 'font-semibold text-emerald-700' : 'text-slate-400'}>
+                {capture ? 'Visage saisi — vérifiez puis enregistrez.' : detecte ? 'Visage détecté.' : 'Placez votre visage dans le cadre.'}
+              </span>
+            </div>
+            {capture ? (
+              <>
+                <div className="overflow-hidden rounded-lg border border-slate-200">
+                  <img src={capture.dataUrl} alt="Visage capturé" className="mx-auto max-h-56" />
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <button type="button" className="btn-secondary" onClick={reprendre} disabled={sauvegarde}>Reprendre</button>
+                  <button type="button" className="btn-primary" onClick={enregistrer} disabled={sauvegarde}>
+                    {sauvegarde ? 'Enregistrement…' : 'Enregistrer la signature'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <button type="button" className="btn-primary" onClick={capturer} disabled={!detecte}>
+                  Capturer le visage
+                </button>
+              </div>
+            )}
+          </>
+        )}
+
+        {etape === 'prêt' && mode === 'photo' && (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                <IconUpload className="h-4 w-4" />
+                {photo ? 'Choisir une autre photo' : 'Choisir une photo'}
+                <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={importerPhoto} />
+              </label>
+              {photo && <span className="max-w-[16rem] truncate text-xs text-slate-500">{photo.nom}</span>}
+            </div>
+            <p className="text-xs text-slate-500">
+              Formats JPG/PNG. Le visage est détecté automatiquement, puis la signature faciale (128 valeurs) est extraite de la photo.
+            </p>
+
+            {photo && (
+              <div className="overflow-hidden rounded-lg border border-slate-200">
+                <img src={photo.dataUrl} alt="Photo importée" className="mx-auto max-h-56" />
+              </div>
+            )}
+
+            {analysePhoto && <p className="text-xs text-slate-500">Analyse de la photo…</p>}
+
+            {photo && !analysePhoto && photoResult && (
+              photoResult.detecte ? (
+                <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">
+                  Visage détecté avec succès (confiance {Math.round(photoResult.score * 100)} %). Vous pouvez enregistrer la signature.
+                </p>
+              ) : (
+                <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700 ring-1 ring-red-200">
+                  Aucun visage détecté sur l’image. Importez une autre photo avec un visage net et bien éclairé.
+                </p>
+              )
+            )}
+
+            {photo && !analysePhoto && photoResult && photoResult.detecte && (
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <button type="button" className="btn-primary" onClick={enregistrerPhoto} disabled={sauvegarde}>
+                  {sauvegarde ? 'Enregistrement…' : 'Enregistrer la signature'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {etape === 'prêt' && (
+          <>
+            {dejaEnrole && !enSuspens && !confirmerRetrait && (
+              <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 ring-1 ring-emerald-200">
+                Un visage est déjà enrôlé pour cet employé. Une nouvelle capture ou une photo importée remplacera la signature existante.
+              </p>
+            )}
+            {!enSuspens && (
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {confirmerRetrait ? (
+                  <span className="flex items-center gap-2 text-xs text-red-700">
+                    Retirer la signature ?
+                    <button type="button" className="rounded-lg bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-700" onClick={retirer} disabled={sauvegarde}>
+                      Confirmer
+                    </button>
+                    <button type="button" className="rounded-lg px-2 py-1 text-xs text-slate-500 hover:bg-slate-100" onClick={() => setConfirmerRetrait(false)}>Annuler</button>
+                  </span>
+                ) : dejaEnrole ? (
+                  <button type="button" className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50" onClick={() => setConfirmerRetrait(true)}>
+                    <IconTrash /> Retirer l'enrôlement
+                  </button>
+                ) : null}
+              </div>
+            )}
+          </>
+        )}
+
+        {message && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700 ring-1 ring-emerald-200">{message}</p>}
+        {erreur && etape !== 'erreur' && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">{erreur}</p>}
+      </div>
+    </Modal>
   );
 }

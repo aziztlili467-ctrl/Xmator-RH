@@ -98,6 +98,19 @@
   .input[aria-invalid='true'] { border-color: var(--danger); }
   select.input { cursor: pointer; }
 
+  /* ---- Champs compacts du bulletin de paie ---- */
+  .bul-input {
+    @apply w-full text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none;
+    background: var(--bg-card);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    padding: 0.25rem 0.4rem;
+    font-size: var(--text-xs);
+    min-height: 1.6rem;
+    transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+  }
+  .bul-input:focus { border-color: var(--border-focus); box-shadow: var(--shadow-focus); }
+
   /* ---- Boutons ---- */
   .btn-primary,
   .btn-secondary,

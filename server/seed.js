@@ -21,21 +21,22 @@ function seed() {
   const count = db.prepare('SELECT COUNT(*) AS n FROM employes').get().n;
   if (count === 0) {
 
-  const insertCat = db.prepare('INSERT OR IGNORE INTO categories (libelle) VALUES (?)');
+  const insertCat = db.prepare('INSERT OR IGNORE INTO categories (libelle, repos_hebdomadaire) VALUES (?, ?)');
   const insertEmp = db.prepare('INSERT INTO employes (matricule, nom, prenom, categorie_id) VALUES (?,?,?,?)');
 
   const categories = [
-    'Cadre administratif',
-    'Agent de sécurité',
-    'Employé de restauration',
-    'Femme de ménage',
-    'Agent manutentionnaire',
+    ['Cadre administratif CAT.1', '0,6'],
+    ['Cadre administratif CAT.2', '0,6'],
+    ['Agent de sécurité', '0,6'],
+    ['Employé de restauration', '0,6'],
+    ['Femme de ménage', '0'],
+    ['Agent manutentionnaire', '0,6'],
   ];
   const catIds = {};
-  for (const c of categories) catIds[c] = insertCat.run(c).lastInsertRowid;
+  for (const [c, repos] of categories) catIds[c] = insertCat.run(c, repos).lastInsertRowid;
 
   const employes = [
-    ['46', 'Tlili', 'Mohamed Aziz', 'Cadre administratif'],
+    ['46', 'Tlili', 'Mohamed Aziz', 'Cadre administratif CAT.1'],
     ['285', 'Zribi', 'Mohamed Ali', 'Agent de sécurité'],
     ['68', 'Saghroun', 'Naim', 'Employé de restauration'],
     ['292', 'Zahouani', 'Lasaad', 'Agent manutentionnaire'],

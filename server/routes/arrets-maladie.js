@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const { db, soldeEmploye, soldeEmployeAt, insertMouvement } = require('../db');
+const { loadContext, estOuvrable, reposFor } = require('../utils/jourOuvrable');
 const router = Router();
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -15,19 +16,29 @@ function nextNumero() {
   })();
 }
 
-function nbJours(debut, fin) {
+function nbJours(debut, fin, categorieId) {
   const d1 = new Date(debut + 'T00:00:00');
   const d2 = new Date(fin + 'T00:00:00');
   if (isNaN(d1) || isNaN(d2) || d2 < d1) return null;
-  const hasCal = db.prepare('SELECT 1 FROM jours_travail WHERE date >= ? AND date <= ? LIMIT 1').get(debut, fin);
-  if (hasCal) {
-    const r = db.prepare("SELECT COUNT(*) AS c FROM jours_travail WHERE date >= ? AND date <= ? AND heures > 0").get(debut, fin);
-    return r.c || 1; // au moins 1 si période couverte mais tous fériés → 1 pour garder cohérence solde
+  const jours = db.prepare('SELECT date, heures, source, label FROM jours_travail WHERE date >= ? AND date <= ?').all(debut, fin);
+  if (jours.length) {
+    const ctx = loadContext();
+    const legalByDate = {};
+    for (const r of jours) legalByDate[r.date] = r;
+    let c = 0;
+    const cur = new Date(d1);
+    while (cur <= d2) {
+      const iso = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
+      if (estOuvrable(ctx, categorieId, iso, legalByDate[iso])) c += 1;
+      cur.setDate(cur.getDate() + 1);
+    }
+    return c || 1; // au moins 1 si période couverte mais tous repos/fériés → 1 pour garder cohérence solde
   }
+  const repos = reposFor(categorieId);
   let count = 0;
   const cur = new Date(d1);
   while (cur <= d2) {
-    count += 1;
+    if (!repos.has(cur.getDay())) count += 1;
     cur.setDate(cur.getDate() + 1);
   }
   return count;
@@ -128,11 +139,17 @@ function datesEntre(debut, fin) {
 }
 function syncRmaCodes(arret, code) {
   const jours = datesEntre(arret.date_debut, arret.date_fin);
-  const legalSet = new Set(db.prepare("SELECT date FROM jours_travail WHERE date >= ? AND date <= ? AND heures > 0").all(arret.date_debut, arret.date_fin).map(r=>r.date));
-  const hasCal = legalSet.size > 0 || db.prepare('SELECT 1 FROM jours_travail WHERE date >= ? AND date <= ? LIMIT 1').get(arret.date_debut, arret.date_fin);
+  const ctx = loadContext();
+  const cat = db.prepare('SELECT categorie_id FROM employes WHERE id = ?').get(arret.employe_id);
+  const categorieId = cat ? cat.categorie_id : null;
+  const legalRows = db.prepare('SELECT date, heures, source, label FROM jours_travail WHERE date >= ? AND date <= ?').all(arret.date_debut, arret.date_fin);
+  const legalByDate = {};
+  for (const r of legalRows) legalByDate[r.date] = r;
+  const hasCal = legalRows.length > 0;
+  const repos = reposFor(categorieId);
   const ins = db.prepare('INSERT INTO codes_importes (employe_id, matricule, date, code) VALUES (?,?,?,?) ON CONFLICT(employe_id, date, code) DO NOTHING');
   for (const j of jours) {
-    const ouvrable = hasCal ? legalSet.has(j) : true;
+    const ouvrable = hasCal ? estOuvrable(ctx, categorieId, j, legalByDate[j]) : !repos.has(new Date(j + 'T00:00:00').getDay());
     if (!ouvrable) continue;
     ins.run(arret.employe_id, arret.matricule, j, code);
   }

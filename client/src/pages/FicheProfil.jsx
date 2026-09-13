@@ -278,9 +278,6 @@ ${printBrandHeader('Fiche Signalétique')}
             <Ligne icon={IconStar} label="Échelon" value={emp.echelon} color={SEC.pro.color} />
             <Ligne icon={IconCalendarDays} label="Date d'embauche" value={fmtDate(emp.date_embauche)} color={SEC.pro.color} />
             <Ligne icon={IconBanknotes} label="Salaire de base" value={fmtMontant(emp.salaire_base)} color={SEC.pro.color} />
-            <Ligne icon={IconUserCheck} label="Indemnité de présence" value={fmtMontant(emp.indemnite_presence)} color={SEC.pro.color} />
-            <Ligne icon={IconMapPin} label="Indemnité de transport" value={fmtMontant(emp.indemnite_transport)} color={SEC.pro.color} />
-            <Ligne icon={IconBriefcase} label="Indemnité de fonction" value={fmtMontant(emp.indemnite_fonction)} color={SEC.pro.color} />
             </Section>
           </div>
 

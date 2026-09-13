@@ -4,7 +4,7 @@ import { fmtDate, fmtJours, today } from '../utils';
 import Field from '../components/Field';
 import EmployePicker from '../components/EmployePicker';
 import BadgeType from '../components/BadgeType';
-import { IconEdit, IconTrash, IconPlus } from '../components/icons';
+import { IconEdit, IconTrash, IconPlus, IconDownload, IconFileText, IconPrinter } from '../components/icons';
 
 function Modal({ title, children, onClose, danger }) {
   return (
@@ -44,6 +44,7 @@ export default function EditerSoldeConge() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [resetKey, setResetKey] = useState(0);
+  const [exportOpen, setExportOpen] = useState(false);
 
   useEffect(() => {
     api.categories().then(setCategories).catch(() => {});
@@ -221,6 +222,30 @@ export default function EditerSoldeConge() {
     }
   };
 
+  // Export du journal de l'employé consulté : téléchargement PDF (nouvel onglet) ou XLS (fichier),
+  // et impression directe (boîte d'impression du navigateur → « Enregistrer en PDF »).
+  const exportJournal = async (fmt) => {
+    if (!selected) return;
+    setError('');
+    setExportOpen(false);
+    try {
+      if (fmt === 'xls') await api.journalSoldeXls(selected.id);
+      else await api.journalSoldePdf(selected.id);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const imprimerJournal = async () => {
+    if (!selected) return;
+    setError('');
+    try {
+      await api.journalSoldePrint(selected.id);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const inputCls = 'input';
 
   return (
@@ -279,9 +304,29 @@ export default function EditerSoldeConge() {
 
           {emp && movements.length > 0 && (
             <div className="card overflow-hidden">
-              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-3">
                 <h3 className="text-sm font-bold text-slate-800">Journal du solde de congé — {emp.nom} {emp.prenom}</h3>
-                <span className="text-xs text-slate-400">{movements.length} ligne(s) — dotations + prélèvements RMA</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-slate-400">{movements.length} ligne(s)</span>
+                  <div className="relative">
+                    <button type="button" onClick={() => setExportOpen((v) => !v)} className="btn-secondary">
+                      <IconDownload /> Télécharger PDF / XLS
+                    </button>
+                    {exportOpen && (
+                      <div className="absolute right-0 top-full z-10 mt-1 w-52 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                        <button type="button" onClick={() => exportJournal('pdf')} className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-100">
+                          <IconFileText /> Télécharger en PDF
+                        </button>
+                        <button type="button" onClick={() => exportJournal('xls')} className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-100">
+                          <IconDownload /> Télécharger en XLS
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <button type="button" onClick={imprimerJournal} className="btn-secondary">
+                    <IconPrinter /> Imprimer en PDF
+                  </button>
+                </div>
               </div>
               <div className="table-wrap">
                 <table className="w-max-table text-sm">

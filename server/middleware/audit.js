@@ -35,6 +35,7 @@ function modulePourPath(path) {
     ['/import', 'administration'],
     ['/horaires', 'horaires'],
     ['/presence', 'presence'],
+    ['/parametres-presence', 'presence'],
     ['/calendrier', 'calendrier'],
     ['/codes-paie', 'paie'],
     ['/journal-rma', 'rma'],

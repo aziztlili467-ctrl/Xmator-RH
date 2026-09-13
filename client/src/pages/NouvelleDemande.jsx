@@ -5,16 +5,18 @@ import Field from '../components/Field';
 import EmployePicker from '../components/EmployePicker';
 import { IconDownload, IconAlert } from '../components/icons';
 
-function nbJours(debut, fin) {
+function nbJours(debut, fin, repos) {
   if (!debut || !fin) return null;
   const d1 = new Date(debut + 'T00:00:00');
   const d2 = new Date(fin + 'T00:00:00');
   if (isNaN(d1) || isNaN(d2) || d2 < d1) return null;
+  // Repos hebdomadaires de la catégorie (ex. samedi travaillé de Femme de ménage)
+  const rel = repos && repos.length ? new Set(repos) : new Set([0, 6]);
   let count = 0;
   const cur = new Date(d1);
   while (cur <= d2) {
     const wd = cur.getDay();
-    if (wd !== 0 && wd !== 6) count += 1;
+    if (!rel.has(wd)) count += 1;
     cur.setDate(cur.getDate() + 1);
   }
   return count;
@@ -34,8 +36,21 @@ export default function NouvelleDemande() {
   const [joursManuel, setJoursManuel] = useState(null);
   const [demiFin, setDemiFin] = useState(false);
   const [doublon, setDoublon] = useState(null);
+  const [reposParCat, setReposParCat] = useState({});
 
-  const joursAutoBrut = nbJours(dateDebut, dateFin);
+  // Repos hebdomadaires de chaque catégorie (paramètre catégorie → aperçu jours exact)
+  useEffect(() => {
+    api.categories()
+      .then((cs) => {
+        const m = {};
+        for (const c of cs) m[c.id] = String(c.repos_hebdomadaire || '0,6').split(',').map(Number);
+        setReposParCat(m);
+      })
+      .catch(() => {});
+  }, []);
+
+  const reposEmp = selected ? reposParCat[selected.categorie_id] || null : null;
+  const joursAutoBrut = nbJours(dateDebut, dateFin, reposEmp);
   // Demi-journée cochée : la date de fin compte pour 0,5 (ex. : 3 jours ouvrables → 2,5)
   const joursAuto = joursAutoBrut !== null && demiFin ? Math.max(joursAutoBrut - 0.5, 0.5) : joursAutoBrut;
   const jours = joursManuel !== null ? joursManuel : joursAuto;
@@ -110,7 +125,7 @@ export default function NouvelleDemande() {
       <div>
         <h2 className="text-lg font-bold text-slate-900">Nouvelle Demande de Congé</h2>
         <p className="text-sm text-slate-500">
-          Générez une demande officielle. Le numéro séquentiel est attribué automatiquement par le serveur. Les samedis et dimanches ne sont pas comptés. Pour une demi-journée, cochez « Dernier jour en demi-journée » : la date de fin compte pour 0,5 (ex. : du lundi au mercredi coché = 2,5 jours). Déduits du solde uniquement après acceptation.
+          Générez une demande officielle. Le numéro séquentiel est attribué automatiquement par le serveur. Les jours de repos hebdomadaire de la catégorie (samedi/dimanche par défaut) ne sont pas comptés. Pour une demi-journée, cochez « Dernier jour en demi-journée » : la date de fin compte pour 0,5 (ex. : du lundi au mercredi coché = 2,5 jours). Déduits du solde uniquement après acceptation.
         </p>
       </div>
 
@@ -213,7 +228,7 @@ export default function NouvelleDemande() {
           <Field
             label="Nombre de jours"
             required
-            hint={editJours ? 'Valeur manuelle par pas de 0,5 — demi-journée : 0,5 · deux jours et demi : 2,5.' : 'Calculé automatiquement hors samedis et dimanches ; tient compte de la case « dernier jour en demi-journée ».'}
+            hint={editJours ? 'Valeur manuelle par pas de 0,5 — demi-journée : 0,5 · deux jours et demi : 2,5.' : 'Calculé automatiquement hors repos hebdomadaires de la catégorie (samedi/dimanche par défaut) ; tient compte de la case « dernier jour en demi-journée ».'}
           >
             {editJours ? (
               <div className="flex items-center gap-2">

@@ -1,5 +1,7 @@
 const { Router } = require('express');
 const { db, soldeEmploye, soldeCongeRestantDate } = require('../db');
+const { loadContext, estOuvrable, heuresPour } = require('../utils/jourOuvrable');
+const { departementsPresenceDefaut, normaliserDept } = require('../utils/presenceDefaut');
 const { onDataChanged } = require('./dataSync');
 const presence = require('./presence');
 const { normaliser, horairePour, diffSecondes, statutPour, retardComptable, sortieAnticipeeComptable } = presence;
@@ -189,11 +191,6 @@ router.get('/', (req, res) => {
 
 const MOIS_ABBR = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 
-function estOuvrable(d) {
-  const wd = new Date(d + 'T00:00:00').getDay();
-  return wd !== 0 && wd !== 6;
-}
-
 // Échelle d'évaluation (0 à 5 étoiles) selon le % de journées conformes (sans retard / sortie régulière)
 function noteEtoiles(conformes, total) {
   if (!total) return null;
@@ -234,7 +231,7 @@ router.get('/audit', (req, res) => {
     wparams.push(matricule, isNaN(n) ? -1 : n);
   }
   const employes = db.prepare(`
-    SELECT e.id, e.matricule, e.nom, e.prenom, e.photo_url, c.libelle AS categorie
+    SELECT e.id, e.matricule, e.nom, e.prenom, e.photo_url, e.departement, e.categorie_id, c.libelle AS categorie
     FROM employes e JOIN categories c ON c.id = e.categorie_id
     WHERE ${where}
     ORDER BY CAST(e.matricule AS INTEGER), e.matricule
@@ -243,17 +240,25 @@ router.get('/audit', (req, res) => {
 
   const payload = dashMemo('audit:' + req.originalUrl, () => {
   const ids = employes.map((e) => e.id);
+  // Repos hebdomadaires par catégorie (le samedi peut être travaillé, ex. Femme de ménage)
+  const ctx = loadContext();
+  const empCat = Object.fromEntries(employes.map((e) => [e.id, e.categorie_id]));
+  const empCategorieLabel = Object.fromEntries(employes.map((e) => [e.id, e.categorie]));
+  // Employés dont le département est configuré en « Présent par défaut » (ex. Comptoir)
+  const deptsDefaut = new Set(departementsPresenceDefaut().map(normaliserDept));
+  const empDeptPresume = new Set(employes.filter((e) => deptsDefaut.has(normaliserDept(e.departement))).map((e) => e.id));
 
   const jours = joursEntre(debut, fin);
   if (jours.length > 400) return res.status(400).json({ error: 'Période trop longue (400 jours max).' });
   const joursSet = new Set(jours);
   const idsSet = new Set(ids);
 
-  // Heures légales par jour (calendrier annuel partagé)
-  const legalMap = {};
+  // Heures légales par jour (calendrier annuel partagé) + ligne complète (source/label) pour
+  // la décision par catégorie (semaine travaillée vs repos hebdomadaire / férié).
+  const legalRows = {};
   for (let a = Number(debut.slice(0, 4)); a <= Number(fin.slice(0, 4)); a++) {
-    for (const r of db.prepare('SELECT date, heures FROM jours_travail WHERE annee = ?').all(a)) {
-      legalMap[r.date] = Number(r.heures) || 0;
+    for (const r of db.prepare('SELECT date, heures, source, label FROM jours_travail WHERE annee = ?').all(a)) {
+      legalRows[r.date] = { heures: Number(r.heures) || 0, source: r.source, label: r.label };
     }
   }
 
@@ -300,10 +305,11 @@ router.get('/audit', (req, res) => {
     const end = new Date(e + 'T00:00:00');
     while (cur <= end) {
       const d = iso(cur);
-      // Jour ouvrable = jour PRÉVU au calendrier administratif (heures > 0) :
-      // les jours de repos hebdomadaire et les jours fériés payés (nationaux, religieux,
-      // manuels à 0 h) sont exclus des congés/maladies comme des taux.
-      if (joursSet.has(d) && (legalMap[d] || 0) > 0) {
+      // Jour ouvrable = jour PRÉVU au calendrier administratif pour la CATÉGORIE de l'employé :
+      // les jours de repos hebdomadaire (par catégorie, ex. samedi travaillé pour Femme de
+      // ménage) et les jours fériés payés (nationaux, religieux, manuels à 0 h) sont exclus
+      // des congés/maladies comme des taux.
+      if (joursSet.has(d) && estOuvrable(ctx, empCat[empId], d, legalRows[d])) {
         // Demi-journée : la date de fin de la demande compte pour 0,5
         const inc = demiFin && d === dF ? 0.5 : 1;
         jourMap[d] = (jourMap[d] || 0) + inc;
@@ -337,7 +343,7 @@ router.get('/audit', (req, res) => {
     const s = c.date_debut > debut ? c.date_debut : debut;
     const e = c.date_fin < fin ? c.date_fin : fin;
     const cur = new Date(s+'T00:00:00'); const end = new Date(e+'T00:00:00');
-    while (cur<=end) { const d=iso(cur); if (joursSet.has(d) && (legalMap[d]||0)>0) {
+    while (cur<=end) { const d=iso(cur); if (joursSet.has(d) && estOuvrable(ctx, empCat[c.employe_id], d, legalRows[d])) {
       if (c.nature_conge === 'exceptionnel') couvreCE.add(c.employe_id+'|'+d); else couvreConge.add(c.employe_id+'|'+d);
       cur.setDate(cur.getDate()+1);
     } else cur.setDate(cur.getDate()+1); }
@@ -346,11 +352,11 @@ router.get('/audit', (req, res) => {
     const s = a.date_debut > debut ? a.date_debut : debut;
     const e = a.date_fin < fin ? a.date_fin : fin;
     const cur = new Date(s+'T00:00:00'); const end = new Date(e+'T00:00:00');
-    while (cur<=end) { const d=iso(cur); if (joursSet.has(d) && (legalMap[d]||0)>0) couvreMaladie.add(a.employe_id+'|'+d); cur.setDate(cur.getDate()+1); }
+    while (cur<=end) { const d=iso(cur); if (joursSet.has(d) && estOuvrable(ctx, empCat[a.employe_id], d, legalRows[d])) couvreMaladie.add(a.employe_id+'|'+d); cur.setDate(cur.getDate()+1); }
   }
   const rmaRows = db.prepare(`SELECT employe_id, date, code, demi_journee FROM codes_importes WHERE date >= ? AND date <= ? AND code IN ('CA','CE','MA','DJ')`).all(debut, fin);
   for (const r of rmaRows) {
-    if (!idsSet.has(r.employe_id) || !joursSet.has(r.date) || (legalMap[r.date]||0)<=0) continue;
+    if (!idsSet.has(r.employe_id) || !joursSet.has(r.date) || !estOuvrable(ctx, empCat[r.employe_id], r.date, legalRows[r.date])) continue;
     const key = r.employe_id+'|'+r.date;
     // DJ = demi-journée de congé (0,5) ; CA/CE en demi = 0,5 ; sinon 1
     const inc = r.code==='DJ' ? 0.5 : ((r.code==='CA' || r.code==='CE') && r.demi_journee) ? 0.5 : 1;
@@ -378,7 +384,7 @@ router.get('/audit', (req, res) => {
   // Ces jours couvrent l'absence mais n'augmentent pas congé/maladie (déjà suivis dans jourConge…).
   const justifieAbs = new Set([...couvreConge, ...couvreCE, ...couvreMaladie]);
   for (const r of db.prepare(`SELECT employe_id, date, code FROM codes_importes WHERE date >= ? AND date <= ? AND code <> 'A1'`).all(debut, fin)) {
-    if (idsSet.has(r.employe_id) && joursSet.has(r.date) && (legalMap[r.date] || 0) > 0) {
+    if (idsSet.has(r.employe_id) && joursSet.has(r.date) && estOuvrable(ctx, empCat[r.employe_id], r.date, legalRows[r.date])) {
       justifieAbs.add(r.employe_id + '|' + r.date);
     }
   }
@@ -462,11 +468,11 @@ router.get('/audit', (req, res) => {
     const statut = statutPour({ nb: g.nb, horaire, retardSec, sortieSec: depSec });
     const delta = {
       journees: 1,
-      // « Présent » uniquement les jours PRÉVUS au calendrier (heures > 0) : un badge
-      // un dimanche ou un jour férié ne gonfle pas les jours présents (ses heures comptent
-      // quand même dans heures travaillées) ; l'équation absence = ouvrables − présents
-      // − congés − maladies reste équilibrée.
-      presents: (legalMap[g.date] || 0) > 0 ? 1 : 0,
+      // « Présent » uniquement les jours ouvrables de la CATÉGORIE de l'employé (un badge un
+      // dimanche ou un jour férié ne gonfle pas les jours présents ; le samedi travaillé de
+      // Femme de ménage, lui, compte) ; ses heures comptent quand même dans heures travaillées ;
+      // l'équation absence = ouvrables − présents − congés − maladies reste équilibrée.
+      presents: estOuvrable(ctx, empCat[g.employe_id], g.date, legalRows[g.date]) ? 1 : 0,
       retards: retardSec > 0 ? 1 : 0,
       departs: depSec > 0 ? 1 : 0,
       retardsSec: retardSec,
@@ -485,15 +491,60 @@ router.get('/audit', (req, res) => {
   // congé/maladie), puis agrégé : les totaux/journal/employé utilisent TOUJOURS la même base,
   // sans clamp par mois (le clamp mensuel créait de faux jours d'absence).
   const presentDay = new Set();
-  for (const g of parJour.values()) if ((legalMap[g.date] || 0) > 0) presentDay.add(`${g.employe_id}|${g.date}`);
+  for (const g of parJour.values()) if (estOuvrable(ctx, empCat[g.employe_id], g.date, legalRows[g.date])) presentDay.add(`${g.employe_id}|${g.date}`);
+
+  // --- Jours « Présents par défaut » (départements configurés, ex. Comptoir) ---
+  // Jour ouvrable selon le calendrier, sans badge ET sans codification RMA importée :
+  // l'employé est considéré PRÉSENT (P1). Une codification insérée (A1, MA, CA, CE, DJ…) remplace
+  // automatiquement cet état (la case possède alors un code → elle n'est jamais présumée ici).
+  // `codeDay` couvre TOUTE cellule codes_importes (y compris A1, absent — exclu de justifieAbs)
+  // afin qu'un jour codifié « Absent » ne soit jamais compté présent par défaut.
+  const codeDay = new Set();
+  for (const r of db.prepare('SELECT employe_id, date FROM codes_importes WHERE date >= ? AND date <= ?').all(debut, fin)) {
+    if (idsSet.has(r.employe_id) && joursSet.has(r.date) && estOuvrable(ctx, empCat[r.employe_id], r.date, legalRows[r.date])) {
+      codeDay.add(`${r.employe_id}|${r.date}`);
+    }
+  }
+  // Les présences présumées alimentent les totaux présents (KPIs, séries, fiche employé,
+  // par catégorie) sans compter dans les journées badgées (journees/retards inchangés).
+  // Jours à VENIR : figés — seuls les jours ≤ date système du jour sont pris « par défaut » ;
+  // un jour futur n'est compté présent que quand la date système l'atteint.
+  const aujourdhui = iso(new Date());
+  const presumeDay = new Set();
+  if (empDeptPresume.size) {
+    for (const d of jours) {
+      if (d > aujourdhui) continue;
+      for (const e of employes) {
+        if (!empDeptPresume.has(e.id) || !estOuvrable(ctx, e.categorie_id, d, legalRows[d])) continue;
+        const key = `${e.id}|${d}`;
+        if (presentDay.has(key) || justifieAbs.has(key) || codeDay.has(key)) continue;
+        presumeDay.add(key);
+      }
+    }
+  }
+  if (presumeDay.size) {
+    const deltaPresume = { journees: 0, presents: 1, retards: 0, departs: 0, retardsSec: 0, departsSec: 0, uniques: 0, conformes: 0 };
+    for (const key of presumeDay) {
+      const eid = Number(key.split('|', 1)[0]);
+      const d = key.slice(key.indexOf('|') + 1);
+      agregPointage(pointagesJour, d, deltaPresume);
+      agregPointage(pointagesEmp, eid, deltaPresume);
+      const cat = empCategorieLabel[eid];
+      if (cat) agregPointage(pointagesCat, cat, deltaPresume);
+    }
+  }
+
   const absJours = {};
   const empAbsJours = {};
   for (const d of jours) {
-    if ((legalMap[d] || 0) <= 0) continue;
+    // Jours à VENIR : figés — un jour futur n'est ni présent ni absent (ni présumé présent) ;
+    // ce n'est qu'à la date du jour qu'il entre dans la base des présences/absences.
+    if (d > aujourdhui) continue;
     let n = 0;
     for (const e of employes) {
+      if (!estOuvrable(ctx, e.categorie_id, d, legalRows[d])) continue;
       const key = `${e.id}|${d}`;
-      if (presentDay.has(key) || justifieAbs.has(key)) continue;
+      if (presentDay.has(key) || justifieAbs.has(key) || presumeDay.has(key)) continue;
       n += 1;
       empAbsJours[e.id] = (empAbsJours[e.id] || 0) + 1;
     }
@@ -525,13 +576,24 @@ router.get('/audit', (req, res) => {
       pointages_uniques: 0, conformes: 0,
     };
     const b = buckets[k];
-    b.legal_heures += legalMap[d] || 0;
-    // Heures de maladie du jour (arrêts validés) : déduites des heures à travailler
-    b.maladie_heures += (legalMap[d] || 0) * Math.min(jourMaladie[d] || 0, effectif);
+    // Heures légales / jours ouvrables / heures-maladie PAR EMPLOYÉ : le samedi peut être
+    // travaillé pour certaines catégories (ex. Femme de ménage) → le dénominateur reflète le
+    // repos hebdomadaire de CHAQUE employé (somme par employé = « journées-ouvrables »).
+    let ouvrablesJour = 0;
+    let legalHJour = 0;
+    let maladieHJour = 0;
+    for (const e of employes) {
+      if (!estOuvrable(ctx, e.categorie_id, d, legalRows[d])) continue;
+      ouvrablesJour += 1;
+      const h = heuresPour(ctx, e.categorie_id, d, legalRows[d]);
+      legalHJour += h;
+      const mj = (empMaladieJours[e.id] && empMaladieJours[e.id][d]) || 0;
+      if (mj > 0) maladieHJour += h * Math.min(mj, 1);
+    }
+    b.legal_heures += legalHJour;
+    b.maladie_heures += maladieHJour;
     b.travaille_heures += travailMap[d] || 0;
-    // Jour ouvrable = jour PRÉVU au calendrier administratif (heures > 0) :
-    // repos hebdomadaires et fériés payés (nationaux/religieux/manuels à 0 h) exclus.
-    if ((legalMap[d] || 0) > 0) b.jours_ouvrables += 1;
+    b.jours_ouvrables += ouvrablesJour;
     b.jours_conge += jourConge[d] || 0;
     b.jours_ce += jourCE[d] || 0;
     b.jours_maladie += jourMaladie[d] || 0;
@@ -553,9 +615,10 @@ router.get('/audit', (req, res) => {
     // Absence = jour ouvrable sans badge ET sans congé validé (CA/CE) ET sans maladie acceptée,
     // calculé par jour dans absJours : sommes des jours = total, pas de clamp mensuel.
     const absence_calc = b.jours_absence;
-    // Heures à travailler NETTES = calendrier × effectif − heures des arrêts maladie validés
-    // (les repos hebdomadaires et fériés payés sont déjà à 0 h dans jours_travail).
-    const legal_avant_maladie = b.legal_heures * effectif;
+    // Heures à travailler NETTES = heures légales de l'ensemble des employés (chacun selon son
+    // repos hebdomadaire) − heures des arrêts maladie validés (les repos hebdomadaires et fériés
+    // payés sont déjà exclus : jours rechutes 0 h).
+    const legal_avant_maladie = b.legal_heures;
     const legal_total = Math.max(0, legal_avant_maladie - b.maladie_heures);
     const presence_pct = legal_total ? Math.round((b.travaille_heures / legal_total) * 1000) / 10 : null;
     const jours_presence = b.jours_presents;
@@ -590,8 +653,9 @@ router.get('/audit', (req, res) => {
   const totUniques = series.reduce((s, b) => s + b.pointages_uniques, 0);
   const ponctualite = totJournees ? Math.round(((totJournees - totRetards) / totJournees) * 1000) / 10 : null;
   const sortiesConformes = totJournees ? Math.round(((totJournees - totDeparts) / totJournees) * 1000) / 10 : null;
-  // Jours présents / absences en % des jours légaux de travail (jours ouvrables × effectif)
-  const joursLegauxTotaux = totOuvrables * effectif;
+  // Jours présents / absences en % des jours légaux de travail (journées-ouvrables cumulées,
+  // chacune pondérée par le repos hebdomadaire de la catégorie de l'employé)
+  const joursLegauxTotaux = totOuvrables;
   const jours_presents_pct = joursLegauxTotaux ? Math.round((totPresents / joursLegauxTotaux) * 1000) / 10 : null;
   const jours_absence_pct = joursLegauxTotaux ? Math.round((totAbsence / joursLegauxTotaux) * 1000) / 10 : null;
 
@@ -616,21 +680,29 @@ router.get('/audit', (req, res) => {
     arrets: db.prepare("SELECT COUNT(*) AS n FROM arrets_maladie WHERE statut = 'en_instance'").get().n,
   };
 
-  // Détail par employé
-  const legalParJour = jours.reduce((s, d) => s + (legalMap[d] || 0), 0);
-  const joursOuvrablesPeriode = jours.reduce((s, d) => s + ((legalMap[d] || 0) > 0 ? 1 : 0), 0);
+  // Détail par employé — jours ouvrables et heures légales selon la CATÉGORIE de l'employé
   const employesDetail = employes.map((e) => {
     const trav = travailEmp[e.id] || {};
     let travaille = 0;
     for (const d of jours) travaille += trav[d] || 0;
     travaille = Math.round(travaille * 100) / 100;
-    // Heures de maladie de l'employé (arrêts validés sur des jours prévus au calendrier),
+    // Jours ouvrables de l'employé sur la période (repos hebdomadaire de sa catégorie)
+    let joursOuvrablesEmp = 0;
+    let legalParJourEmp = 0;
+    for (const d of jours) {
+      if (estOuvrable(ctx, e.categorie_id, d, legalRows[d])) {
+        joursOuvrablesEmp += 1;
+        legalParJourEmp += heuresPour(ctx, e.categorie_id, d, legalRows[d]);
+      }
+    }
+    legalParJourEmp = Math.round(legalParJourEmp * 100) / 100;
+    // Heures de maladie de l'employé (arrêts validés sur ses jours ouvrables),
     // déduites des heures à travailler avant le calcul du taux de présence
     const malJours = empMaladieJours[e.id] || {};
     let maladieHeuresEmp = 0;
-    for (const d of jours) if (malJours[d]) maladieHeuresEmp += legalMap[d] || 0;
+    for (const d of jours) if (malJours[d]) maladieHeuresEmp += estOuvrable(ctx, e.categorie_id, d, legalRows[d]) ? heuresPour(ctx, e.categorie_id, d, legalRows[d]) : 0;
     maladieHeuresEmp = Math.round(maladieHeuresEmp * 100) / 100;
-    const legalNetteEmp = Math.max(0, Math.round((legalParJour - maladieHeuresEmp) * 100) / 100);
+    const legalNetteEmp = Math.max(0, Math.round((legalParJourEmp - maladieHeuresEmp) * 100) / 100);
     const pp = pointagesEmp[e.id] || {};
     const journees = pp.journees || 0;
     const retards = pp.retards || 0;
@@ -642,16 +714,16 @@ router.get('/audit', (req, res) => {
     // Absence = jour ouvrable sans badge ET sans congé validé (CA/CE) ET sans maladie
     // — même modèle journalier booléen que les séries/KPIs (empAbsJours)
     const jours_absence = empAbsJours[e.id] || 0;
-    const jours_presents_pct = joursOuvrablesPeriode ? Math.round((jours_presents / joursOuvrablesPeriode) * 1000) / 10 : null;
-    const jours_absence_pct = joursOuvrablesPeriode ? Math.round((jours_absence / joursOuvrablesPeriode) * 1000) / 10 : null;
+    const jours_presents_pct = joursOuvrablesEmp ? Math.round((jours_presents / joursOuvrablesEmp) * 1000) / 10 : null;
+    const jours_absence_pct = joursOuvrablesEmp ? Math.round((jours_absence / joursOuvrablesEmp) * 1000) / 10 : null;
     return {
       ...e,
       travaille_heures: travaille,
       legal_heures: legalNetteEmp,
-      legal_avant_maladie: Math.round(legalParJour * 100) / 100,
+      legal_avant_maladie: legalParJourEmp,
       heures_maladie: maladieHeuresEmp,
       presence_pct: legalNetteEmp ? Math.round((travaille / legalNetteEmp) * 1000) / 10 : null,
-      jours_ouvrables: joursOuvrablesPeriode,
+      jours_ouvrables: joursOuvrablesEmp,
       jours_presents,
       jours_presents_pct,
       jours_absence,
@@ -730,10 +802,12 @@ router.get('/audit', (req, res) => {
   }
   const calendrier = (employe_id || matricule) ? jours.map((d) => {
     const pj = pointagesJour[d];
-    // Ouvrable = jour PRÉVU au calendrier (heures > 0) : week-ends et fériés payés exclus
-    const ouvrable = (legalMap[d] || 0) > 0 ? 1 : 0;
+    const empFiltreId = ids[0];
+    // Ouvrable = jour PRÉVU au calendrier pour la CATÉGORIE de l'employé filtré
+    // (week-ends et fériés payés exclus, sauf samedi travaillé ex. Femme de ménage)
+    const ouvrable = estOuvrable(ctx, empCat[empFiltreId], d, legalRows[d]) ? 1 : 0;
     const badge = pj ? pj.journees : 0;
-    const present = pj ? pj.presents : 0;
+    const present = (pj ? pj.presents : 0) || (presumeDay.has(`${empFiltreId}|${d}`) ? 1 : 0);
     const conge = jourConge[d] || 0;
     const ce = jourCE[d] || 0;
     const maladie = jourMaladie[d] || 0;
@@ -742,7 +816,7 @@ router.get('/audit', (req, res) => {
     const isRmaDemi = rma && rmaDemiMap[d] && (rma.split('/').includes('CA') || rma.split('/').includes('DJ'));
     const rma_couleur = rma ? (isRmaDemi ? '#000000' : (couleurRma[rma.split('/')[0]] || '#64748b')) : null;
     return {
-      date: d, ouvrable, heures: legalMap[d] || 0, badge, present, conge, ce, maladie, absence, demi: jourDemi[d] || 0,
+      date: d, ouvrable, heures: heuresPour(ctx, empCat[empFiltreId], d, legalRows[d]), badge, present, conge, ce, maladie, absence, demi: jourDemi[d] || 0,
       travaille_secondes: (travailFiltre && travailFiltre[d] ? Math.round(travailFiltre[d] * 3600) : 0) || (badgesFiltre ? badgesFiltre[d] || 0 : 0),
       rma_code: rma, rma_couleur, rma_demi: isRmaDemi ? 1 : 0,
     };

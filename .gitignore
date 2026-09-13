@@ -23,3 +23,6 @@ dbg*.js
 
 # Aperçu du système de design (outil interne)
 .design/
+
+# Modeles non utilises (liveness expression retiree)
+client/public/models/face_expression_model*

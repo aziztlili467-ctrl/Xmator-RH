@@ -5,6 +5,7 @@ import {
   AreaChart, Area, PieChart, Pie, Cell,
 } from 'recharts';
 import { api, mediaSrc } from '../api';
+import { getSocket } from '../socket';
 import { fmtJours, fmtDate } from '../utils';
 import { presenceColor } from '../components/PresenceHeures';
 import CalendarJour from '../components/CalendarJour';
@@ -237,7 +238,6 @@ function CarteEvaluationPonctualite({ k, baro }) {
 }
 
 export default function Dashboard() {
-  const [granularite, setGranularite] = useState('mois');
   const [preset, setPreset] = useState('annee');
   const [persoDebut, setPersoDebut] = useState(`${new Date().getFullYear()}-01-01`);
   const [persoFin, setPersoFin] = useState(`${new Date().getFullYear()}-12-31`);
@@ -261,6 +261,22 @@ export default function Dashboard() {
   useEffect(() => {
     api.employes().then((l) => { setEmployesList(l); setEmployesReady(true); }).catch(() => { setEmployesReady(true); });
     api.categories().then(setCategoriesList).catch(() => {});
+  }, []);
+
+  // Règle de synchronisation immédiate : dès qu'une écriture touche les données RH
+  // (sous-catégorie Employés — création, maj, suppression, import…), le serveur diffuse
+  // 'rh:donnees-change' : la liste des employés (et donc les départements distincts), les
+  // catégories et l'audit sont rafraîchis sur-le-champ.
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return undefined;
+    const synchroniser = () => {
+      api.employes().then((l) => { setEmployesList(l); setEmployesReady(true); }).catch(() => {});
+      api.categories().then(setCategoriesList).catch(() => {});
+      setAlea((a) => a + 1);
+    };
+    socket.on('rh:donnees-change', synchroniser);
+    return () => { socket.off('rh:donnees-change', synchroniser); };
   }, []);
 
   const filtreEmployeId = employeId ? Number(employeId) : null;
@@ -301,7 +317,6 @@ export default function Dashboard() {
   const auditParams = useMemo(() => {
     if (matriculeIntrouvable) return null;
     return {
-      granularite,
       debut: periode.debut,
       fin: periode.fin,
       categorie_id: categorieId ? Number(categorieId) : undefined,
@@ -310,7 +325,7 @@ export default function Dashboard() {
       matricule: filtreEmployeId ? undefined : (employeFiltre ? employeFiltre.matricule : undefined),
       alea: alea || undefined,
     };
-  }, [granularite, periode, categorieId, departement, filtreEmployeId, employeFiltre, matriculeIntrouvable, alea]);
+  }, [periode, categorieId, departement, filtreEmployeId, employeFiltre, matriculeIntrouvable, alea]);
 
   useEffect(() => {
     if (!auditParams) {
@@ -388,6 +403,14 @@ export default function Dashboard() {
     return [...s].sort((a, b) => a.localeCompare(b, 'fr'));
   }, [employesList]);
 
+  // Liste « Employé » du filtre : restreinte au département choisi (ex. Siège / Comptoir) —
+  // seuls les employés liés à ce département distinctif apparaissent.
+  const employesParDepartement = useMemo(() => {
+    const d = departement.trim().toLowerCase();
+    if (!d) return employesList;
+    return (employesList || []).filter((e) => ((e.departement || '').trim() || '').toLowerCase() === d);
+  }, [employesList, departement]);
+
   const employesFiltres = useMemo(() => {
     const list = data?.employes || [];
     if (!recherche.trim()) return list;
@@ -429,23 +452,6 @@ export default function Dashboard() {
             </button>
 
             <div className={`mt-4 space-y-4 ${filtresOuverts ? 'block' : 'hidden'} xl:block`}>
-              <div>
-                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Granularité</label>
-                <div className="grid grid-cols-1 overflow-hidden rounded-lg ring-1 ring-slate-200 xs:grid-cols-3">
-                  {[['jour', 'Jour'], ['mois', 'Mois'], ['annee', 'Année']].map(([v, l]) => (
-                    <button
-                      key={v}
-                      onClick={() => setGranularite(v)}
-                      className={`px-2 py-2 text-xs font-semibold transition ${
-                        granularite === v ? 'bg-brand-700 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
-                      }`}
-                    >
-                      {l}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               <div>
                 <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Période</label>
                 <select className="input w-full text-sm" value={preset} onChange={(e) => setPreset(e.target.value)}>
@@ -497,7 +503,7 @@ export default function Dashboard() {
                 <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Employé</label>
                 <select className="input w-full text-sm" value={employeId} onChange={(e) => { setEmployeId(e.target.value); if (e.target.value) setMatricule(''); }}>
                   <option value="">Tous les employés</option>
-                  {employesList.map((e) => (
+                  {employesParDepartement.map((e) => (
                     <option key={e.id} value={e.id}>{e.matricule} — {e.nom} {e.prenom}</option>
                   ))}
                 </select>
@@ -577,9 +583,6 @@ export default function Dashboard() {
               ) : (
                 <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600 ring-1 ring-slate-100">
                   <p className="font-semibold text-slate-700">{k?.effectif ?? 0} employé(s)</p>
-                  <p className="mt-0.5 capitalize text-slate-400">
-                    Granularité : {granularite === 'jour' ? 'par jour' : granularite === 'mois' ? 'par mois' : 'par année'}
-                  </p>
                 </div>
               )}
 
@@ -605,7 +608,12 @@ export default function Dashboard() {
             </p>
           )}
           {error && !data && (
-            <p className="rounded-2xl border border-red-200 bg-red-50 p-10 text-center text-sm text-red-600 shadow-card">{error}</p>
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-10 text-center shadow-card">
+              <p className="mb-4 text-sm text-red-600">{error}</p>
+              <button className="btn-primary" type="button" onClick={() => setAlea((a) => a + 1)}>
+                Réessayer
+              </button>
+            </div>
           )}
           {!data && !loading && !error && (
             <p className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500 shadow-card">
@@ -642,7 +650,7 @@ export default function Dashboard() {
             <KpiCard
               title="Jours présents"
               value={`${k.jours_presents} j`}
-              sub={`${fmtPct(k.jours_presents_pct)} des jours légaux (${k.jours_ouvrables * k.effectif} j)`}
+              sub={`${fmtPct(k.jours_presents_pct)} des jours légaux (${k.jours_ouvrables} j)`}
               icon={<IconCalendarCheck />}
               accent={{ from: '#0d9488', to: '#10b981' }}
               chip={k.jours_presents_pct !== null ? { label: fmtPct(k.jours_presents_pct), bg: cartePresence(k.jours_presents_pct).bg, text: cartePresence(k.jours_presents_pct).text } : undefined}
@@ -658,7 +666,7 @@ export default function Dashboard() {
             <KpiCard
               title="Congés sur période"
               value={`${fmtJours(k.jours_conge)} j`}
-              sub={`${fmtJours(k.jours_conge_demi)} j en demi-journée · ${k.jours_ouvrables * k.effectif} j ouvrables`}
+              sub={`${fmtJours(k.jours_conge_demi)} j en demi-journée · ${k.jours_ouvrables} j ouvrables`}
               icon={<IconCalendarCheck />}
               accent={{ from: '#f43f5e', to: '#ec4899' }}
             />
@@ -694,10 +702,10 @@ export default function Dashboard() {
           {/* ===== Baromètres ===== */}
           <div className="grid grid-cols-1 gap-2.5 xs:grid-cols-2 sm:gap-4 xl:grid-cols-3">
             <Barometre pct={data.barometres.presence} label="Présence (heures)" sub={`${fmtHeures(k.heures_travaillees)} / ${fmtHeures(k.heures_legales)}`} color="#10b981" />
-            <Barometre pct={data.barometres.jours_presence} label="Jours présents" sub={`${k.jours_presents} / ${k.jours_ouvrables * k.effectif} jours légaux`} color="#0d9488" />
+            <Barometre pct={data.barometres.jours_presence} label="Jours présents" sub={`${k.jours_presents} / ${k.jours_ouvrables} jours légaux`} color="#0d9488" />
             <Barometre pct={data.barometres.absence_jours} label="Jours d'absence" sub={`${k.jours_absence} jour(s) sans badge ni couverture`} color="#f59e0b" />
-            <Barometre pct={data.barometres.conge} label="Congés sur période" sub={`${fmtJours(k.jours_conge)} j / ${k.jours_ouvrables * k.effectif} j ouvrables`} color="#3860ea" />
-            <Barometre pct={data.barometres.maladie} label="Maladie sur période" sub={`${fmtJours(k.jours_maladie)} j / ${k.jours_ouvrables * k.effectif} j ouvrables`} color="#f43f5e" />
+            <Barometre pct={data.barometres.conge} label="Congés sur période" sub={`${fmtJours(k.jours_conge)} j / ${k.jours_ouvrables} j ouvrables`} color="#3860ea" />
+            <Barometre pct={data.barometres.maladie} label="Maladie sur période" sub={`${fmtJours(k.jours_maladie)} j / ${k.jours_ouvrables} j ouvrables`} color="#f43f5e" />
             <Barometre pct={data.barometres.ponctualite} label="Ponctualité globale" sub={`${k.journees_presence - k.retards} / ${k.journees_presence} journée(s) sans retard`} color="#8b5cf6" />
           </div>
 

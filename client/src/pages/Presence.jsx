@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { downloadFile, fmtDate } from '../utils';
-import { IconUpload, IconDownload, IconTrash, IconEdit } from '../components/icons';
+import { IconUpload, IconDownload, IconTrash, IconEdit, IconFilter } from '../components/icons';
 
 // "HH:mm:ss" -> "HH:mm" (colonnes compactes)
 const short = (hms) => (hms ? hms.slice(0, 5) : '');
@@ -27,8 +27,14 @@ function statutBadge(statut) {
 
 export default function Presence() {
   const { user } = useAuth();
-  const [debut, setDebut] = useState('');
-  const [fin, setFin] = useState('');
+  const [debut, setDebut] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  });
+  const [fin, setFin] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
   const [matricule, setMatricule] = useState('');
   const [categorieId, setCategorieId] = useState('');
   const [categories, setCategories] = useState([]);
@@ -75,15 +81,13 @@ export default function Presence() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => {
-    load(debut, fin, matricule, categorieId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Les lignes sont masquées tant que l'administrateur n'a pas cliqué sur « Exécuter ».
+  const executer = () => load(debut, fin, matricule, categorieId);
 
-  const changeDebut = (v) => { setDebut(v); load(v, fin, matricule, categorieId); };
-  const changeFin = (v) => { setFin(v); load(debut, v, matricule, categorieId); };
-  const changeMatricule = (v) => { setMatricule(v); load(debut, fin, v, categorieId); };
-  const changeCategorie = (v) => { setCategorieId(v); load(debut, fin, matricule, v); };
+  const changeDebut = (v) => setDebut(v);
+  const changeFin = (v) => setFin(v);
+  const changeMatricule = (v) => setMatricule(v);
+  const changeCategorie = (v) => setCategorieId(v);
 
   // Total d'écart sur les lignes affichées
   const somme = (key) => (data ? data.lignes.reduce((s, l) => s + (l[key] || 0), 0) : 0);
@@ -438,17 +442,27 @@ export default function Presence() {
           {(matricule || categorieId) && (
             <button
               className="text-xs font-semibold text-brand-600 hover:underline"
-              onClick={() => { setMatricule(''); setCategorieId(''); load(debut, fin, '', ''); }}
+              onClick={() => { setMatricule(''); setCategorieId(''); }}
             >
               Effacer les filtres
             </button>
           )}
         </div>
-        {data && (
-          <p className="text-xs text-slate-400">
-            {data.totaux.lignes} ligne(s) de présence{data.totaux.pointages_uniques > 0 && ` — ${data.totaux.pointages_uniques} pointage(s) unique(s)`}
-          </p>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            className="btn-primary"
+            onClick={executer}
+            disabled={loading}
+            title="Afficher les lignes correspondant aux filtres ci-dessus"
+          >
+            <IconFilter /> {loading ? 'Chargement…' : 'Exécuter'}
+          </button>
+          {data && (
+            <p className="text-xs text-slate-400">
+              {data.totaux.lignes} ligne(s) de présence{data.totaux.pointages_uniques > 0 && ` — ${data.totaux.pointages_uniques} pointage(s) unique(s)`}{data.totaux.biometriques > 0 && ` — dont ${data.totaux.biometriques} via la borne biométrique Xmator-Eye`}
+            </p>
+          )}
+        </div>
       </div>
 
       {ramadanActifs().length > 0 && (
@@ -462,6 +476,16 @@ export default function Presence() {
         Tolérance : un retard n'est comptabilisé que s'il dépasse 30 minutes ; une sortie anticipée n'est comptabilisée que si l'employé part 15 minutes avant l'heure réglementaire de sortie.
       </p>
 
+      {!data && !loading && (
+        <div className="card flex flex-col items-center gap-2 p-8 text-center">
+          <IconFilter className="h-8 w-8 text-slate-300" />
+          <p className="text-sm font-semibold text-slate-700">Aucune ligne affichée</p>
+          <p className="text-sm text-slate-500">
+            Choisissez une période (ou laissez vide pour tout l'historique), puis cliquez sur <strong>Exécuter</strong> pour afficher les lignes de présence.
+          </p>
+        </div>
+      )}
+
       {data && (
         <>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -470,7 +494,7 @@ export default function Presence() {
               <p className="text-2xl font-bold text-slate-800">{data.totaux.lignes}</p>
             </div>
             <div className="card p-4">
-              <p className="text-[11px] font-semibold uppercase text-slate-400">Conformes</p>
+              <p className="text-[11px] font-semibold uppercase text-slate-400">Conformités</p>
               <p className="text-2xl font-bold text-emerald-600">{data.totaux.conformes}</p>
             </div>
             <div className="card p-4">
@@ -566,6 +590,11 @@ export default function Presence() {
                               <span className={`h-1.5 w-1.5 rounded-full ${b.dot}`} />
                               {l.statut}
                             </span>
+                            {l.source_biometrique && (
+                              <span className="ms-1 inline-flex items-center gap-1 rounded-full bg-cyan-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-cyan-700 ring-1 ring-cyan-300" title="Pointage(s) enregistré(s) via la borne biométrique Xmator-Eye">
+                                Bio
+                              </span>
+                            )}
                           </td>
                           {user?.role === 'super_admin' && (
                             <td className="px-3 py-2 text-center">

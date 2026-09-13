@@ -26,7 +26,12 @@ const AjoutSoldeMaladie = lazy(() => import('./pages/AjoutSoldeMaladie'));
 const JournalMaladie = lazy(() => import('./pages/JournalMaladie'));
 const StatsJournal = lazy(() => import('./pages/StatsJournal'));
 const ParametresCodification = lazy(() => import('./pages/ParametresCodification'));
+const ParametresPresence = lazy(() => import('./pages/ParametresPresence'));
 const GrilleSalaire = lazy(() => import('./pages/GrilleSalaire'));
+const IndemnitesFv = lazy(() => import('./pages/IndemnitesFv'));
+const CalculDePaie = lazy(() => import('./pages/CalculDePaie'));
+const SimulateurImpot = lazy(() => import('./pages/SimulateurImpot'));
+const ParametresIndemnites = lazy(() => import('./pages/ParametresIndemnites'));
 const JournalRMA = lazy(() => import('./pages/JournalRMA'));
 const NotificationAbsences = lazy(() => import('./pages/NotificationAbsences'));
 const FicheCreation = lazy(() => import('./pages/FicheCreation'));
@@ -36,6 +41,7 @@ const Maintenance = lazy(() => import('./pages/Maintenance'));
 const Mouchard = lazy(() => import('./pages/Mouchard'));
 const Horaires = lazy(() => import('./pages/Horaires'));
 const Presence = lazy(() => import('./pages/Presence'));
+const PointageBiometrique = lazy(() => import('./pages/PointageBiometrique'));
 const CalendrierAnnee = lazy(() => import('./pages/CalendrierAnnee'));
 const TelechargerApp = lazy(() => import('./pages/TelechargerApp'));
 const AppareilsConnectes = lazy(() => import('./pages/AppareilsConnectes'));
@@ -47,6 +53,7 @@ const ReferentielParametresCongeMaladie = lazy(() => import('./pages/Referentiel
 const ReferentielParametresPointage = lazy(() => import('./pages/ReferentielParametresPointage'));
 const ReferentielPromotionNotation = lazy(() => import('./pages/ReferentielPromotionNotation'));
 const ReferentielSaasTableauBord = lazy(() => import('./pages/ReferentielSaasTableauBord'));
+const BorneXmatorEye = lazy(() => import('./pages/BorneXmatorEye'));
 
 function Chargement() {
   return (
@@ -94,6 +101,7 @@ function AppRoutes() {
       <Routes>
       <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
       <Route path="/acces-refuse" element={<AccesRefuse />} />
+      <Route path="/borne" element={<RequireAuth><BorneXmatorEye /></RequireAuth>} />
 
       <Route
         element={
@@ -107,6 +115,7 @@ function AppRoutes() {
         <Route path="/mouchard" element={<Mouchard />} />
         <Route path="/horaires" element={<Horaires />} />
         <Route path="/presence" element={<Presence />} />
+        <Route path="/pointage-biometrique" element={<PointageBiometrique />} />
         <Route path="/calendrier" element={<CalendrierAnnee />} />
         <Route path="/maintenance" element={<Maintenance />} />
                 <Route path="/application/telecharger" element={<TelechargerApp />} />
@@ -130,7 +139,12 @@ function AppRoutes() {
         <Route path="/edition-conges" element={<EditionConges />} />
         <Route path="/stats-journal" element={<StatsJournal />} />
         <Route path="/parametres-codification" element={<ParametresCodification />} />
+        <Route path="/parametres-presence" element={<ParametresPresence />} />
         <Route path="/grille-salaire" element={<GrilleSalaire />} />
+        <Route path="/indemnites-fv" element={<IndemnitesFv />} />
+        <Route path="/calcul-paie" element={<CalculDePaie />} />
+        <Route path="/simulateur-impot" element={<SimulateurImpot />} />
+        <Route path="/parametres-indemnites" element={<ParametresIndemnites />} />
         <Route path="/journal-rma" element={<JournalRMA />} />
         <Route path="/notification-absences" element={<NotificationAbsences />} />
         <Route path="/categories" element={<Categories />} />

@@ -22,7 +22,7 @@ process.on('unhandledRejection', (err) => console.error('[unhandledRejection]', 
 const { requireAuth, requireRole, requireModule } = require('./middleware/auth');
 const { auditLog } = require('./middleware/audit');
 const { db } = require('./db');
-const { notifyDataChanged } = require('./routes/dataSync');
+const { notifyDataChanged, onDataChanged } = require('./routes/dataSync');
 
 // Sonde de santé publique — utilisée par l'hébergeur (Render, Docker…) pour
 // vérifier que le service répond. Doit rester AVANT requireAuth, sinon elle
@@ -67,6 +67,35 @@ app.use('/api/codes-paie', requireRole('super_admin'), require('./routes/codes-p
 app.use('/api/grille-salaire', (req, res, next) =>
   req.method === 'GET' ? lecture(req, res, next) : requireRole('super_admin')(req, res, next),
   require('./routes/grille-salaire'));
+// Règles de calcul de la paie (Référentiel → Paramètre de Salaire) : nomenclature des rubriques du
+// bulletin de paie — lecture super_admin + consultation + moderateur, écritures super_admin
+app.use('/api/regles-calcul-paie', (req, res, next) =>
+  req.method === 'GET' ? lecture(req, res, next) : requireRole('super_admin')(req, res, next),
+  require('./routes/regles-calcul-paie'));
+// Cycle de calcul mensuel (début / fin de cycle par mois) — mêmes droits que les règles de paie
+app.use('/api/cycles-calcul', (req, res, next) =>
+  req.method === 'GET' ? lecture(req, res, next) : requireRole('super_admin')(req, res, next),
+  require('./routes/cycles-calcul'));
+// Indemnités F&V (Paie Mensuelle) : lecture pour super_admin + consultation + moderateur ;
+// écritures super_admin uniquement (données de paie)
+app.use('/api/indemnites-fv', (req, res, next) =>
+  req.method === 'GET' ? lecture(req, res, next) : requireRole('super_admin')(req, res, next),
+  require('./routes/indemnites-fv'));
+// Paramètres des indemnités F&V (Paie Mensuelle) : montants fixes par catégorie avec historique
+// par mois d'effet — lecture super_admin + consultation + moderateur, écritures super_admin
+app.use('/api/parametres-indemnites', (req, res, next) =>
+  req.method === 'GET' ? lecture(req, res, next) : requireRole('super_admin')(req, res, next),
+  require('./routes/parametres-indemnites'));
+// Paramètres de présence : lecture pour super_admin + consultation + moderateur (journal de
+// présence / dashboard liés) ; écritures super_admin uniquement (départements « Présent par défaut »)
+app.use('/api/parametres-presence', (req, res, next) =>
+  req.method === 'GET' ? lecture(req, res, next) : requireRole('super_admin')(req, res, next),
+  require('./routes/parametres-presence'));
+// Paramètres généraux (Référentiel) : identité de l'organisme — lecture pour super_admin +
+// consultation + moderateur, écritures super_admin uniquement
+app.use('/api/parametres-generaux', (req, res, next) =>
+  req.method === 'GET' ? lecture(req, res, next) : requireRole('super_admin')(req, res, next),
+  require('./routes/parametres-generaux'));
 
 // Workflow congés / arrêts : écritures et décisions selon les permissions du modérateur
 app.use('/api/demandes-conge', requireModule('demandes'), require('./routes/demandes-conge'));
@@ -135,6 +164,13 @@ const { JWT_SECRET } = require('./middleware/auth');
 const jwt = require('jsonwebtoken');
 const chat = require('./routes/chat');
 const io = new Server(server, { cors: { origin: corsOrigins || false }, maxHttpBufferSize: 1e5 });
+
+// Règle de synchronisation « temps réel » : chaque écriture API réussie (POST/PUT/DELETE 2xx)
+// est diffusée à tous les clients connectés (event rh:donnees-change). Les tableaux de bord
+// ouverts rafraîchissent alors immédiatement leurs filtres (départements, employés, catégories)
+// et leurs graphiques — tout changement futur dans la sous-catégorie Employés (Renseignements RH),
+// import compris, est synchronisé instantanément.
+onDataChanged(() => io.emit('rh:donnees-change'));
 
 function adminsConnectes() {
   let n = 0;

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 // Page « Télécharger l'application » — la PWA est déjà installable (manifest + service worker
 // en place) ; cette page propose le bouton d'installation natif et les instructions de secours.
@@ -13,6 +14,7 @@ function detecterPlateforme() {
 }
 
 export default function TelechargerApp() {
+  const navigate = useNavigate();
   const [invite, setInvite] = useState(null);
   const [dejaInstallee, setDejaInstallee] = useState(
     window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true
@@ -53,7 +55,7 @@ export default function TelechargerApp() {
       {/* Aperçu de l'application telle qu'elle apparaîtra installée */}
       <div className="card flex flex-col items-center gap-5 p-8 sm:flex-row sm:items-start">
         <img
-          src="/icons/icon-192.png?v=20260822"
+          src="/icons/icon-192.png?v=20260912saas"
           alt="Icône XMATOR RH"
           className="h-24 w-24 rounded-3xl bg-white object-contain shadow-lg ring-4 ring-brand-100"
         />
@@ -77,6 +79,25 @@ export default function TelechargerApp() {
               </p>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Borne de pointage biométrique XMATOR EYE */}
+      <div className="card overflow-hidden">
+        <div className="flex flex-col gap-5 p-8 sm:flex-row sm:items-center">
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl shadow-lg ring-2 ring-cyan-200">
+            <img src="/xmator-eye-logo.png" alt="Logo XMATOR EYE" className="h-full w-full object-cover" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-xl font-extrabold text-slate-900">XMATOR EYE — Borne de pointage biométrique</h3>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Écran kiosque installable dédié au pointage par reconnaissance faciale (<b>liveness</b> : sourire requis).
+              Horodatage précis à la seconde, comptes rendus <b>« biométrique »</b> dans « Pointages & présences », fonctionnement hors-ligne partiel (file de synchronisation).
+            </p>
+          </div>
+          <button onClick={() => navigate('/borne')} className="btn-primary shrink-0 px-6 py-3">
+            Accéder à la borne
+          </button>
         </div>
       </div>
 

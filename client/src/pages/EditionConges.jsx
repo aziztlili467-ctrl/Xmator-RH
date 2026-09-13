@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { fmtJours, downloadFile } from '../utils';
-import { printHtml, printBrandHeader, printBrandHeaderStyle, printBrandFooter, printBrandFooterStyle, printHead } from '../utils/printBranding';
 import { IconPrinter, IconDownload, IconSettings, IconFilter } from '../components/icons';
 
 export default function EditionConges() {
@@ -29,73 +28,22 @@ export default function EditionConges() {
 
   const selectCls = 'input bg-white';
 
-  const buildPrintHtml = () => {
-    const rows = data.employes.map((e, i) => `
-      <tr style="background:${i % 2 === 0 ? '#f8fafc' : '#fff'}">
-        <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#1e293b;text-align:center">${e.matricule}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:13px;font-weight:700;color:#1e293b">${e.nom} ${e.prenom}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#475569">${e.categorie || ''}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:14px;font-weight:700;text-align:center;color:${e.solde_conge <= 0 ? '#dc2626' : e.solde_conge <= 5 ? '#d97706' : '#059669'}">${e.solde_conge} j</td>
-      </tr>`).join('');
-
-    const totalSolde = data.employes.reduce((s, e) => s + e.solde_conge, 0);
-    const avgSolde = data.employes.length ? (totalSolde / data.employes.length).toFixed(1) : 0;
-
-    return `<!DOCTYPE html><html><head>${printHead('Journal des Congés')}
-<style>
-  @page{size:A4 portrait;margin:0}
-  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
-  body{margin:0;padding:9mm 10mm;font-family:'Inter',system-ui,sans-serif;color:#1e293b;background:#fff}
-  ${printBrandHeaderStyle()}
-  ${printBrandFooterStyle()}
-  .journal-title{font-size:18px;font-weight:800;color:#0f172a;margin-bottom:4px}
-  .journal-sub{font-size:12px;color:#64748b;margin-bottom:16px}
-  table{width:100%;border-collapse:collapse}
-  th{background:#1e3a5f;color:#fff;padding:8px 10px;font-size:12px;font-weight:700;text-align:left}
-  th:last-child,td:last-child{text-align:center}
-  td{padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:13px}
-  .summary{margin-top:16px;padding:10px 14px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;color:#475569}
-  @media print{
-    .no-print{display:none!important}
-    body{padding:9mm 10mm}
-  }
-</style>
-</head><body>
-  ${printBrandHeader('Journal des Congés')}
-  <div class="journal-title">Journal des Congés</div>
-  <div class="journal-sub">Référence : ${data.date_ref} — ${data.employes.length} employé(s)</div>
-  <table>
-    <thead><tr>
-      <th style="width:70px;text-align:center">Matricule</th>
-      <th>Nom & Prénom</th>
-      <th style="width:120px">Catégorie</th>
-      <th style="width:80px">Solde congé</th>
-    </tr></thead>
-    <tbody>${rows || '<tr><td colspan="4" style="text-align:center;padding:20px;color:#94a3b8">Aucun employé</td></tr>'}</tbody>
-  </table>
-  <div class="summary">
-    <strong>Total :</strong> ${data.employes.length} employé(s) — <strong>Solde moyen :</strong> ${avgSolde} j — <strong>Solde total :</strong> ${fmtJours(totalSolde)} j
-  </div>
-  ${printBrandFooter()}
-</body></html>`;
+  const handlePrint = () => {
+    api.editionCongesPrint(filters);
   };
 
-  const handlePrint = () => { printHtml(buildPrintHtml()); };
-
   const handlePdf = () => {
-    const qs = new URLSearchParams();
-    if (filters.employe) qs.set('employe', filters.employe);
-    if (filters.categorie) qs.set('categorie', filters.categorie);
-    if (filters.debut) qs.set('debut', filters.debut);
-    if (filters.fin) qs.set('fin', filters.fin);
-    if (filters.search) qs.set('search', filters.search);
-    api.editionCongesPdf(Object.fromEntries(qs));
+    api.editionCongesPdf(filters);
+  };
+
+  const handleXls = () => {
+    api.editionCongesXls(filters);
   };
 
   const handleExportCsv = () => {
-    const header = ['Matricule', 'Nom', 'Prénom', 'Catégorie', 'Solde congé (j)'].join(';');
+    const header = ['Matricule', 'Nom', 'Prénom', 'Catégorie', 'Département', 'Solde congé (j)'].join(';');
     const lines = data.employes.map((e) =>
-      [e.matricule, e.nom, e.prenom, e.categorie || '', e.solde_conge].join(';')
+      [e.matricule, e.nom, e.prenom, e.categorie || '', e.departement || '', e.solde_conge].join(';')
     );
     downloadFile(`journal-conges_${data.date_ref}.csv`, [header, ...lines].join('\n'));
   };
@@ -118,7 +66,10 @@ export default function EditionConges() {
             <IconPrinter /> Imprimer
           </button>
           <button onClick={handlePdf} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-emerald-700 transition">
-            <IconDownload /> Télécharger PDF
+            <IconDownload /> PDF
+          </button>
+          <button onClick={handleXls} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-indigo-700 transition">
+            <IconDownload /> XLS
           </button>
           <button onClick={handleExportCsv} className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-200 transition">
             <IconDownload /> CSV

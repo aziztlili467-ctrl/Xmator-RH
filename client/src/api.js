@@ -53,27 +53,52 @@ export function getAppareilId() {
 
 async function request(path, options = {}) {
   const token = getToken();
-  const res = await fetch(BASE + path, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {}),
-    },
-    ...options,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (res.status === 401 && !path.startsWith('/auth/login')) {
-    setToken(null);
-    if (!window.location.pathname.startsWith('/login')) {
-      window.location.href = '/login';
+  const method = (options.method || 'GET').toUpperCase();
+  // Course au démarrage : au lancement du serveur, l'API peut ne pas encore répondre
+  // (le proxy Vite renvoie alors un 5xx / une erreur réseau). Les requêtes sans effet
+  // de bord (GET/HEAD) tentent 3 fois avec un léger espacement — suffisant pour laisser
+  // l'API finir de démarrer sans afficher d'erreur au premier affichage du tableau de bord.
+  const essais = method === 'GET' || method === 'HEAD' ? 3 : 1;
+  let dernierSouci;
+  for (let i = 1; i <= essais; i += 1) {
+    if (i > 1) await new Promise((r) => setTimeout(r, 400 * (i - 1)));
+    try {
+      const res = await fetch(BASE + path, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(options.headers || {}),
+        },
+        ...options,
+      });
+      if (res.status >= 500 && i < essais) {
+        dernierSouci = new Error(`Erreur serveur (${res.status})`);
+        continue;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401 && !path.startsWith('/auth/login')) {
+        setToken(null);
+        if (!window.location.pathname.startsWith('/login')) {
+          window.location.href = '/login';
+        }
+      }
+      if (!res.ok) {
+        const err = new Error(data.error || 'Une erreur est survenue.');
+        err.status = res.status;
+        throw err;
+      }
+      return data;
+    } catch (err) {
+      // Réessaye uniquement les pannes transitoires (erreur réseau sans status HTTP,
+      // ou 5xx) ; jamais les 4xx (erreurs métier : 400, 401, 404…).
+      if (i < essais && (err.status === undefined || err.status >= 500)) {
+        dernierSouci = err;
+        continue;
+      }
+      throw err;
     }
   }
-  if (!res.ok) {
-    const err = new Error(data.error || 'Une erreur est survenue.');
-    err.status = res.status;
-    throw err;
-  }
-  return data;
+  throw dernierSouci;
 }
 
 const buildQuery = (params = {}) => {
@@ -226,8 +251,8 @@ export const api = {
   },
 
   categories: () => request('/categories'),
-  createCategorie: (libelle) => request('/categories', { method: 'POST', body: JSON.stringify({ libelle }) }),
-  updateCategorie: (id, libelle) => request(`/categories/${id}`, { method: 'PUT', body: JSON.stringify({ libelle }) }),
+  createCategorie: (libelle, repos_hebdomadaire = '0,6') => request('/categories', { method: 'POST', body: JSON.stringify({ libelle, repos_hebdomadaire }) }),
+  updateCategorie: (id, libelle, repos_hebdomadaire) => request(`/categories/${id}`, { method: 'PUT', body: JSON.stringify({ libelle, repos_hebdomadaire }) }),
   deleteCategorie: (id) => request(`/categories/${id}`, { method: 'DELETE' }),
 
   employes: (params = {}) => request('/employes' + buildQuery(params)),
@@ -235,9 +260,14 @@ export const api = {
   createEmploye: (body) => request('/employes', { method: 'POST', body: JSON.stringify(body) }),
   updateEmploye: (id, body) => request(`/employes/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteEmploye: (id) => request(`/employes/${id}`, { method: 'DELETE' }),
+  faceEmploye: (id) => request(`/employes/${id}/face-descriptor`),
+  sauvegarderFace: (id, descriptor) => request(`/employes/${id}/face-descriptor`, { method: 'PUT', body: JSON.stringify({ descriptor }) }),
+  supprimerFace: (id) => request(`/employes/${id}/face-descriptor`, { method: 'DELETE' }),
+  descripteursFace: () => request('/employes/descriptors'),
 
   mouvements: (params = {}) => request('/mouvements' + buildQuery(params)),
   createMouvement: (body) => request('/mouvements', { method: 'POST', body: JSON.stringify(body) }),
+  compteJoursPrelevement: (params = {}) => request('/mouvements/compte-jours' + buildQuery(params)),
   correctionSolde: (body) => request('/mouvements/correction-solde', { method: 'POST', body: JSON.stringify(body) }),
   ajoutAnnuelMasse: (body) => request('/mouvements/ajout-annuel-masse', { method: 'POST', body: JSON.stringify(body) }),
   ajoutMaladieMasse: (body) => request('/mouvements/ajout-maladie-masse', { method: 'POST', body: JSON.stringify(body) }),
@@ -247,6 +277,9 @@ export const api = {
   updateMouvement: (id, body) => request(`/mouvements/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteMouvement: (id) => request(`/mouvements/${id}`, { method: 'DELETE' }),
   journalSoldeConge: (id) => request(`/mouvements/journal-solde/${id}`),
+  journalSoldePdf: (id) => openPdf(`/mouvements/journal-solde/${id}/pdf`),
+  journalSoldePrint: (id) => printPdf(`/mouvements/journal-solde/${id}/pdf`),
+  journalSoldeXls: (id) => downloadFichier(`/mouvements/journal-solde/${id}/xls`, `journal-solde-conge_${id}.xls`),
 
   arretsMaladie: (params = {}) => request('/arrets-maladie' + buildQuery(params)),
   arretMaladie: (id) => request(`/arrets-maladie/${id}`),
@@ -257,6 +290,8 @@ export const api = {
 
   editionConges: (params = {}) => request('/edition-conges' + buildQuery(params)),
   editionCongesPdf: (params = {}) => openPdf('/edition-conges/pdf' + buildQuery(params)),
+  editionCongesPrint: (params = {}) => printPdf('/edition-conges/pdf' + buildQuery(params)),
+  editionCongesXls: (params = {}) => downloadFichier('/edition-conges/xls' + buildQuery(params), `journal-conges_${params.fin || 'ref'}.xls`),
 
   journalMaladie: (params = {}) => request('/journal-maladie' + buildQuery(params)),
   statsJournal: (params = {}) => request('/stats-journal' + buildQuery(params)),
@@ -303,6 +338,33 @@ export const api = {
     return data;
   },
 
+  // Indemnités F&V (Paie Mensuelle) — tableau des employés : listage avec valeurs en vigueur
+  // pour la période (annee, mois) + enregistrement des surcharges par mois d'effet
+  indemnitesFv: (params = {}) => request('/indemnites-fv' + buildQuery(params)),
+  sauverIndemnitesFv: (body) => request('/indemnites-fv', { method: 'PUT', body: JSON.stringify(body) }),
+  reaffecterIndemnitesFv: (body) => request('/indemnites-fv/reaffecter', { method: 'POST', body: JSON.stringify(body) }),
+
+  // Indemnités F&V — paramètres : montants fixes par catégorie avec historique par mois d'effet
+  parametresIndemnites: (params = {}) => request('/parametres-indemnites' + buildQuery(params)),
+  sauverParametresIndemnites: (body) => request('/parametres-indemnites', { method: 'PUT', body: JSON.stringify(body) }),
+  supprimerChangementIndemnites: (id) => request(`/parametres-indemnites/changements/${id}`, { method: 'DELETE' }),
+
+  // Paramètres de présence : départements affichés PRÉSENT (P1) par défaut sur les jours ouvrables
+  parametresPresence: () => request('/parametres-presence'),
+  sauverParametresPresence: (body) => request('/parametres-presence', { method: 'PUT', body: JSON.stringify(body) }),
+
+  // Paramètres généraux (Référentiel) : identité de l'organisme — logo/signature encodés en base64
+  parametresGeneraux: () => request('/parametres-generaux'),
+  sauverParametresGeneraux: (body) => request('/parametres-generaux', { method: 'PUT', body: JSON.stringify(body) }),
+
+  // Règles de calcul de la paie (Référentiel → Paramètre de Salaire) : nomenclature du bulletin de paie
+  reglesCalculPaie: () => request('/regles-calcul-paie'),
+  ajouterRegleCalculPaie: (body) => request('/regles-calcul-paie', { method: 'POST', body: JSON.stringify(body) }),
+  modifierRegleCalculPaie: (id, body) => request('/regles-calcul-paie/' + id, { method: 'PUT', body: JSON.stringify(body) }),
+  supprimerRegleCalculPaie: (id) => request('/regles-calcul-paie/' + id, { method: 'DELETE' }),
+  // Taux des rubriques calculées (CNSS, CSS, IRPP, retenues sociales) — enregistrés depuis l'onglet Bulletin de Paie
+  sauverTauxPaie: (body) => request('/regles-calcul-paie/taux', { method: 'PUT', body: JSON.stringify(body) }),
+
   // Journal RMA (Repos · Maladie · Absence) — codifications importées fusionnées au journal de paie
   journalRma: (params = {}) => request('/journal-rma' + buildQuery(params)),
   journalRmaPrint: (params = {}) => printPdf('/journal-rma/pdf' + buildQuery(params)),
@@ -341,10 +403,14 @@ export const api = {
   viderHoraires: (params = {}) => request('/horaires' + buildQuery(params), { method: 'DELETE' }),
   presence: (params = {}) => request('/presence' + buildQuery(params)),
   importPresence: (texte) => request('/presence/import', { method: 'POST', body: JSON.stringify({ texte }) }),
+  pointageBiometrique: (body) => request('/presence/pointage', { method: 'POST', body: JSON.stringify(body) }),
   presenceExport: (params = {}) => downloadFichier(`/presence/export` + buildQuery(params), `pointages_${params.debut || 'tout'}_${params.fin || 'tout'}.txt`),
   presenceDelete: (params = {}) => request('/presence' + buildQuery(params), { method: 'DELETE' }),
   presenceCorrection: (body) => request('/presence/correction', { method: 'PUT', body: JSON.stringify(body) }),
   supprimerCorrectionPresence: (params = {}) => request('/presence/correction' + buildQuery(params), { method: 'DELETE' }),
+  presenceBiometrique: (params = {}) => request('/presence/biometrique' + buildQuery(params)),
+  presenceBiometriqueXls: (params = {}) => downloadFichier(`/presence/biometrique/xls` + buildQuery(params), `pointages-biometriques_${params.fin || params.debut || 'tout'}.xls`),
+  presenceBiometriquePdf: (params = {}) => openPdf(`/presence/biometrique/pdf` + buildQuery(params)),
 
   calendrierAnnee: (annee) => request(`/calendrier/${annee}`),
   sauverCalendrier: (annee, body) => request(`/calendrier/${annee}`, { method: 'PUT', body: JSON.stringify(body) }),
@@ -353,6 +419,9 @@ export const api = {
   supprimerJourFerie: (id) => request(`/calendrier/jours-feries/${id}`, { method: 'DELETE' }),
   genererCalendrier: (annee) => request(`/calendrier/${annee}/generer`, { method: 'POST' }),
   modifierJour: (id, body) => request(`/calendrier/jours/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+
+  cyclesCalcul: (annee) => request(`/cycles-calcul/${annee}`),
+  sauverCyclesCalcul: (annee, cycles) => request(`/cycles-calcul/${annee}`, { method: 'PUT', body: JSON.stringify({ cycles }) }),
 
   maintenance: {
     resetEmployes: (motDePasse) => request('/maintenance/reset/employes', { method: 'POST', body: JSON.stringify({ mot_de_passe: motDePasse }) }),

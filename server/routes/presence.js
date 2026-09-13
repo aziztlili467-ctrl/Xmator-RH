@@ -1,7 +1,16 @@
 const { Router } = require('express');
+const path = require('path');
 const { db } = require('../db');
+const PDFDocument = require('pdfkit');
+const { drawPDFBrandFooter } = require('../utils/pdfBranding');
 
 const router = Router();
+
+const fmtDateFR = (iso) => {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+};
 
 // ---- Grille des horaires réglementaires par catégorie ----
 // Clef : libellé de catégorie normalisé (minuscules, sans accents).
@@ -133,17 +142,24 @@ function statutPour({ nb, horaire, retardSec, sortieSec }) {
 
 // Filtres communs (GET, export, suppression) depuis la requête
 function filtres(req) {
+  return filtresDir(req, {});
+}
+
+// Variante acceptant un `source` imposé (ex : 'biometrique') indépendamment de la requête.
+function filtresDir(req, contraintes = {}) {
   const debut = String(req.query.debut || '').trim();
   const fin = String(req.query.fin || '').trim();
   const matricule = String(req.query.matricule || '').trim();
   const employe_id = req.query.employe_id ? Number(req.query.employe_id) : null;
   const categorie_id = req.query.categorie_id ? Number(req.query.categorie_id) : null;
+  const source = String(req.query.source || '').trim() || String(contraintes.source || '');
   const clauses = [];
   const vals = [];
   if (debut) { clauses.push('p.date >= ?'); vals.push(debut); }
   if (fin) { clauses.push('p.date <= ?'); vals.push(fin); }
   if (employe_id) { clauses.push('p.employe_id = ?'); vals.push(employe_id); }
   if (categorie_id) { clauses.push('e.categorie_id = ?'); vals.push(categorie_id); }
+  if (source) { clauses.push('p.source = ?'); vals.push(source); }
   if (matricule) {
     const n = parseInt(String(matricule).trim(), 10);
     if (String(matricule).trim() && !isNaN(n)) {
@@ -157,17 +173,19 @@ function filtres(req) {
   return { debut, fin, where: clauses.length ? ' WHERE ' + clauses.join(' AND ') : '', vals };
 }
 
-// ---- Lecture : présence journalière agrégée (min = entrée, max = sortie) ----
-// Filtres : ?debut=&fin=&matricule=&employe_id=&categorie_id=
-router.get('/', (req, res) => {
-  const { debut, fin, where, vals } = filtres(req);
+// ---- Construction partagée : présence journalière agrégée (min = entrée, max = sortie) ----
+// `contraintes` = { source:'biometrique' } par ex. pour le module biométrique (Xmator-Eye).
+// Renvoie { lignes, totaux, ramadan }. Utilisée par le GET, le JSON biométrique, XLS et PDF.
+function construire(req, contraintes = {}) {
+  const { debut, fin, where, vals } = filtresDir(req, contraintes);
 
   const rows = db.prepare(`
     SELECT p.employe_id, p.date,
            e.matricule, e.nom, e.prenom, c.libelle AS categorie,
            COUNT(*) AS nb,
            MIN(p.horodatage) AS entree,
-           MAX(p.horodatage) AS sortie
+           MAX(p.horodatage) AS sortie,
+           MAX(CASE WHEN p.source = 'biometrique' THEN 1 ELSE 0 END) AS bio
     FROM pointages p
     JOIN employes e ON e.id = p.employe_id
     JOIN categories c ON c.id = e.categorie_id
@@ -206,6 +224,7 @@ router.get('/', (req, res) => {
       categorie: r.categorie,
       date: r.date,
       nb_pointages: r.nb,
+      source_biometrique: r.bio === 1,
       entree_reelle,
       sortie_reelle,
       entree_regle: horaire ? horaire.entree : null,
@@ -228,6 +247,7 @@ router.get('/', (req, res) => {
     retards: lignes.filter((l) => (l.retard_secondes || 0) > 0).length,
     depart_anticipe: lignes.filter((l) => (l.sortie_anticipee_secondes || 0) > 0).length,
     pointages_uniques: lignes.filter((l) => l.statut === 'Pointage unique').length,
+    biometriques: lignes.filter((l) => l.source_biometrique).length,
     somme_retard_secondes: lignes.reduce((s, l) => s + (l.retard_secondes || 0), 0),
     somme_sortie_anticipee_secondes: lignes.reduce((s, l) => s + (l.sortie_anticipee_secondes || 0), 0),
     debut: debut || null,
@@ -237,7 +257,12 @@ router.get('/', (req, res) => {
   const ramadan = configs.filter((c) => c.ramadan_debut && c.ramadan_fin)
     .map((c) => ({ annee: c.annee, debut: c.ramadan_debut, fin: c.ramadan_fin }));
 
-  res.json({ lignes, totaux, ramadan });
+  return { lignes, totaux, ramadan };
+}
+
+// GET /api/presence — vue globale (toutes sources)
+router.get('/', (req, res) => {
+  res.json(construire(req));
 });
 
 // ---- Téléchargement des pointages d'une période en TXT (format d'import compatible) ----
@@ -322,6 +347,41 @@ router.delete('/correction', (req, res) => {
   if (!employe_id || !date) return res.status(400).json({ error: 'employe_id et date sont obligatoires.' });
   db.prepare('DELETE FROM corrections_pointages WHERE employe_id = ? AND date = ?').run(employe_id, date);
   res.json({ ok: true });
+});
+
+// ---- Pointage biométrique (borne Xmator-Eye) ----
+// Corps : { employe_id, horodatage? } — horodatage au format 'YYYY-MM-DD HH:mm:ss'
+// (facultatif : un pointage hors-ligne garde son heure locale, synchronisé plus tard).
+// Source 'biometrique' pour distinguer les badgeages dans le dashboard / l'export CSV.
+// Dédoublonné par (employe_id, horodatage) ; renvoie doublon:true si déjà présent.
+router.post('/pointage', (req, res) => {
+  const body = req.body || {};
+  const employe_id = Number(body.employe_id);
+  if (!employe_id) return res.status(400).json({ error: 'employe_id est obligatoire.' });
+  const emp = db.prepare('SELECT id, matricule FROM employes WHERE id = ?').get(employe_id);
+  if (!emp) return res.status(404).json({ error: 'Employé introuvable.' });
+
+  let iso = null;
+  if (body.horodatage != null && String(body.horodatage).trim() !== '') {
+    const ts = normaliserHorodatage(body.horodatage);
+    if (!ts) return res.status(400).json({ error: "Horodatage invalide (format attendu : 'AAAA-MM-JJ HH:mm:ss')." });
+    iso = ts.iso;
+  } else {
+    iso = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%S','now','localtime') AS v").get().v;
+  }
+  const date = iso.slice(0, 10);
+  const ins = db.prepare(`
+    INSERT INTO pointages (employe_id, matricule, horodatage, date, source)
+    VALUES (?,?,?,?, 'biometrique')
+    ON CONFLICT(employe_id, horodatage) DO NOTHING
+  `);
+  const r = ins.run(emp.id, emp.matricule, iso, date);
+  const doublon = r.changes === 0;
+  res.json({
+    ok: true,
+    doublon,
+    pointage: { employe_id: emp.id, matricule: emp.matricule, horodatage: iso, date, source: 'biometrique' },
+  });
 });
 
 // ---- Import de pointages bruts (fichier de badgeuse .csv/.txt) ----
@@ -427,6 +487,154 @@ router.post('/import', (req, res) => {
     debut: result.datesIm.length ? result.datesIm[0] : null,
     fin: result.datesIm.length ? result.datesIm[result.datesIm.length - 1] : null,
   });
+});
+
+// ---- Module biométrique (Xmator-Eye) : mêmes constructions, source = 'biometrique' ----
+
+// GET /api/presence/biometrique — JSON identique au GET « / » mais limité aux badges biométriques
+router.get('/biometrique', (req, res) => {
+  res.json(construire(req, { source: 'biometrique' }));
+});
+
+// GET /api/presence/biometrique/xls — export Excel (SpreadsheetML), retards & sorties anticipées en rouge
+const xmlEscape = (s) =>
+  String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+router.get('/biometrique/xls', (req, res) => {
+  const { lignes, totaux } = construire(req, { source: 'biometrique' });
+  const debut = totaux.debut || '';
+  const fin = totaux.fin || '';
+  const periode = [debut && fmtDateFR(debut), fin && fmtDateFR(fin)].filter(Boolean).join(' → ') || 'toutes les dates';
+
+  const headers = ['Matricule', 'Employé', 'Catégorie', 'Date', 'Entrée régl.', 'Entrée réelle', 'Retard', 'Sortie régl.', 'Sortie réelle', 'Sortie anticipée'];
+  const cells = (style, valeur) => `<Cell ss:StyleID="${style}"><Data ss:Type="String">${xmlEscape(valeur)}</Data></Cell>`;
+  const rows = lignes.map((l) => {
+    const retard = (l.retard_secondes || 0) > 0 ? 'alerte' : 'normal';
+    const anticipee = (l.sortie_anticipee_secondes || 0) > 0 ? 'alerte' : 'normal';
+    return `<Row>${cells('normal', l.matricule)}${cells('normal', `${l.nom} ${l.prenom}`.trim())}${cells('normal', l.categorie || '')}${cells('normal', fmtDateFR(l.date))}${cells('normal', l.entree_regle || '')}${cells('normal', l.entree_reelle || '')}${cells(retard, l.retard || '')}${cells('normal', l.sortie_regle || '')}${cells('normal', l.sortie_reelle || '')}${cells(anticipee, l.sortie_anticipee || '')}</Row>`;
+  }).join('\n');
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet" xmlns:x="urn:schemas-microsoft-com:office:excel">
+<Styles>
+  <Style ss:ID="titre"><Font ss:Bold="1" ss:Size="14"/></Style>
+  <Style ss:ID="entete"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#1E3A8A" ss:Pattern="Solid"/></Style>
+  <Style ss:ID="normal"><Alignment ss:Vertical="Center"/></Style>
+  <Style ss:ID="alerte"><Font ss:Bold="1" ss:Color="#B91C1C"/><Alignment ss:Vertical="Center"/></Style>
+</Styles>
+<Worksheet ss:Name="Biométrique">
+  <Table>
+    <Row><Cell ss:StyleID="titre"><Data ss:Type="String">Pointages biométriques (Xmator-Eye) — ${xmlEscape(periode)}</Data></Cell></Row>
+    <Row>${headers.map((h) => cells('entete', h)).join('')}</Row>
+    ${rows}
+    <Row><Cell ss:StyleID="normal"><Data ss:Type="String">Total : ${lignes.length} ligne(s) — ${totaux.retards} retard(s) — ${totaux.depart_anticipe} sortie(s) anticipée(s)</Data></Cell></Row>
+  </Table>
+</Worksheet>
+</Workbook>`;
+
+  res.setHeader('Content-Type', 'application/vnd.ms-excel');
+  res.setHeader('Content-Disposition', `attachment; filename="pointages-biometriques_${fin || debut || 'tout'}.xls"`);
+  res.send(xml);
+});
+
+// GET /api/presence/biometrique/pdf — export PDF paysage, retards & sorties anticipées en rouge
+router.get('/biometrique/pdf', (req, res) => {
+  const { lignes, totaux } = construire(req, { source: 'biometrique' });
+  const debut = totaux.debut || '';
+  const fin = totaux.fin || '';
+  const periode = debut && fin ? `du ${fmtDateFR(debut)} au ${fmtDateFR(fin)}` : 'toutes les dates';
+
+  const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margins: { top: 40, bottom: 40, left: 30, right: 30 } });
+  doc.registerFont('Garamond', path.join(__dirname, '..', 'fonts', 'EBGaramond.ttf'));
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="pointages-biometriques_${fin || debut || 'tout'}.pdf"`);
+  doc.pipe(res);
+
+  const L = doc.page.margins.left;
+  const R = doc.page.width - doc.page.margins.right;
+  const W = R - L;
+  const pageH = doc.page.height;
+
+  const COLS = [
+    { label: 'Matricule', w: 60 },
+    { label: 'Employé', w: 120 },
+    { label: 'Catégorie', w: 100 },
+    { label: 'Date', w: 62 },
+    { label: 'Entrée régl.', w: 66 },
+    { label: 'Entrée réelle', w: 66 },
+    { label: 'Retard', w: 60 },
+    { label: 'Sortie régl.', w: 66 },
+    { label: 'Sortie réelle', w: 66 },
+    { label: 'Sortie anticipée', w: 72 },
+  ];
+  const rowH = 16;
+
+  const drawHeader = (y) => {
+    doc.font('Garamond').fontSize(15).fillColor('#1f2937').text('Amicale du Personnel de la Banque Centrale de Tunisie', L, y, { align: 'center', width: W, lineBreak: false });
+    doc.font('Garamond').fontSize(19).fillColor('#111827').text('Pointages biométriques (Xmator-Eye)', L, y + 18, { align: 'center', width: W, lineBreak: false });
+    doc.font('Helvetica').fontSize(9).fillColor('#6b7280').text(`Période : ${periode} — ${lignes.length} ligne(s)`, L, y + 39, { align: 'center', width: W, lineBreak: false });
+    return y + 58;
+  };
+
+  const drawCols = (y) => {
+    doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#111827');
+    let x = L;
+    for (const c of COLS) {
+      doc.text(c.label, x + 3, y + 4, { width: c.w - 6, lineBreak: false });
+      x += c.w;
+    }
+    doc.moveTo(L, y).lineTo(R, y).strokeColor('#111827').lineWidth(0.8).stroke();
+    doc.moveTo(L, y + rowH).lineTo(R, y + rowH).strokeColor('#111827').lineWidth(0.8).stroke();
+    return y + rowH;
+  };
+
+  const drawRow = (l, idx, y) => {
+    const vals = [
+      l.matricule,
+      `${l.nom} ${l.prenom}`.trim(),
+      l.categorie || '',
+      fmtDateFR(l.date),
+      l.entree_regle || '',
+      l.entree_reelle || '',
+      l.retard || '',
+      l.sortie_regle || '',
+      l.sortie_reelle || '',
+      l.sortie_anticipee || '',
+    ];
+    let x = L;
+    for (let i = 0; i < COLS.length; i++) {
+      const anomalie = (i === 6 && (l.retard_secondes || 0) > 0) || (i === 9 && (l.sortie_anticipee_secondes || 0) > 0);
+      doc.font('Helvetica').fontSize(8).fillColor(anomalie ? '#B91C1C' : '#111827');
+      doc.text(vals[i], x + 3, y + 4, { width: COLS[i].w - 6, lineBreak: false, ellipsis: true });
+      x += COLS[i].w;
+    }
+    doc.moveTo(L, y + rowH).lineTo(R, y + rowH).strokeColor('#d1d5db').lineWidth(0.5).stroke();
+    let vx = L;
+    for (const c of COLS) {
+      vx += c.w;
+      doc.moveTo(vx, y).lineTo(vx, y + rowH).strokeColor('#e5e7eb').lineWidth(0.4).stroke();
+    }
+    return y + rowH;
+  };
+
+  let y = drawHeader(32);
+  y = drawCols(y);
+  if (lignes.length === 0) {
+    doc.font('Helvetica').fontSize(10).fillColor('#6b7280').text('Aucun pointage biométrique sur la période demandée.', L, y + 16, { align: 'center', width: W });
+  }
+  lignes.forEach((l, idx) => {
+    if (y + rowH > pageH - 40) {
+      doc.addPage();
+      y = drawHeader(32);
+      y = drawCols(y);
+    }
+    y = drawRow(l, idx, y);
+  });
+
+  drawPDFBrandFooter(doc, { footerText: 'Pointages biométriques (Xmator-Eye)' });
+  doc.end();
 });
 
 module.exports = router;

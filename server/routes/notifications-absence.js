@@ -2,12 +2,14 @@ const { Router } = require('express');
 const path = require('path');
 const PDFDocument = require('pdfkit');
 const { db } = require('../db');
+const { loadContext, estOuvrable, reposFor } = require('../utils/jourOuvrable');
 const router = Router();
 
 // Rubrique Horaires › Notification d'Absences : formulaire rempli par le supérieur hiérarchique
-// ou le responsable RH. Le nombre de jours d'absence EXCLUT les repos hebdomadaires (samedi/dimanche)
-// et les jours fériés payés (religieux/nationaux) : on ne compte que les jours PRÉVUS au calendrier
-// administratif (`jours_travail.heures > 0` — même règle métier que les taux de présence, session 44).
+// ou le responsable RH. Le nombre de jours d'absence EXCLUT les repos hebdomadaires de la
+// CATÉGORIE de l'employé (le samedi travaillé, ex. Femme de ménage, COMPTE) et les jours fériés
+// payés (religieux/nationaux) : on ne compte que les jours PRÉVUS au calendrier administratif
+// (`jours_travail.heures > 0` — même règle métier que les taux de présence, session 44).
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -31,9 +33,9 @@ function fmtNombre(v) {
   return s.endsWith('.0') ? s.slice(0, -2) : s.replace('.', ',');
 }
 
-// Jours ouvrables [debut, fin] selon le calendrier administratif configuré.
+// Jours ouvrables [debut, fin] pour UNE catégorie (repos hebdomadaires configurables + calendrier).
 // Repli refusé sur estOuvrable() seul : si une année couverte n'a pas de calendrier, on le signale.
-function joursOuvrables(debut, fin) {
+function joursOuvrables(debut, fin, categorieId) {
   const annees = new Set();
   for (let y = +debut.slice(0, 4); y <= +fin.slice(0, 4); y++) annees.add(y);
   const manquantes = [];
@@ -41,9 +43,21 @@ function joursOuvrables(debut, fin) {
     if (!db.prepare('SELECT COUNT(*) AS n FROM jours_travail WHERE annee = ?').get(y).n) manquantes.push(y);
   }
   if (manquantes.length) return { manquantes };
-  const prevus = db.prepare('SELECT COUNT(*) AS n FROM jours_travail WHERE date >= ? AND date <= ? AND heures > 0').get(debut, fin).n;
+  const ctx = loadContext();
+  const jours = db.prepare('SELECT date, heures, source, label FROM jours_travail WHERE date >= ? AND date <= ?').all(debut, fin);
+  const legalByDate = {};
+  for (const r of jours) legalByDate[r.date] = r;
+  const hasCal = jours.length > 0;
+  let count = 0;
+  const cur = new Date(debut + 'T00:00:00');
+  const end = new Date(fin + 'T00:00:00');
+  while (cur <= end) {
+    const iso = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
+    if (hasCal ? estOuvrable(ctx, categorieId, iso, legalByDate[iso]) : !reposFor(categorieId).has(cur.getDay())) count += 1;
+    cur.setDate(cur.getDate() + 1);
+  }
   const total = nbJoursCalendaires(debut, fin);
-  return { jours: prevus, total, exclus: total - prevus, manquantes: [] };
+  return { jours: count, total, exclus: total - count, manquantes: [] };
 }
 
 function chargerNotification(id) {
@@ -58,12 +72,19 @@ function chargerNotification(id) {
 
 // ---- Aperçu du nombre de jours ouvrables d'une période (calcul en direct du formulaire) ----
 router.get('/jours', (req, res) => {
-  const { debut, fin } = req.query;
+  const { debut, fin, matricule } = req.query;
   if (!debut || !fin || !DATE_RE.test(debut) || !DATE_RE.test(fin)) {
     return res.status(400).json({ error: 'Paramètres debut et fin requis au format AAAA-MM-JJ.' });
   }
   if (fin < debut) return res.status(400).json({ error: 'La date de fin doit être postérieure ou égale à la date de début.' });
-  const r = joursOuvrables(debut, fin);
+  // Si un matricule est renseigné, le calcul suit le repos hebdomadaire de SA catégorie
+  let categorieId = null;
+  if (matricule) {
+    const emp = db.prepare('SELECT categorie_id FROM employes WHERE matricule = ? OR CAST(matricule AS INTEGER) = ?')
+      .get(String(matricule).trim(), parseInt(matricule, 10) || -1);
+    if (emp) categorieId = emp.categorie_id;
+  }
+  const r = joursOuvrables(debut, fin, categorieId);
   if (r.manquantes.length) {
     return res.json({ jours: null, message: `Calendrier administratif non configuré pour ${r.manquantes.join(', ')}. Configurez-le dans Calendrier.` });
   }
@@ -113,7 +134,7 @@ router.post('/', (req, res) => {
   if (!superieur) return res.status(400).json({ error: 'Le nom du supérieur hiérarchique est requis.' });
 
   const empParMat = new Map();
-  for (const e of db.prepare('SELECT id, matricule FROM employes WHERE actif = 1').all()) {
+  for (const e of db.prepare('SELECT id, matricule, categorie_id FROM employes WHERE actif = 1').all()) {
     empParMat.set(String(e.matricule).trim(), e);
     const n = parseInt(e.matricule, 10);
     if (!isNaN(n)) empParMat.set(String(n), e);
@@ -121,7 +142,7 @@ router.post('/', (req, res) => {
   const emp = empParMat.get(matricule) || empParMat.get(String(parseInt(matricule, 10) || -1));
   if (!emp) return res.status(404).json({ error: `Aucun employé actif avec le matricule « ${matricule} ».` });
 
-  const calc = joursOuvrables(date_debut, date_fin);
+  const calc = joursOuvrables(date_debut, date_fin, emp.categorie_id);
   if (calc.manquantes.length) {
     return res.status(400).json({ error: `Calendrier administratif non configuré pour ${calc.manquantes.join(', ')}.` });
   }
@@ -209,7 +230,7 @@ router.get('/:id/pdf', (req, res) => {
   }
 
   doc.fillColor('#475569').font('Helvetica').fontSize(8.5)
-    .text('Nombre de jours calculé hors samedis/dimanches (repos hebdomadaire) et hors jours fériés payés (religieux et nationaux).',
+    .text('Nombre de jours calculé hors repos hebdomadaire de la catégorie (ex. samedi/dimanche) et hors jours fériés payés (religieux et nationaux).',
       L, y + 8, { width: W });
 
   let ys = y + 40;
