@@ -35,6 +35,7 @@ import {
 import { useAuth } from '../AuthContext';
 import { api, getToken, getSessionId } from '../api';
 import PwaInstall from './PwaInstall';
+import AvatarMenu from './ui/AvatarMenu';
 import ChatWidget from './ChatWidget';
 
 const NAV = [
@@ -247,8 +248,13 @@ export default function Layout() {
     }
   };
 
+  // Mode « cockpit » : le tableau de bord est un espace dark premium ;
+  // le chrome (sidebar, topbar) adopte la même direction artistique sur cette route
+  // uniquement, sans toucher aux autres pages.
+  const darkCockpit = location.pathname === '/';
+
   return (
-    <div className="flex min-h-screen bg-[var(--bg-app)]">
+    <div className="flex min-h-screen bg-[var(--bg-app)]" data-theme={darkCockpit ? 'dark-premium' : undefined}>
       {/* Voile sombre pour tiroir mobile (< 768px) */}
       {menuOuvert && (
         <div
@@ -401,27 +407,31 @@ export default function Layout() {
                   Mon espace
                 </NavLink>
               )}
-              <div className="flex items-center gap-2">
-                <div
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm"
-                  style={{ background: 'var(--brand-primary)' }}
-                >
-                  {user?.login?.slice(0, 1)?.toUpperCase() || 'A'}
+              {darkCockpit ? (
+                <AvatarMenu user={user} onLogout={deconnexion} />
+              ) : (
+                <div className="flex items-center gap-2">
+                  <div
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm"
+                    style={{ background: 'var(--brand-primary)' }}
+                  >
+                    {user?.login?.slice(0, 1)?.toUpperCase() || 'A'}
+                  </div>
+                  <div className="hidden text-end sm:block">
+                    <p className="text-sm font-semibold leading-tight text-stone-800">{user?.login}</p>
+                    <p className="text-xs text-stone-600">{ROLE_LABELS[role] || role}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={deconnexion}
+                    title="Se déconnecter"
+                    aria-label="Se déconnecter"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100 hover:text-stone-800"
+                  >
+                    <IconLogout />
+                  </button>
                 </div>
-                <div className="hidden text-end sm:block">
-                  <p className="text-sm font-semibold leading-tight text-stone-800">{user?.login}</p>
-                  <p className="text-xs text-stone-600">{ROLE_LABELS[role] || role}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={deconnexion}
-                  title="Se déconnecter"
-                  aria-label="Se déconnecter"
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100 hover:text-stone-800"
-                >
-                  <IconLogout />
-                </button>
-              </div>
+              )}
             </div>
           </div>
 
