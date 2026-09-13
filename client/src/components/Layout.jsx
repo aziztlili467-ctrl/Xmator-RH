@@ -334,14 +334,14 @@ export default function Layout() {
                   <GIcon />
                 </span>
                 <span
-                  className="hidden flex-1 whitespace-normal break-words text-start text-[12.5px] font-medium leading-[1.15] tracking-tight md:hidden lg:block"
+                  className="flex flex-1 whitespace-normal break-words text-start text-[12.5px] font-medium leading-[1.15] tracking-tight md:hidden lg:block"
                   style={{ color: isActive ? '#2E2013' : 'var(--sidebar-inactive)', fontWeight: isActive ? 700 : 500 }}
                 >
                   {g.label}
                 </span>
                 {g.items.length > 1 && (
                   <span
-                    className={`hidden ms-auto rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular md:hidden lg:inline-flex ${
+                    className={`inline-flex ms-auto rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular md:hidden lg:inline-flex ${
                       isActive ? 'bg-[#2E2013]/85 text-[#F3D27A]' : 'bg-white/10 text-white/70'
                     }`}
                   >

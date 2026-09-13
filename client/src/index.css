@@ -565,7 +565,9 @@
      restent visibles pendant le défilement. S'applique à tous les .table-wrap actuels
      et futurs ; les tables en mode cartes mobiles (.table-cards) sont exclues. */
   .table-wrap:not(.table-cards) {
+    /* 100vh en repli → 100dvh (toolbars mobiles dynamiques recalculées en direct) */
     max-height: calc(100vh - 9rem);
+    max-height: calc(100dvh - 9rem);
     overflow-y: auto;
   }
   .table-wrap:not(.table-cards) thead th {
@@ -593,6 +595,7 @@
   @media (max-width: 640px) {
     .table-wrap:not(.table-cards) {
       max-height: calc(100vh - 8rem);
+      max-height: calc(100dvh - 8rem);
     }
   }
 
@@ -631,4 +634,61 @@
   main { padding: 0 !important; }
   div.flex.flex-col { padding-left: 0 !important; }
   body { background: #fff !important; }
+}
+
+/* ==========================================================================
+   StatsAreasChart — graphique en aires interactif (Dashboard « Répartition du temps »)
+   ========================================================================= */
+.statsarea-dot {
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+.statsarea-dot:hover {
+  filter: brightness(1.25);
+}
+.statsarea-tip {
+  position: absolute;
+  z-index: 20;
+  transform: translate(-50%, 0);
+  pointer-events: none;
+  min-width: 170px;
+  border-radius: 10px;
+  padding: 9px 11px;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+  background: var(--bg-panel-hover, rgba(13, 20, 35, 0.96));
+  border: 1px solid var(--dp-hairline, rgba(197, 178, 128, 0.3));
+}
+.statsarea-tip-title {
+  margin-bottom: 5px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dp-text-3);
+}
+.statsarea-tip-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  font-size: 11.5px;
+  margin-top: 3px;
+  color: var(--dp-text);
+}
+.statsarea-tip-row b {
+  font-family: var(--font-numeric);
+}
+.statsarea-total {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid var(--dp-hairline);
+  font-size: 10px;
+  color: var(--dp-text-3);
+}
+.statsarea-legend--off {
+  animation: statsarea-pulse 0.4s ease;
+}
+@keyframes statsarea-pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(0.92); }
+  100% { transform: scale(1); }
 }

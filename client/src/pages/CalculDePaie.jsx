@@ -164,8 +164,16 @@ export default function CalculDePaie() {
                 employe={employeBulletin}
                 montants={montants}
                 masquerSansValeur
-                chefFamille={/mari|divorc|veuf/i.test(selection.situation_familiale || '')}
-                nbEnfants={Number(selection.nombre_enfants) || 0}
+                chefFamille={
+                  selection.chef_famille
+                    ? String(selection.chef_famille).toUpperCase() === 'OUI'
+                    : /mari|divorc|veuf/i.test(selection.situation_familiale || '')
+                }
+                nbEnfants={
+                  selection.enfants_a_charge != null && selection.enfants_a_charge !== ''
+                    ? Number(selection.enfants_a_charge) || 0
+                    : Number(selection.nombre_enfants) || 0
+                }
               />
             </>
           )}

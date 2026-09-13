@@ -82,7 +82,7 @@ const FORM_VIDE = {
   date_naissance: '', lieu_naissance: '', sexe: '', nationalite: '', groupe_sanguin: '',
   cin: '', date_emission_cin: '', service_militaire: '', cnss: '',
   date_embauche: '', adresse: '', telephone: '',
-  situation_familiale: '', nombre_enfants: 0,
+  situation_familiale: '', nombre_enfants: 0, chef_famille: '', enfants_a_charge: '',
   conjoint_nom: '', conjoint_date_naissance: '', enfants_details: '[]',
   niveau_etudes: '', diplome: '', date_emission_diplome: '',
   cnam: '', type_contrat: '', banque: '', titulaire_compte: '', type_compte: '', rib: '',
@@ -104,6 +104,7 @@ function fieldicon(id) {
     date_naissance: IconCalendarDays, lieu_naissance: IconMapPin, sexe: IconUser,
     nationalite: IconGlobe, groupe_sanguin: IconDroplet, cin: IconIdentification,
     date_emission_cin: IconCalendarDays, situation_familiale: IconHeart,
+    chef_famille: IconUserCheck, enfants_a_charge: IconUsers,
     nombre_enfants: IconUsers, conjoint_nom: IconHeart, conjoint_date_naissance: IconCalendarDays,
     adresse: IconHome, rue: IconMapPin, code_postal: IconTags, localite: IconMapPin,
     gouvernorat: IconMapPin, telephone: IconPhone, gsm: IconSmartphone,
@@ -122,6 +123,7 @@ function iconNameFor(id) {
     date_naissance: 'calendar', lieu_naissance: 'pin', sexe: 'user',
     nationalite: 'globe', groupe_sanguin: 'droplet', cin: 'id',
     date_emission_cin: 'calendar', situation_familiale: 'heart',
+    chef_famille: 'check', enfants_a_charge: 'users',
     nombre_enfants: 'users', conjoint_nom: 'heart', conjoint_date_naissance: 'calendar',
     adresse: 'home', rue: 'pin', code_postal: 'tags', localite: 'pin',
     gouvernorat: 'pin', telephone: 'phone', gsm: 'phone2',
@@ -184,6 +186,8 @@ const CHAMPS = {
     { id: 'cin', label: 'CIN' },
     { id: 'date_emission_cin', label: "Date d'émission CIN", type: 'date' },
     { id: 'situation_familiale', label: 'Situation familiale', type: 'select', options: SITUATIONS },
+    { id: 'chef_famille', label: 'Chef de famille', type: 'select', options: ['OUI', 'NON'] },
+    { id: 'enfants_a_charge', label: 'Enfants à charge', type: 'select', options: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] },
     { id: 'nombre_enfants', label: "Nombre d'enfants", type: 'number' },
     { id: 'conjoint_nom', label: 'Conjoint' },
     { id: 'conjoint_date_naissance', label: 'Date naissance conjoint', type: 'date' },
@@ -413,6 +417,32 @@ export default function FicheCreation() {
         </FieldFrame>
       );
     }
+    // Chef de famille / Enfants à charge : synchronisés avec le tableau Employés (mêmes colonnes).
+    // Figés tant que la situation familiale n'est pas choisie, et bloqués pour un(e) Célibataire.
+    if (c.id === 'chef_famille' || c.id === 'enfants_a_charge') {
+      const estCelibataire = String(form.situation_familiale || '') === 'Célibataire';
+      const Icon = fieldicon(c.id);
+      return (
+        <FieldFrame accent={accent} soft={soft}>
+          <div className="p-3">
+            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
+              <FitIcon size={14} color={accent}><Icon /></FitIcon>
+              {c.label}
+            </label>
+            <select
+              className="input"
+              value={form[c.id] ?? ''}
+              disabled={estCelibataire}
+              title={estCelibataire ? 'Figé pour la situation civile Célibataire' : undefined}
+              onChange={(e) => setForm({ ...form, [c.id]: e.target.value })}
+            >
+              <option value="">{estCelibataire ? '— Célibataire (figé) —' : '— Sélectionner —'}</option>
+              {(c.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
+            </select>
+          </div>
+        </FieldFrame>
+      );
+    }
     if (c.id.startsWith('champ_')) {
       const Icon = ICONS[c.iconName] || IconUser;
       return (
@@ -507,6 +537,8 @@ export default function FicheCreation() {
     { k: 'Téléphone', v: viewData?.telephone || viewData?.gsm, icon: IconPhone },
     { k: 'E-mail', v: viewData?.adresse_electronique, icon: IconEnvelope },
     { k: 'Situation familiale', v: viewData?.situation_familiale, icon: IconHeart },
+    { k: 'Chef de famille', v: viewData?.chef_famille, icon: IconUserCheck },
+    { k: 'Enfants à charge', v: viewData?.enfants_a_charge, icon: IconUsers },
   ];
 
   // ----- Helpers du mode Paramètres -----

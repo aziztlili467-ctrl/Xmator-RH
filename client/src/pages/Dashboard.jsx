@@ -1,8 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
-} from 'recharts';
 import { api, mediaSrc } from '../api';
 import { getSocket } from '../socket';
 import { fmtJours, fmtDate } from '../utils';
@@ -15,6 +12,7 @@ import StairsStatsDiagram from '../components/ui/StairsStatsDiagram';
 import AnimatedNumber, { fmtFr } from '../components/ui/AnimatedNumber';
 import DonutPro from '../components/ui/DonutPro';
 import RadialGauge from '../components/ui/RadialGauge';
+import StatsAreasChart from '../components/ui/StatsAreasChart';
 import PresenceHeatmap from '../components/ui/PresenceHeatmap';
 import TiroirContexte from '../components/ui/TiroirContexte';
 import AvatarMenu from '../components/ui/AvatarMenu';
@@ -196,25 +194,25 @@ function ApercuJournee({ nbAlertes, enInstance, onOpenAlertes }) {
   const jour = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Africa/Tunis' }).format(now);
   const critiques = (nbAlertes || 0) + (enInstance?.demandes || 0) + (enInstance?.arrets || 0);
   return (
-    <div className="flex flex-wrap items-center gap-2.5">
+    <div className="flex w-full flex-wrap items-center gap-2 sm:gap-2.5 md:w-auto">
       <div className="day-pill" title="Heure locale du siège (fuseau Afrique/Tunis — GMT+1)">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--dp-gold)" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
         <div className="leading-tight">
-          <p className="clock-value text-[13px]">{heure}</p>
+          <p className="clock-value text-[12px] sm:text-[13px]">{heure}</p>
           <p className="text-[9.5px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--dp-text-3)' }}>Tunis · {jour}</p>
         </div>
       </div>
       <div className="day-pill" title="Widget contextuel — à brancher sur l'API météo d'entreprise">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dp-amber)" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4l1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4m11.4-11.4l1.4-1.4" /></svg>
         <div className="leading-tight">
-          <p className="clock-value text-[13px]">31 °C</p>
+          <p className="clock-value text-[12px] sm:text-[13px]">31 °C</p>
           <p className="text-[9.5px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--dp-text-3)' }}>Ciel dégagé</p>
         </div>
       </div>
       <button type="button" className="day-pill" onClick={onOpenAlertes} title="Alertes critiques du jour — ouvrir le panneau">
         <span className="live-dot" style={{ background: critiques ? 'var(--dp-rose)' : 'var(--dp-emerald)', boxShadow: `0 0 10px ${critiques ? 'rgba(244,63,94,.9)' : 'rgba(16,185,129,.9)'}` }} />
         <div className="text-start leading-tight">
-          <p className="clock-value text-[13px]" style={{ color: critiques ? '#E11D48' : '#10b981' }}>{critiques}</p>
+          <p className="clock-value text-[12px] sm:text-[13px]" style={{ color: critiques ? '#E11D48' : '#10b981' }}>{critiques}</p>
           <p className="text-[9.5px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--dp-text-3)' }}>Alertes du jour</p>
         </div>
       </button>
@@ -388,22 +386,24 @@ export default function Dashboard({ demo: demoProp = false }) {
   })), [data]);
 
   const STACK_COLORS = {
-    Présence: '#00E676',
-    'Congé légal': '#2979FF',
-    Maladie: '#FF4455',
-    Absence: '#FFB300',
+    Présence: '#00A54E',
+    'Congé légal': '#0084FF',
+    Maladie: '#FF1F5C',
+    Absence: '#FF8500',
   };
 
-  const stackData = useMemo(() => (data?.series || []).map((s) => {
+  const statsRows = useMemo(() => (data?.series || []).map((s) => {
     const tot = s.jours_presence + s.jours_conge + s.jours_maladie + s.jours_absence;
-    const p = (v) => (tot > 0 ? Math.round((v / tot) * 1000) / 10 : 0);
+    const p = (v) => (tot > 0 ? Math.min(100, Math.round((v / tot) * 1000) / 10) : 0);
     return {
       label: s.label,
-      Présence: p(s.jours_presence),
-      'Congé légal': p(s.jours_conge),
-      Maladie: p(s.jours_maladie),
-      Absence: p(s.jours_absence),
       tot,
+      cats: [
+        { name: 'Présence', j: s.jours_presence, pct: p(s.jours_presence) },
+        { name: 'Congé légal', j: s.jours_conge, pct: p(s.jours_conge) },
+        { name: 'Maladie', j: s.jours_maladie, pct: p(s.jours_maladie) },
+        { name: 'Absence', j: s.jours_absence, pct: p(s.jours_absence) },
+      ],
     };
   }), [data]);
 
@@ -734,8 +734,8 @@ export default function Dashboard({ demo: demoProp = false }) {
       valueEl: <AnimatedNumber value={k.effectif} />,
       sub: 'employés actifs filtrés sur la période',
       icon: <IconUsers />,
-      glow: 'rgba(59,130,246,0.6)',
-      color: '#3B82F6',
+      glow: 'rgba(56,96,234,0.6)',
+      color: '#3860ea',
       chip: { cls: 'chip--cobalt', label: `${k.en_instance.demandes + k.en_instance.arrets} en instance` },
     },
     {
@@ -744,8 +744,8 @@ export default function Dashboard({ demo: demoProp = false }) {
       valueEl: <AnimatedNumber value={k.heures_travaillees} decimals={2} unit="h" />,
       sub: `sur ${fmtFr(k.heures_legales, 2)} h légales`,
       icon: <IconClock />,
-      glow: 'rgba(217,168,63,0.55)',
-      color: '#D9A83F',
+      glow: 'rgba(6,182,212,0.55)',
+      color: '#06b6d4',
       spark: sparkHeures,
     },
     {
@@ -754,8 +754,8 @@ export default function Dashboard({ demo: demoProp = false }) {
       valueEl: <AnimatedNumber value={k.presence_pct} unit="%" />,
       sub: 'heures travaillées / heures légales',
       icon: <IconTrendUp />,
-      glow: 'rgba(16,185,129,0.6)',
-      color: '#10b981',
+      glow: 'rgba(245,158,11,0.55)',
+      color: '#f59e0b',
       chip: cartePresence(k.presence_pct),
       spark: sparkPres,
     },
@@ -765,8 +765,8 @@ export default function Dashboard({ demo: demoProp = false }) {
       valueEl: <AnimatedNumber value={k.jours_presents} unit="j" />,
       sub: `${fmtPct(k.jours_presents_pct)} des ${fmtFr(k.jours_ouvrables)} j ouvrables`,
       icon: <IconCalendarCheck />,
-      glow: 'rgba(20,184,166,0.55)',
-      color: '#14B8A6',
+      glow: 'rgba(13,148,136,0.55)',
+      color: '#0d9488',
       spark: sparkPresents,
     },
     {
@@ -775,8 +775,8 @@ export default function Dashboard({ demo: demoProp = false }) {
       valueEl: <AnimatedNumber value={k.jours_absence} unit="j" />,
       sub: `${fmtPct(k.jours_absence_pct)} des jours légaux`,
       icon: <IconAlert />,
-      glow: 'rgba(244,63,94,0.55)',
-      color: '#F43F5E',
+      glow: 'rgba(245,158,11,0.6)',
+      color: '#f59e0b',
       chip: { cls: 'chip--amber', label: `${(data.alertes || []).length} alertes solde` },
       spark: sparkAbs,
     },
@@ -786,8 +786,8 @@ export default function Dashboard({ demo: demoProp = false }) {
       valueEl: <AnimatedNumber value={k.jours_conge} decimals={1} unit="j" />,
       sub: `${fmtJours(k.jours_conge_demi)} j en demi-journée · ${fmtFr(k.jours_ouvrables)} j ouvrables`,
       icon: <IconCalendarCheck />,
-      glow: 'rgba(96,165,250,0.55)',
-      color: '#60A5FA',
+      glow: 'rgba(244,63,94,0.55)',
+      color: '#f43f5e',
       chip: { cls: 'chip--emerald', label: `${fmtPct(data.barometres.conge)} des ouvrables` },
       spark: sparkConges,
     },
@@ -797,8 +797,8 @@ export default function Dashboard({ demo: demoProp = false }) {
       valueEl: <AnimatedNumber value={soldeRestantEmploye ?? 0} decimals={1} unit="j" />,
       sub: `${employeFiltre.nom} ${employeFiltre.prenom} · Mat. ${employeFiltre.matricule} — soldes & prélèvements RMA sur la période`,
       icon: <IconCalendarCheck />,
-      glow: 'rgba(16,185,129,0.6)',
-      color: '#10b981',
+      glow: 'rgba(13,148,136,0.55)',
+      color: '#0d9488',
       chip: (soldeRestantEmploye ?? 0) < 0
         ? { cls: 'chip--rose', label: 'Solde négatif' }
         : (soldeRestantEmploye ?? 0) < 5
@@ -811,10 +811,10 @@ export default function Dashboard({ demo: demoProp = false }) {
   return (
     <div data-theme="premium-light" className="relative -mx-3 -mt-4 -mb-6 px-3 pb-8 pt-4 sm:-mx-6 sm:px-6 min-h-full" style={{ background: 'var(--bg-app-gradient)', backgroundColor: 'var(--dp-ink)' }}>
       {/* ============================ BANDEAU COCKPIT ============================ */}
-      <div className="rise relative z-[60] flex flex-wrap items-start justify-between gap-4 pb-5 pt-1" style={{ animationDelay: '30ms' }}>
+      <div className="rise relative z-0 flex flex-wrap items-start justify-between gap-4 pb-5 pt-1" style={{ animationDelay: '30ms' }}>
         <div className="min-w-0">
           <p className="eyebrow flex items-center gap-2">Xmator RH · Poste de pilotage <span className="live-dot" /></p>
-          <h1 className="mt-1.5 text-[26px] font-black leading-none tracking-tight gold-text sm:text-[30px]" style={{ fontFamily: 'var(--font-sans)', letterSpacing: '-0.03em' }}>
+          <h1 className="mt-1.5 text-[22px] font-black leading-none tracking-tight gold-text sm:text-[26px] lg:text-[30px]" style={{ fontFamily: 'var(--font-sans)', letterSpacing: '-0.03em' }}>
             Tableau de bord
           </h1>
           <p className="num mt-2 text-[11px] font-semibold" style={{ color: 'var(--dp-text-3)' }}>
@@ -1088,12 +1088,12 @@ export default function Dashboard({ demo: demoProp = false }) {
                       right={<span className="chip chip--rose">{k.retards} retard(s) · {fmtDur(k.retard_secondes)}</span>}
                     />
                     <div className="grid grid-cols-2 items-center gap-x-2 gap-y-4 pt-1">
-                      <RadialGauge pct={data.barometres.presence} label="Présence (heures)" sub={`${fmtHeures(k.heures_travaillees)} / ${fmtHeures(k.heures_legales)}`} color="#D9A83F" size={150} />
-                      <RadialGauge pct={data.barometres.ponctualite} label="Ponctualité" sub={`${k.journees_presence - k.retards} / ${k.journees_presence} j sans retard`} color="#10b981" size={150} />
+                      <RadialGauge pct={data.barometres.presence} label="Présence (heures)" sub={`${fmtHeures(k.heures_travaillees)} / ${fmtHeures(k.heures_legales)}`} color="#10b981" size={150} />
+                      <RadialGauge pct={data.barometres.ponctualite} label="Ponctualité" sub={`${k.journees_presence - k.retards} / ${k.journees_presence} j sans retard`} color="#8b5cf6" size={150} />
                       <div className="col-span-2 grid grid-cols-3 gap-2.5">
-                        <RadialGauge mini pct={data.barometres.jours_presence} label="Jours présents" color="#14B8A6" size={96} />
-                        <RadialGauge mini pct={data.barometres.conge} label="Congés" color="#3B82F6" size={96} />
-                        <RadialGauge mini pct={data.barometres.maladie} label="Maladie" color="#F43F5E" size={96} />
+                        <RadialGauge mini pct={data.barometres.jours_presence} label="Jours présents" color="#0d9488" size={96} />
+                        <RadialGauge mini pct={data.barometres.conge} label="Congés" color="#3860ea" size={96} />
+                        <RadialGauge mini pct={data.barometres.maladie} label="Maladie" color="#f43f5e" size={96} />
                       </div>
                     </div>
                     <div className="mt-3 flex items-center justify-center gap-3 text-[10.5px]" style={{ color: 'var(--dp-text-3)' }}>
@@ -1131,8 +1131,8 @@ export default function Dashboard({ demo: demoProp = false }) {
                       <HoursComboChart data={barData} height={zoomCombo ? 400 : 230} />
                     </div>
                     <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[10.5px]" style={{ color: 'var(--dp-text-2)' }}>
-                      <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: 'rgba(100,116,139,0.65)' }} /> Heures légales</span>
-                      <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: 'var(--dp-gold)' }} /> Travaillées</span>
+                      <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: '#cbd5e1' }} /> Heures légales</span>
+                      <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: '#06b6d4' }} /> Travaillées</span>
                       <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: '#10b981' }} /> ≥ 100 %</span>
                       <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: '#F59E0B' }} /> 90–99 %</span>
                       <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: '#F43F5E' }} /> &lt; 90 %</span>
@@ -1141,48 +1141,18 @@ export default function Dashboard({ demo: demoProp = false }) {
                   </div>
 
                   {!zoomCombo && (
-                    <div className="panel rise p-5" style={{ '--d': '260ms' }}>
+                    <div className="panel rise overflow-hidden p-5" style={{ '--d': '260ms' }}>
                       <PanelHead
                         title="Répartition du temps"
-                        sub="100 % empilé — présence / congé / maladie / absence par période"
-                        right={<span className="chip chip--emerald">100 %</span>}
+                        sub="Graphique en aires interactif — Présence / Congé légal / Maladie / Absence"
+                        right={<span className="chip chip--emerald">{fmtFr((k?.jours_presence || 0) + (k?.jours_conge || 0) + (k?.jours_maladie || 0) + (k?.jours_absence || 0))} j</span>}
                       />
-                      <ResponsiveContainer width="100%" height={262}>
-                        <AreaChart data={stackData} margin={{ top: 6, right: 6, left: -16, bottom: 0 }}>
-                          <defs>
-                            {Object.entries(STACK_COLORS).map(([name, color]) => (
-                              <linearGradient key={name} id={`stack-${name}`} x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor={color} stopOpacity={1} />
-                                <stop offset="100%" stopColor={color} stopOpacity={0.72} />
-                              </linearGradient>
-                            ))}
-                          </defs>
-                          <CartesianGrid strokeDasharray="3 4" stroke="rgba(148,163,199,0.16)" vertical={false} />
-                          <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--dp-text-3)' }} tickLine={false} axisLine={{ stroke: 'rgba(148,163,199,0.26)' }} />
-                          <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'var(--dp-text-3)' }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
-                          <Tooltip
-                            content={({ active, payload, label }) => {
-                              if (!active || !payload?.length) return null;
-                              return (
-                                <div className="tip" style={{ position: 'relative' }}>
-                                  <p className="tip-title">{label}</p>
-                                  {payload.map((p) => (
-                                    <div key={p.name} className="tip-row"><span>{p.name}</span><b style={{ color: p.color }}>{Math.min(100, Math.round(Number(p.value) * 10) / 10)} %</b></div>
-                                  ))}
-                                </div>
-                              );
-                            }}
-                            cursor={{ stroke: 'rgba(217,168,63,0.55)', strokeDasharray: '3 3' }}
-                          />
-                          <Legend wrapperStyle={{ fontSize: 11 }} />
-                          {Object.entries(STACK_COLORS).map(([name, color]) => (
-                            <Area key={name} type="monotone" dataKey={name} stackId="1" stroke={color} fill={`url(#stack-${name})`} strokeWidth={1.6} />
-                          ))}
-                        </AreaChart>
-                      </ResponsiveContainer>
-                      <p className="mt-1 text-center text-[10.5px]" style={{ color: 'var(--dp-text-3)' }}>
-                        Part de chaque situation dans les journées de la période filtrée.
-                      </p>
+                      <StatsAreasChart
+                        rows={statsRows}
+                        colors={STACK_COLORS}
+                        height={300}
+                        onPick={(name) => setDrawer({ type: 'situation', name })}
+                      />
                     </div>
                   )}
                 </div>
@@ -1196,7 +1166,7 @@ export default function Dashboard({ demo: demoProp = false }) {
                       right={<span className="chip chip--rose">{k.retards + k.departs_anticipe} événement(s)</span>}
                     />
                     <div className="max-h-[268px] overflow-y-auto pe-1">
-                      <StairsStatsDiagram data={retardData} colors={{ retards: '#F59E0B', sorties: '#8B5CF6' }} />
+                      <StairsStatsDiagram data={retardData} colors={{ retards: '#06b6d4', sorties: '#8b5cf6' }} />
                     </div>
                   </div>
 
@@ -1220,7 +1190,7 @@ export default function Dashboard({ demo: demoProp = false }) {
                             <span className="min-w-0 flex-1">
                               <span className="flex items-center justify-between gap-2">
                                 <span className="truncate text-[12.5px] font-bold group-hover:text-[var(--dp-gold-bright)]" style={{ color: 'var(--dp-text)' }}>{e.nom} {e.prenom}</span>
-                                <span className="num shrink-0 text-[11px] font-extrabold" style={{ color: '#BE123C' }}>{e.retards} j · {fmtDur(e.retard_secondes)}</span>
+                                <span className="num shrink-0 text-[11px] font-extrabold" style={{ color: '#E11D48' }}>{e.retards} j · {fmtDur(e.retard_secondes)}</span>
                               </span>
                               <span className="minibar mt-1.5 block"><i style={{ width: `${Math.min(100, (e.retard_secondes / maxRetardsSec) * 100)}%`, background: 'linear-gradient(90deg, #F43F5E, rgba(251,113,133,0.2))', boxShadow: '0 0 8px rgba(244,63,94,0.55)' }} /></span>
                             </span>
@@ -1356,12 +1326,12 @@ export default function Dashboard({ demo: demoProp = false }) {
                             <td>{e.jours_absence ? <span className="num font-bold" style={{ color: 'var(--dp-amber)' }}>{e.jours_absence} j</span> : <span className="num" style={{ color: 'var(--dp-emerald-deep)' }}>0</span>}</td>
                             <td>
 {e.retards ? (
-<span className="num font-bold" style={{ color: '#BE123C' }} title={`cumul ${fmtDur(e.retard_secondes)}`}>{e.retards} j</span>
+<span className="num font-bold" style={{ color: '#E11D48' }} title={`cumul ${fmtDur(e.retard_secondes)}`}>{e.retards} j</span>
 ) : <span className="num" style={{ color: 'var(--dp-emerald-deep)' }}>0</span>}
                             </td>
                             <td className="num">{e.departs_anticipe || '—'}</td>
                             <td><span className="num font-extrabold" style={{ color: e.solde_conge < 0 ? '#E11D48' : e.solde_conge < 5 ? 'var(--dp-amber)' : '#10b981' }}>{fmtJours(e.solde_conge)} j</span></td>
-                            <td><span className="num font-extrabold" style={{ color: e.solde_maladie < 0 ? '#E11D48' : 'var(--dp-cobalt)' }}>{fmtJours(e.solde_maladie)} j</span></td>
+                            <td><span className="num font-extrabold" style={{ color: e.solde_maladie < 0 ? '#E11D48' : e.solde_maladie < 5 ? 'var(--dp-amber)' : '#27C5F5' }}>{fmtJours(e.solde_maladie)} j</span></td>
                           </tr>
                         ))}
                       </tbody>

@@ -621,11 +621,11 @@ migrate();
 // + migration : ajoute les codifications manquantes si la table existe déjà (sans écraser les couleurs personnalisées)
 const codesParDefaut = [
   ['P1', 'PRÉSENT', '#10b981'],
-  ['A1', 'ABSENT', '#f59e0b'],
+  ['A1', 'ABSENT', '#FF8500'],
   ['CA', 'CONGÉ ANNUEL', '#0ea5e9'],
   ['DJ', 'DEMI-JOURNÉE', '#000000'],
   ['MA', 'MALADIE', '#f43f5e'],
-  ['RP', 'REPOS', '#64748b'],
+  ['RP', 'REPOS', '#8B5A2B'],
   ['R3', 'REPOS PAYÉ', '#8b5cf6'],
 ];
 const nbCodesPaie = db.prepare('SELECT COUNT(*) AS n FROM codes_paie').get().n;
@@ -644,6 +644,16 @@ if (nbCodesPaie === 0) {
   const r3 = db.prepare("SELECT couleur FROM codes_paie WHERE code = 'R3'").get();
   if (r3 && String(r3.couleur).toLowerCase() === '#10b981') {
     db.prepare("UPDATE codes_paie SET couleur = '#8b5cf6' WHERE code = 'R3'").run();
+  }
+  // mise à jour de couleurs : A1 (Absence) en orangé vif, RP (Repos) en marron
+  // (appliquée uniquement si la couleur actuelle est l'ancienne valeur par défaut, pour préserver les personnalisations)
+  const a1 = db.prepare("SELECT couleur FROM codes_paie WHERE code = 'A1'").get();
+  if (a1 && String(a1.couleur).toLowerCase() === '#f59e0b') {
+    db.prepare("UPDATE codes_paie SET couleur = '#FF8500' WHERE code = 'A1'").run();
+  }
+  const rp = db.prepare("SELECT couleur FROM codes_paie WHERE code = 'RP'").get();
+  if (rp && String(rp.couleur).toLowerCase() === '#64748b') {
+    db.prepare("UPDATE codes_paie SET couleur = '#8B5A2B' WHERE code = 'RP'").run();
   }
 }
 

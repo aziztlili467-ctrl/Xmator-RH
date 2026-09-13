@@ -2,7 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, getToken } from '../api';
 import { useAuth } from '../AuthContext';
-import { ouvrirFluxVideo, arreterFluxVideo, MESSAGES_CAMERA } from '../utils/camera';
+import BoutonInstaller from '../components/ui/BoutonInstaller';
+import { ouvrirFluxVideo, arreterFluxVideo, capturerImageWebp, MESSAGES_CAMERA } from '../utils/camera';
+import {
+  ajouterPointage,
+  obtenirEnAttente,
+  marquerSynchronises,
+  marquerEchec,
+  migrerAncienneFile,
+  purgerSynchronises,
+} from '../utils/pointerQueueStore';
 
 // Dossier public des modèles IA (mêmes fichiers que l'enrôlement : npm run models)
 const MODELS_URL = `${import.meta.env.BASE_URL || '/'}models`;
@@ -15,9 +24,10 @@ const DUREE_SESSION_MS = 60000;           // temps max devant la caméra (60 s)
 const DUREE_SUCCES_MS = 1800;             // écran de succès plein écran (1,8 s) puis retour accueil
 const NB_BARRES = 12;                     // barres du baromètre de confiance
 
-// Stockage local de la synchronisation hors-ligne (queue de pointages non envoyés)
+// Stockage local : les descripteurs faciaux restent en localStorage (petits volumes),
+// la queue des pointages hors-ligne passe en IndexedDB (photos + métadonnées, voir
+// `utils/pointerQueueStore.js`).
 const KEY_DESCRIPTEURS = 'xmator_borne_descripteurs';
-const KEY_QUEUE = 'xmator_borne_pointages';
 
 const pad = (n) => String(n).padStart(2, '0');
 
@@ -26,18 +36,7 @@ function horodatageLocal(now = new Date()) {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
 }
 
-// Lecture / écriture de la queue hors-ligne dans localStorage
-function lireQueue() {
-  try {
-    const raw = localStorage.getItem(KEY_QUEUE);
-    const arr = raw ? JSON.parse(raw) : [];
-    return Array.isArray(arr) ? arr : [];
-  } catch { return []; }
-}
-function ecrireQueue(queue) {
-  try { localStorage.setItem(KEY_QUEUE, JSON.stringify(queue)); } catch {}
-}
-
+// Lecture / écriture de l'indice descripteurs (cache hors-ligne partiel des enrôlements)
 function lireCacheDescripteurs() {
   try {
     const raw = localStorage.getItem(KEY_DESCRIPTEURS);
@@ -87,7 +86,7 @@ export default function BorneXmatorEye() {
   const [messageModele, setMessageModele] = useState('');
   const [horloge, setHorloge] = useState(horodatageLocal());
   const [enLigne, setEnLigne] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
-  const [queue, setQueue] = useState(lireQueue());
+  const [queue, setQueue] = useState([]);
   const [nbEnroles, setNbEnroles] = useState(0);
   const [nbEnregistres, setNbEnregistres] = useState(0);
   const [detecte, setDetecte] = useState(null); // { reconnu, employe, confiance, box }
@@ -122,14 +121,10 @@ export default function BorneXmatorEye() {
     };
   }, []);
 
-  // ---- État réseau (synchronisation de la queue) ----
-  const afficherQueue = (q) => { setQueue(q); ecrireQueue(q); };
-
-  const viderDeLaQueue = (resolus) => {
-    const q = lireQueue();
-    const ids = new Set(resolus.map((x) => x.key));
-    afficherQueue(q.filter((p) => !ids.has(`${p.employe_id}|${p.horodatage}`)));
-  };
+  // ---- État réseau (synchronisation de la queue hors-ligne, IndexedDB) ----
+  const rafraichirQueue = useCallback(async () => {
+    try { setQueue(await obtenirEnAttente()); } catch { setQueue([]); }
+  }, []);
 
   const sendPointage = async (employe_id, horodatage) => {
     try {
@@ -141,23 +136,51 @@ export default function BorneXmatorEye() {
     }
   };
 
-  // Tente d'envoyer toute la queue (appelée au démarrage, au retour en ligne et après un pointage)
+  const echecsRef = useRef(0);
+  const retryRef = useRef(null);
+
+  // Arme un nouvel essai de synchronisation avec backoff exponentiel plafonné (3 s → 5 min).
+  const armerNouvelEssai = () => {
+    if (retryRef.current) return;
+    echecsRef.current += 1;
+    const delai = Math.min(300000, 3000 * 2 ** Math.min(echecsRef.current, 6));
+    retryRef.current = setTimeout(() => {
+      retryRef.current = null;
+      flushQueue();
+    }, delai);
+  };
+
+  // Tente d'envoyer toute la queue (démarrage, retour en ligne, après un pointage, retries).
   const flushQueue = useCallback(async () => {
-    const q = lireQueue();
+    let q = [];
+    try { q = await obtenirEnAttente(); } catch { return; }
     if (!q.length) return;
-    if (navigator.onLine === false) return;
-    const resolus = [];
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) { armerNouvelEssai(); return; }
+    const synchronises = [];
+    let panne = false;
     for (const p of q) {
-      if (!p || !p.employe_id || !p.horodatage) continue;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) { panne = true; break; }
       const r = await sendPointage(p.employe_id, p.horodatage);
-      if (r.ok) resolus.push({ key: `${p.employe_id}|${p.horodatage}` });
+      if (r.ok) synchronises.push(p.id);
+      else if (r.reseau) { panne = true; break; }
+      else { try { await marquerEchec(p.id, (r.erreur && r.erreur.message) || 'Enregistrement refusé par le serveur.'); } catch {} }
     }
-    if (resolus.length) viderDeLaQueue(resolus);
+    if (synchronises.length) {
+      try { await marquerSynchronises(synchronises); } catch {}
+      rafraichirQueue();
+    }
+    if (panne) armerNouvelEssai();
+    else echecsRef.current = 0;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    const surOnline = () => { setEnLigne(true); flushQueue(); };
+    const surOnline = () => {
+      setEnLigne(true);
+      echecsRef.current = 0;
+      if (retryRef.current) { clearTimeout(retryRef.current); retryRef.current = null; }
+      flushQueue();
+    };
     const surOffline = () => setEnLigne(false);
     window.addEventListener('online', surOnline);
     window.addEventListener('offline', surOffline);
@@ -223,10 +246,12 @@ export default function BorneXmatorEye() {
   }, []);
 
   // ---- Cycle caméra : détection + reconnaissance (seuil de confiance >= 50 %) ----
-  const reussir = async (employe) => {
+  const reussir = async (employe, meta = {}) => {
     if (stopRef.current) return;
     // Verrou : plus aucune boucle de détection ne reprend (`boucle` teste stopRef).
     stopRef.current = true;
+    // Capture l'instantané du visage tant que le flux est encore vivant (photo de la transaction).
+    const photo = capturerImageWebp(videoRef.current);
     // Éteint immédiatement la webcam (pistes stoppées + timers annulés) => dernière frame figée.
     arreterFluxVideo(videoRef.current);
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -239,9 +264,21 @@ export default function BorneXmatorEye() {
       if (!r.ok) {
         if (r.reseau) {
           horsLigne = true;
-          const q = lireQueue();
-          q.push({ employe_id: employe.id, matricule: employe.matricule, nom_prenom: employe.nom_prenom, horodatage, type: typeRef.current });
-          afficherQueue(q);
+          try {
+            await ajouterPointage({
+              employe_id: employe.id,
+              matricule: employe.matricule,
+              nom_prenom: employe.nom_prenom,
+              horodatage,
+              timestamp: new Date().toISOString(),
+              type: typeRef.current,
+              photoCaptured: photo,
+              livenessVerified: meta.livenessVerified !== false,
+              confidenceScore: meta.confiance,
+            });
+            rafraichirQueue();
+            flushQueue(); // arme un retry (hors-ligne) ou envoie aussitôt (panne transitoire)
+          } catch {}
         } else {
           setEtape('erreur');
           setErreur((r.erreur && r.erreur.message) || 'Enregistrement refusé par le serveur.');
@@ -283,7 +320,7 @@ export default function BorneXmatorEye() {
           stableRef.current += 1;
           if (stableRef.current >= NB_FRAMES_CONF) {
             stableRef.current = 0;
-            reussir(empFromLabel(best.label));
+            reussir(empFromLabel(best.label), { confiance, livenessVerified: true });
             return;
           }
         } else {
@@ -386,11 +423,12 @@ export default function BorneXmatorEye() {
     setEtape('accueil');
   };
 
-  // Libère la caméra proprement à la fermeture du composant (navigation/déconnexion)
+  // Libère la caméra et le timer de retry proprement à la fermeture du composant
   useEffect(() => {
     return () => {
       stopRef.current = true;
       if (timerRef.current) clearTimeout(timerRef.current);
+      if (retryRef.current) clearTimeout(retryRef.current);
       arreterFluxVideo(videoRef.current);
     };
   }, []);
@@ -407,8 +445,20 @@ export default function BorneXmatorEye() {
     return () => clearTimeout(t);
   }, [etape]);
 
-  // Synchronisation de la queue au montage (réseau rétabli entre deux sessions)
-  useEffect(() => { flushQueue(); }, [flushQueue]);
+  // Au montage : migre l'ancienne file localStorage → IndexedDB (si reliquat), hydrate le
+  // compteur d'attente, purge les pointages synchronisés de plus de 7 jours, puis tente une
+  // synchronisation immédiate (réseau rétabli entre deux sessions de la borne).
+  useEffect(() => {
+    let annule = false;
+    (async () => {
+      try { await migrerAncienneFile(); } catch {}
+      try { await purgerSynchronises(); } catch {}
+      if (annule) return;
+      await rafraichirQueue();
+      if (typeof navigator === 'undefined' || navigator.onLine) flushQueue();
+    })();
+    return () => { annule = true; };
+  }, [rafraichirQueue, flushQueue]);
 
   // Baromètre sensoriel : oscillation des barres proportionnelle au score de confiance
   useEffect(() => {
@@ -748,6 +798,7 @@ export default function BorneXmatorEye() {
         </div>
         <div className="flex items-center gap-2">
           <span className="hidden text-xs text-slate-400 md:block">{user?.login}</span>
+          <BoutonInstaller nomApp="XMATOR EYE" variante="borne" compact />
           <button onClick={deconnexion} className="rounded-lg border border-white/15 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10">
             Déconnexion
           </button>

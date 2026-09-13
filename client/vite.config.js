@@ -128,8 +128,23 @@ function pwaGenerate() {
   };
 }
 
+// Vite 5 + Node ≥ 20 : si un client coupe brutalement son socket HMR (téléphone sur le
+// LAN, mise en veille, réseau instable), le socket TCP brut peut émettre 'error'
+// (ECONNRESET) sans écouteur pendant le handshake 'upgrade'. Node juge l'événement
+// fatidique et arrête tout le serveur Vite. On attache un écouteur no-op dès l'upgrade.
+function hmrSocketGuard() {
+  return {
+    name: 'hmr-socket-guard',
+    configureServer(server) {
+      server.httpServer?.on('upgrade', (req, socket) => {
+        socket.on('error', () => {});
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), pwaGenerate()],
+  plugins: [react(), pwaGenerate(), hmrSocketGuard()],
   server: {
     host: '0.0.0.0',
     port: 5173,

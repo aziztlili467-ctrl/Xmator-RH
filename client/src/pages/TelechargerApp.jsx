@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import BoutonInstaller from '../components/ui/BoutonInstaller';
 
 // Page « Télécharger l'application » — la PWA est déjà installable (manifest + service worker
 // en place) ; cette page propose le bouton d'installation natif et les instructions de secours.
@@ -55,9 +56,9 @@ export default function TelechargerApp() {
       {/* Aperçu de l'application telle qu'elle apparaîtra installée */}
       <div className="card flex flex-col items-center gap-5 p-8 sm:flex-row sm:items-start">
         <img
-          src="/icons/icon-192.png?v=20260912saas"
+          src="/xmator-rh-logo.png?v=rh2026c"
           alt="Icône XMATOR RH"
-          className="h-24 w-24 rounded-3xl bg-white object-contain shadow-lg ring-4 ring-brand-100"
+          className="h-20 w-20 rounded-3xl bg-white object-contain shadow-lg ring-4 ring-brand-100 sm:h-24 sm:w-24"
         />
         <div className="min-w-0 flex-1 text-center sm:text-start">
           <h3 className="text-xl font-extrabold text-slate-900">XMATOR RH</h3>
@@ -91,13 +92,16 @@ export default function TelechargerApp() {
           <div className="min-w-0 flex-1">
             <h3 className="text-xl font-extrabold text-slate-900">XMATOR EYE — Borne de pointage biométrique</h3>
             <p className="mt-0.5 text-sm text-slate-500">
-              Écran kiosque installable dédié au pointage par reconnaissance faciale (<b>liveness</b> : sourire requis).
+              Écran kiosque installable dédié au pointage par reconnaissance faciale.
               Horodatage précis à la seconde, comptes rendus <b>« biométrique »</b> dans « Pointages & présences », fonctionnement hors-ligne partiel (file de synchronisation).
             </p>
           </div>
-          <button onClick={() => navigate('/borne')} className="btn-primary shrink-0 px-6 py-3">
-            Accéder à la borne
-          </button>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-3">
+            <BoutonInstaller nomApp="XMATOR EYE" variante="borne" />
+            <button onClick={() => navigate('/borne')} className="btn-primary shrink-0 px-6 py-3">
+              Accéder à la borne
+            </button>
+          </div>
         </div>
       </div>
 

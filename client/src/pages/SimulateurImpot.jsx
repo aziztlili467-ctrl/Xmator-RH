@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
-import { IconCalculator, IconUsers, IconCalendarDays, IconBanknotes } from '../components/icons';
+import { useEffect, useMemo, useState } from 'react';
+import { api } from '../api';
+import { IconCalculator, IconUsers, IconCalendarDays, IconBanknotes, IconUserCheck } from '../components/icons';
 import { calculerIRPP } from '../utils/irpp';
 
 const fmt = (n) => {
@@ -45,6 +46,44 @@ export default function SimulateurImpot() {
   const [enfants, setEnfants] = useState(0);
   const [autres, setAutres] = useState('0');
 
+  const [empListe, setEmpListe] = useState([]);
+  const [selId, setSelId] = useState('');
+
+  useEffect(() => {
+    api.employes()
+      .then((rows) => setEmpListe(Array.isArray(rows) ? rows : []))
+      .catch(() => {});
+  }, []);
+
+  const selEmp = empListe.find((x) => String(x.id) === String(selId)) || null;
+
+  // Injecte les 3 colonnes employé (Situation familiale / Chef de famille / Enfants à charge)
+  // dans la simulation : D8 dépend de chef_famille (sinon de la situation civile) et D9 du
+  // nombre réel d'enfants à charge (sinon du nombre d'enfants).
+  const appliquerEmploye = (e) => {
+    if (!e) return;
+    const cfOui = String(e.chef_famille || '').toUpperCase() === 'OUI'
+      || /mari|divorc|veuf/i.test(e.situation_familiale || '');
+    setCf(cfOui ? 'oui' : 'non');
+    const nb = e.enfants_a_charge != null && e.enfants_a_charge !== ''
+      ? Math.max(0, Math.floor(Number(e.enfants_a_charge) || 0))
+      : (Number(e.nombre_enfants) || 0);
+    setEnfants(nb);
+    if (e.salaire_base) setSalaire(String(e.salaire_base));
+  };
+
+  const choisirEmploye = (e) => {
+    setSelId(e.target.value);
+    appliquerEmploye(e.target.value ? empListe.find((x) => String(x.id) === String(e.target.value)) : null);
+  };
+
+  const reinitialiser = () => {
+    setSelId('');
+    setCf('non');
+    setEnfants(0);
+    setSalaire('2736.837');
+  };
+
   const c = useMemo(() => {
     const r = calculerIRPP(salaire, {
       mois: Number(mois) || 1,
@@ -63,6 +102,34 @@ export default function SimulateurImpot() {
           Estimation de l'impôt sur le revenu (IRPP) et de la Contribution Sociale de Solidarité (CSS) selon la
           législation fiscale tunisienne 2026.
         </p>
+      </div>
+
+      <div className="card p-4" style={{ background: '#f8fafc' }}>
+        <p className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+          <IconUserCheck /> Employé (optionnel) — D8 / D9 pré-remplis automatiquement depuis sa fiche
+        </p>
+        <select className="input w-full sm:max-w-md" value={selId} onChange={choisirEmploye}>
+          <option value="">— Simulation libre —</option>
+          {empListe.map((x) => (
+            <option key={x.id} value={x.id}>{String(x.matricule).padStart(4, '0')} — {x.nom} {x.prenom}</option>
+          ))}
+        </select>
+        {selEmp && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold" style={{ background: '#fef3c7', color: '#b45309' }}>
+              Situation : {selEmp.situation_familiale || '—'}
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold" style={{ background: '#d1fae5', color: '#065f46' }}>
+              Chef de famille : {selEmp.chef_famille || '—'}
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold" style={{ background: '#dbeafe', color: '#1e40af' }}>
+              Enfants à charge : {selEmp.enfants_a_charge ?? '—'}
+            </span>
+            <button type="button" className="ms-auto text-xs font-semibold text-slate-500 hover:text-slate-800" onClick={reinitialiser}>
+              Réinitialiser
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="card p-4" style={{ background: '#f8fafc' }}>

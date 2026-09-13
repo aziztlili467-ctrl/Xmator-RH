@@ -28,8 +28,44 @@ function killArbre(pid) {
   }
 }
 
+// Démarre Vite et le surveille. Un client qui coupe brusquement son socket HMR (mobile
+// sur le LAN, veille, réseau instable) peut faire planter Vite (« Unhandled 'error'
+// event » ECONNRESET, Node ≥ 20). Si Vite s'arrête sans que ce soit volontaire, on le
+// relance automatiquement (avec un garde-fou : 5 redémarrages < 10 s → abandon).
+function demarrerWeb() {
+  const clientDir = path.join(ROOT, 'client');
+  const viteBin = path.join(clientDir, 'node_modules', 'vite', 'bin', 'vite.js');
+  const enfant = spawn(process.execPath, [viteBin], {
+    cwd: clientDir,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  enfant.stdout.on('data', prefixer('web'));
+  enfant.stderr.on('data', prefixer('web'));
+  let tombe = Date.now();
+  enfant.on('exit', (code) => {
+    if (termine) return;
+    const maintenant = Date.now();
+    if (maintenant - tombe < 10_000) {
+      redemarragesProches += 1;
+      if (redemarragesProches > MAX_REDEMARRAGES_RAPIDES) {
+        console.error(`${C.gris}[api]${C.reset} Trop de redémarrages Vite rapprochés — abandon. Relancez \`npm run dev\`.`);
+        couper(1);
+        return;
+      }
+    } else {
+      redemarragesProches = 0;
+    }
+    console.error(`${C.gris}[api]${C.reset} Vite arrêté (code ${code}) — redémarrage automatique dans 800 ms…`);
+    setTimeout(() => { if (!termine) web = demarrerWeb(); }, 800);
+  });
+  return enfant;
+}
+
 let web = null;
 let termine = false;
+
+const MAX_REDEMARRAGES_RAPIDES = 5; // garde-fou anti boucle de crash
+let redemarragesProches = 0;
 
 function couper(code = 0) {
   if (termine) return;
@@ -75,21 +111,9 @@ attendreAPI()
   .then(() => {
     // Spawn direct du binaire Vite via node — évite npm.cmd/cmd.exe qui, sans shell,
     // lève EINVAL sur Node ≥ 19 (spawn d'un .cmd) et rend le démarrage silencieusement mort.
-    const clientDir = path.join(ROOT, 'client');
-    const viteBin = path.join(clientDir, 'node_modules', 'vite', 'bin', 'vite.js');
-    web = spawn(process.execPath, [viteBin], {
-      cwd: clientDir,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    web.stdout.on('data', prefixer('web'));
-    web.stderr.on('data', prefixer('web'));
-    web.on('exit', (code) => {
-      if (!termine) {
-        console.error(`${C.gris}[api]${C.reset} Vite arrêté (code ${code}) — l'API continue.`);
-      }
-    });
+    web = demarrerWeb();
   })
   .catch((e) => {
-        console.error(`${C.gris}[web]${C.reset} Échec du démarrage de Vite :`, e?.message || e);
-        couper(1);
-      });
+    console.error(`${C.gris}[web]${C.reset} Échec du démarrage de Vite :`, e?.message || e);
+    couper(1);
+  });

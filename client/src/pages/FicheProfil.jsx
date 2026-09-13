@@ -74,71 +74,187 @@ export default function FicheProfil() {
 
   const imprimer = () => {
     if (!emp) return;
-    const node = document.querySelector('.fiche-print');
-    if (!node) { alert('Fiche introuvable, sélectionnez un employé.'); return; }
-    // Réutilise les stylesheets réels de l'application (Tailwind + index.css) :
-    // la fenêtre d'impression applique exactement les mêmes classes que l'écran.
-    const links = Array.from(document.styleSheets)
-      .map((s) => s.href)
-      .filter(Boolean)
-      .map((href) => `<link rel="stylesheet" href="${href}" />`)
-      .join('\n');
-    const nom = esc(`${emp.nom} ${emp.prenom}`).trim();
+    const e = emp;
+    const nom = esc(`${e.nom} ${e.prenom}`).trim();
+    const dateDoc = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+    const heureDoc = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+    const badges = [];
+    if (e.actif) badges.push({ label: 'Employé actif', color: '#059669' });
+    else badges.push({ label: 'Inactif', color: '#dc2626' });
+    if (e.sexe) badges.push({ label: e.sexe, color: e.sexe === 'Femme' ? '#db2777' : '#2563eb' });
+    if (e.situation_familiale) {
+      const c = { 'Célibataire': '#64748b', 'Marié(e)': '#059669', 'Divorcé(e)': '#d97706', 'Veuf(ve)': '#7c3aed' }[e.situation_familiale] || '#64748b';
+      badges.push({ label: e.situation_familiale, color: c });
+    }
+    if (e.nationalite) badges.push({ label: e.nationalite, color: '#6366f1' });
+    const badgeHtml = badges.map((b) => `<span class="f-badge" style="color:${b.color};border-color:${b.color}55">${esc(b.label)}</span>`).join('');
+
+    const photoHtml = e.photo_url
+      ? `<img class="f-photo" src="${esc(e.photo_url)}" alt="Photo" />`
+      : `<span class="f-photo f-photo-init">${esc(String(e.prenom || e.nom || '?').slice(0, 1).toUpperCase())}</span>`;
+    const chip = (label) => `<span class="f-chip">${esc(label)}</span>`;
+    const grilleHtml = [
+      e.rubrique ? chip(`Rubrique ${e.rubrique}`) : '',
+      e.grade ? chip(`Grade ${e.grade}`) : '',
+      e.classe ? chip(`Classe ${e.classe}`) : '',
+      e.echelon ? chip(`Échelon ${e.echelon}`) : '',
+    ].filter(Boolean).join('');
+
+    const ligne = (label, value) => {
+      const v = value === '' || value == null ? '—' : String(value);
+      return `<div class="f-row"><span class="f-label">${esc(label)}</span><span class="f-value">${esc(v)}</span></div>`;
+    };
+    const sectionHtml = (title, color, rows) => `
+        <section class="f-section">
+          <div class="f-section-head" style="background:${color}"><span class="f-section-dot"></span>${esc(title)}</div>
+          <div class="f-section-body">${(Array.isArray(rows) ? rows : [rows]).join('')}</div>
+        </section>`;
+
+    const ribAffiche = e.rib ? e.rib.replace(/(.{4})/g, '$1 ').trim() : '';
+
+    const identite = `
+      <div class="f-identity">
+        <div class="f-identity-main">
+          ${photoHtml}
+          <div class="f-id-infos">
+            <div class="f-name">${esc(e.nom)} ${esc(e.prenom)}</div>
+            <div class="f-post">${esc(e.intitule_poste || '')}</div>
+            <span class="f-mat">Mat. ${esc(e.matricule)}</span>
+            <div class="f-badges">${badgeHtml}</div>
+            ${grilleHtml ? `<div class="f-grille">${grilleHtml}</div>` : '<div class="f-zone">Rubrique / Grade / Classe / Échelon non renseignés</div>'}
+          </div>
+        </div>
+        <div class="f-strip">
+          <div><div class="k">Date de naissance</div><div class="v">${esc(fmtDate(e.date_naissance))}</div></div>
+          <div><div class="k">Date d'embauche</div><div class="v">${esc(fmtDate(e.date_embauche))}</div></div>
+          <div><div class="k">Années de service</div><div class="v">${e.annees_service != null ? esc(`${e.annees_service} an(s)`) : '—'}</div></div>
+          <div><div class="k">Matricule</div><div class="v">Mat. ${esc(e.matricule)}</div></div>
+        </div>
+      </div>`;
+
+    const feuille1 = `
+      <div class="f-title-wrap">
+        <h2 class="f-title">Fiche Signalétique</h2>
+        <div class="f-title-ref"><b>${esc(nom)}</b>Document établi le ${dateDoc} à ${heureDoc}</div>
+      </div>
+      ${identite}
+      ${sectionHtml('Informations Personnelles', 'var(--c-perso)', [
+        ligne('Matricule', e.matricule),
+        ligne('Nom', e.nom),
+        ligne('Prénom', e.prenom),
+        ligne('Date de naissance', fmtDate(e.date_naissance)),
+        ligne('Lieu de naissance', e.lieu_naissance),
+        ligne('Sexe', e.sexe),
+        ligne('Nationalité', e.nationalite),
+        ligne('Groupe sanguin', e.groupe_sanguin),
+        ligne('Service militaire', e.service_militaire),
+        ligne('CIN', e.cin),
+        ligne("Date d'émission CIN", fmtDate(e.date_emission_cin)),
+        ligne('Situation familiale', e.situation_familiale),
+        ligne('Chef de famille', e.chef_famille),
+        ligne('Enfants à charge', e.enfants_a_charge),
+        ligne("Nombre d'enfants", e.nombre_enfants),
+        ligne('Conjoint', e.conjoint_nom),
+        ligne('Date naissance conjoint', fmtDate(e.conjoint_date_naissance)),
+      ])}
+      ${sectionHtml('Adresse & Contact', 'var(--c-adresse)', [
+        ligne('Adresse', e.adresse),
+        ligne('Rue', e.rue),
+        ligne('Code postal', e.code_postal),
+        ligne('Localité', e.localite),
+        ligne('Gouvernorat', e.gouvernorat),
+        ligne('Téléphone', e.telephone),
+        ligne('GSM', e.gsm),
+        ligne('E-mail', e.adresse_electronique),
+      ])}
+      ${sectionHtml('Informations Sociales', 'var(--c-sociale)', [
+        ligne('N° CNAM', e.cnam),
+        ligne('N° CNSS', e.cnss),
+        ligne('Type de contrat', e.type_contrat),
+      ])}`;
+
+    const feuille2 = `
+      ${sectionHtml('Informations Professionnelles', 'var(--c-pro)', [
+        ligne("Intitulé du poste", e.intitule_poste),
+        ligne("Niveau d'études", e.niveau_etudes),
+        ligne('Diplôme', e.diplome),
+        ligne("Date d'émission du diplôme", fmtDate(e.date_emission_diplome)),
+        ligne('Catégorie professionnelle', e.categorie),
+        ligne('Rubrique', e.rubrique),
+        ligne('Grade', e.grade),
+        ligne('Classe', e.classe),
+        ligne('Échelon', e.echelon),
+        ligne("Date d'embauche", fmtDate(e.date_embauche)),
+        ligne('Salaire de base', fmtMontant(e.salaire_base)),
+      ])}
+      ${sectionHtml('Coordonnées Bancaires / RIB', 'var(--c-rib)', [
+        ligne('Nom de la banque', e.banque),
+        ligne('Titulaire du compte', e.titulaire_compte),
+        ligne('Type de compte', e.type_compte),
+        ligne('Numéro RIB (20 chiffres)', ribAffiche),
+      ])}`;
+
     const html = `<!DOCTYPE html><html lang="fr"><head>
 <meta charset="utf-8" />
 ${printHead(`Fiche Signalétique — ${nom}`)}
 <base href="${window.location.origin}/" />
-${links}
 <style>
-@page{size:A4 portrait;margin:0}
-*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
-html,body{margin:0;padding:0}
-body{background:#f1f5f9;color:#1e293b;font-family:'Inter',system-ui,sans-serif;padding-top:56px}
-#printbar{position:fixed;top:0;right:0;left:0;z-index:100;display:flex;justify-content:center;gap:.5rem;padding:.75rem;background:#0f172a;box-shadow:0 .25rem .75rem rgba(0,0,0,.3)}
-#printbar button{cursor:pointer;border:0;border-radius:.5rem;padding:.5rem 1.25rem;background:#2563eb;color:#fff;font:700 .875rem/1.2 system-ui,sans-serif}
-#printbar button:hover{background:#1d4ed8}
-.sheet{max-width:210mm;margin:0 auto;padding:1rem}
-${printBrandHeaderStyle()}
-.print-footer{display:flex;align-items:center;justify-content:center;gap:.5rem;margin-top:1.25rem;padding-top:.75rem;border-top:1px solid #e2e8f0;color:#64748b;font-size:.75rem}
-.print-footer-logo{width:1rem;height:1rem;object-fit:contain}
-.print-footer-sep{width:1px;height:.875rem;background:#cbd5e1}
-.fiche-print{width:100%;overflow-wrap:break-word}
- @media print{
-  #printbar{display:none!important}
-  body{background:#fff;padding:9mm 8mm 8mm 8mm}
-  .sheet{padding:0;max-width:none}
-  .fiche-print > * + *{margin-top:.75rem!important}
-  .fiche-print .card{page-break-inside:auto;break-inside:auto;box-shadow:none!important;border-radius:.5rem!important}
-  /* En-tête : photo | identité sur une rangée ; badges sur leur propre rangée pleine largeur */
-  .fiche-print .card.overflow-hidden > .flex{flex-wrap:wrap!important;align-items:center}
-  .fiche-print .card.overflow-hidden > .flex > .flex.flex-wrap{flex-basis:100%!important;padding-top:.125rem}
-  /* Nom : sur une ligne si possible, sinon retour "intelligent" (jamais un mot par ligne) */
-  .fiche-print h2{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;font-size:1.25rem!important;line-height:1.35!important}
-  .fiche-print .truncate{white-space:normal!important;overflow-wrap:anywhere}
-  /* Badges : rangées automatiques */
-  .fiche-print .flex.flex-wrap{gap:.375rem!important}
-  /* Rubrique / Grade / Classe / Échelon : une seule rangée horizontale (rendu agréable) */
-  .fiche-print .mt-2.flex.flex-wrap.gap-1\.5{flex-wrap:nowrap!important;gap:.3125rem!important;margin-top:.5rem!important}
-  .fiche-print .mt-2.flex.flex-wrap.gap-1\.5 > span{white-space:nowrap;padding:.25rem .55rem!important;font-size:.625rem!important;line-height:1.2}
-  /* Espacements resserrés (unités relatives) */
-  .fiche-print .p-6{padding:1.125rem 1.25rem!important}
-  .fiche-print .gap-5{gap:.875rem!important}
-  .fiche-print .p-5{padding:.75rem .875rem!important}
-  .fiche-print .mb-4{margin-bottom:.5rem!important;page-break-after:auto!important;break-after:auto!important}
-  /* Tuiles : 3 colonnes desktop / statistiques : 4 colonnes */
-  .fiche-print .card>.grid{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:.375rem!important}
-  .fiche-print .grid.gap-px{grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:1px!important}
-  .fiche-print .rounded-lg.border{padding:.375rem .625rem!important}
-  .fiche-print .icon-badge{width:2rem;height:2rem}
-  /* Saut de page demandé : page 1 s'arrête à INFORMATIONS SOCIALES, page 2 commence à INFORMATIONS PROFESSIONNELLES avec son cadre décalé de 7mm */
-  .page-break-before-pro{break-before:page;page-break-before:always;margin-top:0!important;padding-top:7mm}
-  .page-break-before-pro .card{break-inside:avoid;page-break-inside:avoid}
+:root{
+  --c-perso:#6366f1;--c-adresse:#d97706;--c-sociale:#059669;--c-pro:#0891b2;--c-rib:#7c3aed;
 }
+body{margin:0;color:#1e293b;font-family:'Inter','Segoe UI',system-ui,sans-serif;font-size:10.5pt;line-height:1.45;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+@media screen{body{background:#e2e8f0;padding:24px}
+ .f-page{max-width:210mm;margin:0 auto}}
+@page{size:A4 portrait;margin:13mm 12mm 15mm 12mm;@bottom-left{content:'XMator-RH — Fiche Signalétique';font-size:7.5pt;color:#64748b}@bottom-right{content:counter(page) ' / ' counter(pages);font-size:7.5pt;color:#64748b}}
+.f-page{background:#fff;box-shadow:0 10px 40px rgba(0,0,0,.35);padding:2mm}
+${printBrandHeaderStyle()}
+.f-title-wrap{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;border-bottom:2.5px solid #0f172a;padding:4px 2px 9px;margin-bottom:10px}
+.f-title{margin:0;font-size:17pt;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#0f172a}
+.f-title-ref{text-align:right;font-size:8pt;color:#475569}
+.f-title-ref b{display:block;font-size:10.5pt;color:#0f172a}
+.f-identity{border:1px solid #dbe3ee;border-radius:12px;overflow:hidden;background:linear-gradient(120deg,#1e3a8a,#2563eb 55%,#3b82f6);color:#fff}
+.f-identity-main{display:flex;gap:16px;align-items:center;padding:16px}
+.f-photo{width:86px;height:86px;border-radius:50%;object-fit:cover;flex:none;border:3px solid rgba(255,255,255,.85);box-shadow:0 4px 14px rgba(0,0,0,.3);background:rgba(255,255,255,.2)}
+.f-photo-init{display:flex;align-items:center;justify-content:center;font-size:34pt;font-weight:800;color:#fff}
+.f-id-infos{flex:1;min-width:0}
+.f-name{font-size:15pt;font-weight:800;line-height:1.2}
+.f-post{font-size:9.5pt;color:#dbeafe;margin-top:2px}
+.f-mat{display:inline-block;margin-top:6px;padding:3px 9px;border-radius:6px;background:rgba(255,255,255,.2);font-family:'Courier New',monospace;font-weight:700;font-size:9pt}
+.f-badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.f-badge{padding:2px 9px;border-radius:999px;font-size:8pt;font-weight:700;background:#fff;border:1px solid;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.f-grille{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.f-chip{padding:2px 10px;border-radius:999px;background:rgba(255,255,255,.18);font-size:8pt;font-weight:600}
+.f-zone{font-size:8.5pt;font-style:italic;color:#dbeafe;margin-top:9px}
+.f-strip{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid rgba(255,255,255,.25);background:rgba(15,23,42,.18)}
+.f-strip>div{padding:8px 12px;border-right:1px solid rgba(255,255,255,.18)}
+.f-strip>div:last-child{border-right:0}
+.f-strip .k{font-size:6.8pt;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#bfdbfe}
+.f-strip .v{font-size:9.5pt;font-weight:700;margin-top:2px}
+.f-section{break-inside:avoid;margin-top:14px;border:1px solid #dbe3ee;border-radius:10px;overflow:hidden}
+.f-section-head{display:flex;align-items:center;gap:8px;padding:7px 14px;color:#fff;font-weight:800;font-size:10pt;letter-spacing:.05em;text-transform:uppercase}
+.f-section-dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.9)}
+.f-section-body{display:grid;grid-template-columns:1fr 1fr;background:#fff}
+.f-row{display:flex;min-width:0;padding:5px 12px;border-bottom:1px solid #eef2f7;border-left:1px solid #eef2f7}
+.f-row:nth-child(even){border-left:0}
+.f-label{flex:none;width:38%;font-size:8pt;font-weight:700;letter-spacing:.02em;text-transform:uppercase;color:#64748b;padding-right:8px}
+.f-value{flex:1;font-size:9.5pt;font-weight:600;color:#0f172a;overflow-wrap:anywhere;text-align:right}
+.f-page-break{break-before:page}
+.f-footer{margin-top:20px;padding-top:9px;border-top:1px solid #cbd5e1;display:flex;justify-content:space-between;gap:8px;font-size:7.5pt;color:#64748b}
+@media print{.f-page{box-shadow:none}}
 </style>
 </head><body>
-<div id="printbar"><button onclick="window.print()">Imprimer / Enregistrer en PDF</button></div>
 ${printBrandHeader('Fiche Signalétique')}
-<div class="sheet">${node.outerHTML}</div>
+<div class="f-page">
+${feuille1}
+<div class="f-page-break">
+${feuille2}
+</div>
+<div class="f-footer">
+<span>XMator-RH — Fiche signalétique ${esc(nom)} · Mat. ${esc(e.matricule)}</span>
+<span>Document généré le ${dateDoc} à ${heureDoc}</span>
+</div>
+</div>
 </body></html>`;
     printHtml(html);
   };

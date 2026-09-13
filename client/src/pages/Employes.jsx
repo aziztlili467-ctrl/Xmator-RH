@@ -11,6 +11,10 @@ const MODELS_URL = `${import.meta.env.BASE_URL || '/'}models`;
 const CSV_TEMPLATE = 'matricule;nom;prenom;categorie;rubrique;grade;classe;echelon\n46;Tlili;Mohamed Aziz;Cadre administratif;DIRECTION;CASA;1;1';
 const RH_CSV_TEMPLATE = 'matricule;date_naissance;date_embauche\n46;01/02/1980;02/03/2005';
 
+// Valeurs identiques à celles de la fiche signalétique (FicheCreation) : la sauvegarde ici
+// remplit automatiquement la case « Situation familiale » de la fiche de chaque employé.
+const SITUATIONS_FAMILIALES = ['Célibataire', 'Marié(e)', 'Divorcé(e)', 'Veuf(ve)'];
+
 // Salaire de base issu de la Grille de salaire (Rubrique / Grade / Classe / Echelon), saisi en DT
 const fmtSalaireBase = (v) => {
   if (v == null || String(v).trim() === '') return '—';
@@ -54,6 +58,7 @@ export default function Employes() {
   const [catSavingId, setCatSavingId] = useState(null);
   const [chefSavingId, setChefSavingId] = useState(null);
   const [enfantsSavingId, setEnfantsSavingId] = useState(null);
+  const [sitSavingId, setSitSavingId] = useState(null);
 
   const [visageTarget, setVisageTarget] = useState(null);
 
@@ -139,6 +144,20 @@ export default function Employes() {
       .catch((err) => setError(err.message))
       .finally(() => setEnfantsSavingId(null));
   };
+
+  const saveSituationFamille = (e) => {
+    const value = e.target.value;
+    if (value === e.currentTarget.dataset.okval) return;
+    setSitSavingId(e.currentTarget.dataset.id);
+    api.updateEmploye(Number(e.currentTarget.dataset.id), { situation_familiale: value })
+      .then(() => { setSuccess('Situation familiale mise à jour (synchronisée dans les fiches signalétiques).'); load(); })
+      .catch((err) => setError(err.message))
+      .finally(() => setSitSavingId(null));
+  };
+
+  // « Chef de famille » / « Enfants à charge » figés pour un(e) célibataire : aucune liste
+  // déroulante, la colonne redevient active dès qu'une autre situation est sélectionnée.
+  const celibataire = (e) => String(e.situation_familiale || '') === 'Célibataire';
 
   // Liste déroulante des catégories de la ligne : garantit que la catégorie actuelle reste
   // sélectionnable même si elle n'existe plus dans le paramétrage (repli « Inconnue »).
@@ -358,6 +377,7 @@ export default function Employes() {
                 <Th label="DEPT" k="departement" />
                 <Th label="Matricule" k="matricule" />
                 <Th label="Nom et prénom" k="nom" />
+                <Th label="Situation familiale" k="situation_familiale" />
                 <Th label="Chef de famille" k="chef_famille" />
                 <Th label="Enfants à charge" k="enfants_a_charge" />
                 <Th label="Catégorie" k="categorie" />
@@ -398,33 +418,61 @@ export default function Employes() {
                   <td className="px-3 py-3 text-xs text-slate-600">
                     <select
                       data-id={e.id}
-                      data-okval={e.chef_famille || ''}
-                      value={e.chef_famille || ''}
-                      onChange={saveChefFamille}
-                      disabled={chefSavingId === e.id}
-                      className="input w-24 cursor-pointer px-2 py-1.5 text-xs"
-                      title={`Chef de famille — ${e.nom} ${e.prenom} (enregistré directement)`}
+                      data-okval={e.situation_familiale || ''}
+                      value={e.situation_familiale || ''}
+                      onChange={saveSituationFamille}
+                      disabled={sitSavingId === e.id}
+                      className="input w-36 cursor-pointer px-2 py-1.5 text-xs"
+                      title={`Situation familiale — ${e.nom} ${e.prenom} (enregistrée directement, synchronisée avec la fiche signalétique)`}
                     >
                       <option value="">—</option>
-                      <option value="OUI">OUI</option>
-                      <option value="NON">NON</option>
+                      {SITUATIONS_FAMILIALES.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
                     </select>
                   </td>
                   <td className="px-3 py-3 text-xs text-slate-600">
-                    <select
-                      data-id={e.id}
-                      data-okval={e.enfants_a_charge ?? ''}
-                      value={e.enfants_a_charge ?? ''}
-                      onChange={saveEnfantsCharge}
-                      disabled={enfantsSavingId === e.id}
-                      className="input w-24 cursor-pointer px-2 py-1.5 text-xs"
-                      title={`Nombre d'enfants à charge — ${e.nom} ${e.prenom} (enregistré directement)`}
-                    >
-                      <option value="">—</option>
-                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-                        <option key={n} value={n}>{n}</option>
-                      ))}
-                    </select>
+                    {celibataire(e) ? (
+                      <span className="inline-block w-24 px-2 py-1.5 text-center font-medium text-slate-400" title="Colonne figée : situation civile Célibataire">
+                        —
+                      </span>
+                    ) : (
+                      <select
+                        data-id={e.id}
+                        data-okval={e.chef_famille || ''}
+                        value={e.chef_famille || ''}
+                        onChange={saveChefFamille}
+                        disabled={chefSavingId === e.id}
+                        className="input w-24 cursor-pointer px-2 py-1.5 text-xs"
+                        title={`Chef de famille — ${e.nom} ${e.prenom} (enregistré directement)`}
+                      >
+                        <option value="">—</option>
+                        <option value="OUI">OUI</option>
+                        <option value="NON">NON</option>
+                      </select>
+                    )}
+                  </td>
+                  <td className="px-3 py-3 text-xs text-slate-600">
+                    {celibataire(e) ? (
+                      <span className="inline-block w-24 px-2 py-1.5 text-center font-medium text-slate-400" title="Colonne figée : situation civile Célibataire">
+                        —
+                      </span>
+                    ) : (
+                      <select
+                        data-id={e.id}
+                        data-okval={e.enfants_a_charge ?? ''}
+                        value={e.enfants_a_charge ?? ''}
+                        onChange={saveEnfantsCharge}
+                        disabled={enfantsSavingId === e.id}
+                        className="input w-24 cursor-pointer px-2 py-1.5 text-xs"
+                        title={`Nombre d'enfants à charge — ${e.nom} ${e.prenom} (enregistré directement)`}
+                      >
+                        <option value="">—</option>
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                          <option key={n} value={n}>{n}</option>
+                        ))}
+                      </select>
+                    )}
                   </td>
                   <td className="px-3 py-3">
                     <select
@@ -522,7 +570,7 @@ export default function Employes() {
                 </tr>
               ))}
               {sorted.length === 0 && (
-                <tr><td colSpan={12} className="px-5 py-10 text-center text-slate-500">Aucun employé trouvé.</td></tr>
+                <tr><td colSpan={14} className="px-5 py-10 text-center text-slate-500">Aucun employé trouvé.</td></tr>
               )}
             </tbody>
           </table>

@@ -1,5 +1,5 @@
 export const APP_NAME = 'XMator-RH';
-export const APP_LOGO = typeof window !== 'undefined' ? `${window.location.origin}/icons/icon-192.png` : '/icons/icon-192.png';
+export const APP_LOGO = typeof window !== 'undefined' ? `${window.location.origin}/icons/xmator-rh-192.png` : '/icons/xmator-rh-192.png';
 
 // Ouvre la fenêtre d'impression via une URL BLOB puis déclenche impression auto.
 export const printHtml = (html, { autoPrint = true } = {}) => {

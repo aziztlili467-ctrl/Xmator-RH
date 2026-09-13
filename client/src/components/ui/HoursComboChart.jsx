@@ -48,13 +48,13 @@ export default function HoursComboChart({ data, height }) {
       <ComposedChart data={data} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
         <defs>
           <linearGradient id="gradWorked" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--accent-cyan)" stopOpacity="0.35" />
-            <stop offset="100%" stopColor="var(--accent-cyan)" stopOpacity="0" />
+            <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.35" />
+            <stop offset="100%" stopColor="#06b6d4" stopOpacity="0" />
           </linearGradient>
           <linearGradient id="barVivid" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#2F6BFF" />
-            <stop offset="50%" stopColor="#7C5CFF" />
-            <stop offset="100%" stopColor="#8B5CF6" />
+            <stop offset="0%" stopColor="#6366f1" />
+            <stop offset="50%" stopColor="#06b6d4" />
+            <stop offset="100%" stopColor="#3b82f6" />
           </linearGradient>
           <filter id="barShadow" x="-20%" y="-10%" width="140%" height="130%">
             <feDropShadow dx="0" dy="6" stdDeviation="6" floodColor="rgba(99,102,241,0.35)" />
@@ -78,7 +78,7 @@ export default function HoursComboChart({ data, height }) {
           )}
         />
         <Bar dataKey="Heures légales" fill="url(#barVivid)" radius={[8, 8, 0, 0]} barSize={36} barCategoryGap="22%" isAnimationActive animationDuration={800} style={{ filter: 'url(#barShadow)' }} />
-        <Area type="monotone" dataKey="Heures travaillées" stroke="var(--accent-cyan)" strokeWidth={2.2} fill="url(#gradWorked)" dot={<CustomDot />} activeDot={{ r: 7, stroke: 'white', strokeWidth: 2 }} isAnimationActive animationDuration={1200} animationBegin={150} />
+        <Area type="monotone" dataKey="Heures travaillées" stroke="#06b6d4" strokeWidth={2.2} fill="url(#gradWorked)" dot={<CustomDot />} activeDot={{ r: 7, stroke: 'white', strokeWidth: 2 }} isAnimationActive animationDuration={1200} animationBegin={150} />
       </ComposedChart>
     </ResponsiveContainer>
   );

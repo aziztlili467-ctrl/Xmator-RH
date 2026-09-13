@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth, homeForRole } from '../AuthContext';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { useAuth, canAccess, homeForRole } from '../AuthContext';
 
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [loginVal, setLoginVal] = useState('');
   const [password, setPassword] = useState('');
   const [show, setShow] = useState(false);
@@ -18,7 +19,11 @@ export default function Login() {
     setError('');
     try {
       const user = await login(loginVal, password);
-      navigate(homeForRole(user.role), { replace: true });
+      // Retourne vers la page demandée (ex. app installée XMATOR EYE qui démarre sur /borne),
+      // si l'utilisateur y a droit ; sinon son espace par rôle.
+      const from = location.state?.from?.pathname;
+      const cible = from && canAccess(user.role, from) ? from : homeForRole(user.role);
+      navigate(cible, { replace: true });
     } catch (err) {
       setError(err.message || 'Connexion impossible.');
     } finally {

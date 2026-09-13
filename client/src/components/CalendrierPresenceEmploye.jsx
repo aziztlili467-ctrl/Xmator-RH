@@ -50,7 +50,7 @@ function periodePreset(preset) {
 const CATS = ['Présence', 'Congé', 'Maladie', 'Absence', 'Repos'];
 const CODE_CAT = { Présence: 'P1', Congé: 'CA', Maladie: 'MA', Absence: 'A1', Repos: 'RP' };
 const COULEURS_DEFAUT = {
-  Présence: '#10b981', Congé: '#3860ea', Maladie: '#f43f5e', Absence: '#f59e0b', Repos: '#64748b',
+  Présence: '#10b981', Congé: '#3860ea', Maladie: '#f43f5e', Absence: '#FF8500', Repos: '#8B5A2B',
 };
 
 // Même logique que l'affichage du calendrier : chaque jour tombe dans exactement une catégorie.

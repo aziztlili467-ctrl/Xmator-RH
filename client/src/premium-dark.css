@@ -983,6 +983,15 @@
   color: var(--dp-text);
 }
 
+/* Très petits écrans : bandeau aperçu du jour plus compact (3 widgets sur une ligne) */
+@media (max-width: 480px) {
+  [data-theme='dark-premium'] .day-pill {
+    padding: 5px 10px;
+    gap: 8px;
+    border-radius: 10px;
+  }
+}
+
 /* Réduire le bruit visuel : pas d'animations pour les préférences réduites */
 @media (prefers-reduced-motion: reduce) {
   [data-theme='dark-premium'] *,

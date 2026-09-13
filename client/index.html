@@ -16,12 +16,20 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="icon" href="/favicon.ico?v=20260912" />
-    <link rel="icon" type="image/png" href="/emoticon-Xmator.png?v=20260912" />
-    <link rel="icon" type="image/png" href="/icons/icon-192.png?v=20260822" />
-    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" href="/emoticon-Xmator.png?v=rh2026" />
+    <link rel="apple-touch-icon" href="/icons/xmator-rh-apple-touch-icon.png" />
     <title>Amicale — Gestion des congés</title>
     <script>
+      // Borne XMATOR EYE : bascule dès le parse vers le manifest dédié (/manifest-eye.webmanifest)
+      // et la couleur de thème sombre. Sans cela le navigateur évaluerait l'installabilité avec le
+      // manifest SaaS et créerait l'app « XMATOR RH » au lieu de « XmatorEye ».
+      (function () {
+        if (!location.pathname.startsWith('/borne')) return;
+        var manifest = document.querySelector('link[rel="manifest"]');
+        if (manifest) manifest.setAttribute('href', '/manifest-eye.webmanifest');
+        var theme = document.querySelector('meta[name="theme-color"]');
+        if (theme) theme.setAttribute('content', '#1c1917');
+      })();
       // Capte l'événement d'installation PWA dès que le navigateur l'émet (peut précéder le bundle JS)
       window.addEventListener('beforeinstallprompt', function (e) {
         e.preventDefault();
