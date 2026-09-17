@@ -1,0 +1,32 @@
+{
+  "name": "Xmator Terminal — Borne de pointage biométrique",
+  "short_name": "Xmator Terminal",
+  "description": "Borne de pointage biométrique par reconnaissance faciale — Amicale du Personnel de la Banque Centrale de Tunisie.",
+  "start_url": "/terminal/borne",
+  "scope": "/terminal/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "/terminal/icons/xmator-eye-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/terminal/icons/xmator-eye-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/terminal/icons/xmator-eye-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

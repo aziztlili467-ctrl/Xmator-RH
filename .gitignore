@@ -26,3 +26,7 @@ dbg*.js
 
 # Modeles non utilises (liveness expression retiree)
 client/public/models/face_expression_model*
+
+# Modèles face-api du terminal : copiés au build depuis client/public/models
+# (déjà versionnés côté client) — doublons inutiles dans le dépôt.
+terminal/public/models/
