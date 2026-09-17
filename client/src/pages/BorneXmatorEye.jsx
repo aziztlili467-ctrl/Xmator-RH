@@ -2,8 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, getToken } from '../api';
 import { useAuth } from '../AuthContext';
-import BoutonInstaller from '../components/ui/BoutonInstaller';
-import { ouvrirFluxVideo, arreterFluxVideo, capturerImageWebp, MESSAGES_CAMERA } from '../utils/camera';
+import { ouvrirFluxVideo, arreterFluxVideo, capturerImageWebp, MESSAGES_CAMERA, listerCameras, construireContraintes } from '../utils/camera';
 import {
   ajouterPointage,
   obtenirEnAttente,
@@ -16,17 +15,22 @@ import {
 // Dossier public des modèles IA (mêmes fichiers que l'enrôlement : npm run models)
 const MODELS_URL = `${import.meta.env.BASE_URL || '/'}models`;
 
-// Seuils de reconnaissance
-const SEUIL_MATCH = 0.45;                 // distance euclidienne maximale (0 = identique)
+// Seuils de reconnaissance — tolérance souple pour l'invariance aux lunettes (distance <= 0.50)
+const SEUIL_MATCH = 0.50;                 // distance euclidienne maximale (0 = identique)
 const SEUIL_CONFIANCE = 0.5;              // confiance >= 50 % => pointage validé
 const NB_FRAMES_CONF = 2;                 // frames stables consécutives avant validation
+const NB_BLINKS_MIN = 1;                  // clignements requis pour valider le vivant
+const SEUIL_SOURIRE = 0.4;                // expression happy >= 40 % = sourire (vivant)
+const SEUIL_OEIL_FERME = 0.22;            // ratio d'aspect de l'œil < seuil => œil fermé
 const DUREE_SESSION_MS = 60000;           // temps max devant la caméra (60 s)
 const DUREE_SUCCES_MS = 1800;             // écran de succès plein écran (1,8 s) puis retour accueil
 const NB_BARRES = 12;                     // barres du baromètre de confiance
 
-// Stockage local : les descripteurs faciaux restent en localStorage (petits volumes),
-// la queue des pointages hors-ligne passe en IndexedDB (photos + métadonnées, voir
-// `utils/pointerQueueStore.js`).
+// Données biométriques : les descripteurs faciaux de référence sont stockés CÔTÉ SERVEUR
+// (employés.face_descriptor / face_descriptor_b, exposés uniquement via l'API protégée).
+// Le navigateur ne détient qu'un cache hors-ligne (localStorage) et le matcher en mémoire ;
+// les deux sont purgés à la déconnexion pour ne laisser aucun descripteur sur l'appareil.
+// La queue des pointages hors-ligne, elle, passe en IndexedDB (voir `utils/pointerQueueStore.js`).
 const KEY_DESCRIPTEURS = 'xmator_borne_descripteurs';
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -34,6 +38,14 @@ const pad = (n) => String(n).padStart(2, '0');
 // Horodatage local précis 'YYYY-MM-DD HH:mm:ss'
 function horodatageLocal(now = new Date()) {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+
+// Purge totale des données biométriques de l'appareil (déconnexion) : le cache local de
+// descripteurs est effacé. Les références en mémoire (matcher, modèles) sont libérées par
+// l'appelant ; les descripteurs de référence restent sur le serveur, rechargés après
+// reconnexion.
+function purgerDonneesBiometriques() {
+  try { localStorage.removeItem(KEY_DESCRIPTEURS); } catch {}
 }
 
 // Lecture / écriture de l'indice descripteurs (cache hors-ligne partiel des enrôlements)
@@ -61,11 +73,29 @@ function segmentCouleur(score) {
   return { couleur: '#ef4444', libelle: 'Visage non identifié' };
 }
 
-function construireContraintes(face) {
-  return {
-    video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: face },
-    audio: false,
+// Ratio d'aspect de l'œil (Eye Aspect Ratio) sur le modèle 68 points (face-api) :
+// œil gauche 36-41, œil droit 42-47. EAR bas => paupières fermées. Utilisé pour détecter
+// un clignement (fermé → ouvert) comme preuve de vie anti-photo.
+function earOeil(p, debut) {
+  const d = (i, j) => {
+    const a = p[debut + i];
+    const b = p[debut + j];
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy);
   };
+  const v1 = d(1, 5);
+  const v2 = d(2, 4);
+  const h = d(0, 3);
+  if (h < 1e-6) return 1;
+  return (v1 + v2) / (2 * h);
+}
+
+// EAR moyen des deux yeux (68 landmarks).
+function earMoyen(landmarks) {
+  const g = earOeil(landmarks, 36);
+  const dr = earOeil(landmarks, 42);
+  return (g + dr) / 2;
 }
 
 export default function BorneXmatorEye() {
@@ -73,6 +103,8 @@ export default function BorneXmatorEye() {
   const { user, logout } = useAuth();
 
   const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const trameRef = useRef(null);
   const faceapiRef = useRef(null);
   const matcherRef = useRef(null);
   const stopRef = useRef(false);
@@ -80,6 +112,11 @@ export default function BorneXmatorEye() {
   const stableRef = useRef(0);
   const typeRef = useRef('arrivee');
   const detecteRef = useRef(null);
+  const camsRef = useRef([]);        // caméras énumérées (enumerateDevices)
+  const camIndexRef = useRef(0);     // caméra active dans la liste
+  const blinksRef = useRef(0);       // clignements détectés depuis le début de la session
+  const paupiereFermeeRef = useRef(false); // machine à états EAR fermé/ouvert
+  const sourireRef = useRef(false);  // sourire détecté (expression happy) sur la frame courante
 
   const [etape, setEtape] = useState('chargement'); // chargement | accueil | camera | succes | erreur
   const [erreur, setErreur] = useState('');
@@ -205,6 +242,7 @@ export default function BorneXmatorEye() {
         await mod.nets.ssdMobilenetv1.loadFromUri(MODELS_URL);
         await mod.nets.faceLandmark68Net.loadFromUri(MODELS_URL);
         await mod.nets.faceRecognitionNet.loadFromUri(MODELS_URL);
+        await mod.nets.faceExpressionNet.loadFromUri(MODELS_URL);
         if (annule) return;
 
         // Descripteurs des employés enrôlés (API) en priorité, sinon cache local (hors-ligne partiel)
@@ -230,7 +268,13 @@ export default function BorneXmatorEye() {
           return;
         }
         const actifs = employes.filter((e) => e.actif);
-        const labels = actifs.map((e) => new mod.LabeledFaceDescriptors(labelFromEmp(e), [new Float32Array(e.descriptor)]));
+        const labels = actifs.map((e) => {
+          // Plutôt `descriptors` (émprises A/B = avec/sans lunettes) ; repli rétrocompatible.
+          const multi = Array.isArray(e.descriptors) && e.descriptors.length > 0
+            ? e.descriptors
+            : (e.descriptor ? [e.descriptor] : []);
+          return new mod.LabeledFaceDescriptors(labelFromEmp(e), multi.map((d) => new Float32Array(d)));
+        });
         matcherRef.current = new mod.FaceMatcher(labels, SEUIL_MATCH);
         if (annule) return;
         setMessageModele('');
@@ -301,22 +345,51 @@ export default function BorneXmatorEye() {
     }
     try {
       const opts = new fapi.SsdMobilenetv1Options({ minConfidence: 0.5 });
-      const r = await fapi.detectSingleFace(video, opts)
+      // Entrée de détection allégée (largeur max 480) : nets internes de 300/112 px,
+      // le CPU reste libre → aperçu réellement LIVE aussi sur les bornes modestes.
+      const vw = video.videoWidth || 0;
+      if (!vw) {
+        if (!stopRef.current) timerRef.current = setTimeout(boucle, 150);
+        return;
+      }
+      const tc = trameRef.current || (trameRef.current = document.createElement('canvas'));
+      const echelle = Math.min(1, 480 / vw);
+      tc.width = Math.max(1, Math.round(vw * echelle));
+      tc.height = Math.max(1, Math.round((video.videoHeight || 0) * echelle));
+      tc.getContext('2d').drawImage(video, 0, 0, tc.width, tc.height);
+      const r = await fapi.detectSingleFace(tc, opts)
         .withFaceLandmarks()
-        .withFaceDescriptor();
+        .withFaceDescriptor()
+        .withFaceExpressions();
       if (stopRef.current) return;
       if (r) {
+        // ---- LIVENESS : clignement des yeux (EAR) et/ou sourire (expression happy) ----
+        const ear = earMoyen(r.landmarks.positions);
+        if (ear < SEUIL_OEIL_FERME) {
+          paupiereFermeeRef.current = true;
+        } else if (paupiereFermeeRef.current) {
+          paupiereFermeeRef.current = false;
+          blinksRef.current += 1; // fermé → ouvert = un clignement
+        }
+        const happy = (r.expressions && r.expressions.happy) || 0;
+        sourireRef.current = happy >= SEUIL_SOURIRE;
+        const vivant = blinksRef.current >= NB_BLINKS_MIN || sourireRef.current;
+
         const matcher = matcherRef.current;
         const best = matcher ? matcher.findBestMatch(r.descriptor) : null;
         const confiance = Math.max(0, 1 - (best ? Math.min(best.distance, 1) : 1));
         const reconnu = !!(best && best.label && best.label !== 'inconnu' && best.distance <= SEUIL_MATCH + 1e-9);
-        setDetecte({
+        // Remise à l'échelle vidéo (détection faite sur le petit canvas livré par le détecteur).
+        const k = vw / tc.width;
+        const b0 = r.detection.box;
+        majDetecte({
           reconnu,
           employe: reconnu ? empFromLabel(best.label) : null,
           confiance,
-          box: r.detection.box,
+          box: { x: b0.x * k, y: b0.y * k, width: b0.width * k, height: b0.height * k },
+          vivant,
         });
-        if (reconnu && confiance >= SEUIL_CONFIANCE) {
+        if (reconnu && confiance >= SEUIL_CONFIANCE && vivant) {
           stableRef.current += 1;
           if (stableRef.current >= NB_FRAMES_CONF) {
             stableRef.current = 0;
@@ -327,14 +400,29 @@ export default function BorneXmatorEye() {
           stableRef.current = 0;
         }
       } else {
+        // Visage perdu : la preuve de vie est réinitialisée (anti-photo papier/écran).
         stableRef.current = 0;
-        setDetecte(null);
+        blinksRef.current = 0;
+        paupiereFermeeRef.current = false;
+        sourireRef.current = false;
+        majDetecte(null);
       }
     } catch {
       if (!stopRef.current) timerRef.current = setTimeout(boucle, 250);
       return;
     }
-    if (!stopRef.current) timerRef.current = setTimeout(boucle, 130);
+    if (!stopRef.current) timerRef.current = setTimeout(boucle, 100);
+  };
+
+  // Jauge le re-rendu React de l'overlay (~3/s max) : la boucle reste à 100 ms pour la
+  // liveness, mais `setDetecte` (nouvel objet à chaque frame) ne sature plus le fil
+  // principal ni le CPU des bornes modestes (l'aperçu reste réellement LIVE).
+  const detecteRenduRef = useRef({ t: 0, vide: true });
+  const majDetecte = (obj) => {
+    if (obj === null || detecteRenduRef.current.vide || performance.now() - detecteRenduRef.current.t >= 300) {
+      detecteRenduRef.current = { t: performance.now(), vide: obj === null };
+      setDetecte(obj);
+    }
   };
 
   // Liveness : continue la boucle tant que le verrou n'est pas posé
@@ -346,6 +434,7 @@ export default function BorneXmatorEye() {
   // Ouverture de la caméra + lancement de la boucle de détection
   const demarrerCamera = async (type) => {
     setErreur('');
+    detecteRenduRef.current = { t: 0, vide: true };
     setDetecte(null);
     typeRef.current = type;
     setTypePointage(type);
@@ -359,8 +448,14 @@ export default function BorneXmatorEye() {
     // StrictMode (dev) rejoue cet effet : on réarme l'état en tête de démarrage
     stopRef.current = false;
     stableRef.current = 0;
+    blinksRef.current = 0;
+    paupiereFermeeRef.current = false;
+    sourireRef.current = false;
     try {
       const stream = await ouvrirFluxVideo(construireContraintes('user'));
+      // Énumère les caméras (labels disponibles une fois la permission accordée).
+      try { camsRef.current = await listerCameras(); } catch { camsRef.current = []; }
+      if (camsRef.current.length) camIndexRef.current = 0;
       const video = videoRef.current;
       if (!video) { if (stream && stream.getTracks) stream.getTracks().forEach((t) => t.stop()); return; }
       video.srcObject = stream;
@@ -391,26 +486,82 @@ export default function BorneXmatorEye() {
     }
   };
 
-  // Bascule frontale / arrière SANS réinitialiser la boucle ni l'état (le flux est remplacé en direct)
-  const basculerCam = async () => {
+// Bascule de caméra SANS réinitialiser la boucle ni l'état (le flux est remplacé en direct) —
+// conçue pour fonctionner sur tous les navigateurs mobiles et PC :
+//   1) Libère l'ancien flux AVANT de demander la nouvelle (indispensable sur iOS Safari,
+//      sinon getUserMedia renvoie la même caméra ou lève NotReadableError) ;
+//   2) Essaie le flip facingMode pur (sans résolution), puis avec résolution idéale (certains
+//      webviews Android jettent OverconstrainedError quand les deux sont combinés) ;
+//   3) En repli, cycle les caméras énumérées via enumerateDevices (PC webcam USB) ;
+//   4) Si tout échoue, restaure l'ancienne caméra et affiche un message clair.
+const basculerCam = async () => {
     if (stopRef.current) return;
-    const prochaine = camFace === 'user' ? 'environment' : 'user';
-    try {
-      const stream = await ouvrirFluxVideo(construireContraintes(prochaine));
-      const video = videoRef.current;
-      if (!video) { if (stream && stream.getTracks) stream.getTracks().forEach((t) => t.stop()); return; }
-      const ancien = video.srcObject;
-      video.pause();
-      video.srcObject = stream;
-      if (ancien && typeof ancien.getTracks === 'function') {
-        ancien.getTracks().forEach((t) => { try { t.stop(); } catch {} });
-      }
-      const p = video.play();
-      if (p && p.catch) p.catch(() => {});
-      setCamFace(prochaine);
-    } catch {
-      // Garde la caméra actuelle si la bascule échoue (pas de caméra arrière sur certains PC)
+    const video = videoRef.current;
+    if (!video) return;
+    const cams = Array.isArray(camsRef.current) ? camsRef.current : [];
+    const faceFlip = camFace === 'user' ? 'environment' : 'user';
+    const faceRegex = /back|rear|arri|post|backup|0$/i;
+
+    // Attache le flux EN DIRECT, sans attendre play() et sans rebuild de pipeline
+    // (video.load() ajoutait plusieurs secondes par bascule) : l'élément est autoplay/muted,
+    // le flux est live immédiatement et la détection suit dès les premières images.
+    const attacherFlux = (stream) => {
+      try {
+        video.srcObject = stream;
+        const p = video.play();
+        if (p && p.catch) p.catch(() => {});
+        return true;
+      } catch {}
+      try { if (stream && stream.getTracks) stream.getTracks().forEach((t) => t.stop()); } catch {}
+      return false;
+    };
+
+    // Candidats par ordre de fiabilité croissante.
+    const faceCandidateBase = { audio: false };
+    const candidates = [
+      { ...faceCandidateBase, video: { facingMode: faceFlip } },
+      { ...faceCandidateBase, video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: faceFlip } },
+    ];
+    for (let k = 1; k <= Math.max(cams.length, 1); k += 1) {
+      const cam = cams.length ? cams[(camIndexRef.current + k) % cams.length] : null;
+      if (!cam || !cam.deviceId) continue;
+      const face = faceRegex.test(cam.label || '') ? 'environment' : 'user';
+      candidates.push({ ...faceCandidateBase, video: { facingMode: face, deviceId: { exact: cam.deviceId } } });
+      candidates.push({ ...faceCandidateBase, video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: face, deviceId: { exact: cam.deviceId } } });
     }
+
+    // Étape 1 : libère l'ancien flux d'abord (paramètre indispensable pour iOS Safari).
+    const ancienFlux = video.srcObject;
+    if (ancienFlux && typeof ancienFlux.getTracks === 'function') {
+      ancienFlux.getTracks().forEach((t) => { try { t.stop(); } catch {} });
+    }
+    try { video.srcObject = null; } catch {}
+
+    // Étapes 2→3 : essaie les candidats jusqu'au premier flux qui se monte.
+    let applique = null;
+    for (const contraintesVideo of candidates) {
+      let flux;
+      try { flux = await ouvrirFluxVideo(contraintesVideo); } catch { continue; }
+      if (await attacherFlux(flux)) { applique = contraintesVideo.video.facingMode || faceFlip; break; }
+    }
+
+    // Étape 4 : échec total → restaure l'ancienne caméra pour ne pas laisser un écran noir.
+    if (!applique) {
+      try { await attacherFlux(await ouvrirFluxVideo({ video: { facingMode: camFace }, audio: false })); } catch {}
+      setErreur('Impossible de basculer de caméra : autre caméra indisponible, l\'active est conservée.');
+      return;
+    }
+
+    // Nouvelle caméra → on repart d'un état de détection propre (la surveillance de session continue).
+    setErreur('');
+    setCamFace(applique === 'environment' ? 'environment' : 'user');
+    stableRef.current = 0;
+    blinksRef.current = 0;
+    paupiereFermeeRef.current = false;
+    sourireRef.current = false;
+detecteRef.current = null;
+    detecteRenduRef.current = { t: 0, vide: true };
+    setDetecte(null);
   };
 
   // Arrêt manuel (bouton « Annuler » pendant le scan)
@@ -419,6 +570,9 @@ export default function BorneXmatorEye() {
     arreterFluxVideo(videoRef.current);
     if (timerRef.current) clearTimeout(timerRef.current);
     stableRef.current = 0;
+    blinksRef.current = 0;
+    paupiereFermeeRef.current = false;
+    sourireRef.current = false;
     setDetecte(null);
     setEtape('accueil');
   };
@@ -440,6 +594,9 @@ export default function BorneXmatorEye() {
       setSucces(null);
       setCamFace('user');
       setBars(Array(NB_BARRES).fill(0.3));
+      blinksRef.current = 0;
+      paupiereFermeeRef.current = false;
+      sourireRef.current = false;
       setEtape('accueil');
     }, DUREE_SUCCES_MS);
     return () => clearTimeout(t);
@@ -484,7 +641,19 @@ export default function BorneXmatorEye() {
     if (etape === 'camera') detecteRef.current = detecte;
   }, [detecte, etape]);
 
-  const deconnexion = () => { logout(); navigate('/login', { replace: true }); };
+  const deconnexion = () => {
+    // Déconnexion = arrêt du visionnage + purge des données biométriques locales
+    // (descripteurs & matcher). Les empreintes de référence restent côté serveur.
+    stopRef.current = true;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (retryRef.current) clearTimeout(retryRef.current);
+    arreterFluxVideo(videoRef.current);
+    matcherRef.current = null;
+    faceapiRef.current = null;
+    purgerDonneesBiometriques();
+    logout();
+    navigate('/login', { replace: true });
+  };
 
   const enChargement = etape === 'chargement';
   const enAccueil = etape === 'accueil';
@@ -606,6 +775,17 @@ export default function BorneXmatorEye() {
               {typePointage === 'arrivee' ? 'Entrée' : 'Sortie'} · Cadrez votre visage
             </div>
 
+            {/* JAUGE DU VIVANT (anti-photo) — sous le libellé : clignement OU sourire requis */}
+            <div
+              className={`absolute left-1/2 top-14 -translate-x-1/2 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest backdrop-blur-md transition-all duration-300 sm:top-16 ${
+                detecte && detecte.vivant
+                  ? 'bg-emerald-500/90 text-emerald-950 shadow-[0_0_18px_rgba(34,255,136,0.9)]'
+                  : 'border border-white/15 bg-black/40 text-white/70'
+              }`}
+            >
+              {detecte && detecte.vivant ? '✓ Visage vivant détecté' : '👁 Clignez des yeux ou souriez'}
+            </div>
+
             {/* CADRE OVALE DYNAMIQUE + COINS LUMINEUX */}
             <div
               className="pointer-events-none absolute transition-all duration-300 ease-out"
@@ -707,7 +887,7 @@ export default function BorneXmatorEye() {
                     />
                     <div className="min-w-0">
                       <p className="truncate text-base font-bold text-white">Placez votre visage dans le cadrage ovale</p>
-                      <p className="mt-0.5 text-[11px] text-white/60">Éclairez-vous, restez face à la caméra, anticipez votre mouvement.</p>
+                      <p className="mt-0.5 text-[11px] text-white/60">Éclairez-vous, restez face à la caméra, puis clignez des yeux ou souriez pour valider le vivant.</p>
                     </div>
                   </div>
                 )}
@@ -798,7 +978,6 @@ export default function BorneXmatorEye() {
         </div>
         <div className="flex items-center gap-2">
           <span className="hidden text-xs text-slate-400 md:block">{user?.login}</span>
-          <BoutonInstaller nomApp="XMATOR EYE" variante="borne" compact />
           <button onClick={deconnexion} className="rounded-lg border border-white/15 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10">
             Déconnexion
           </button>
