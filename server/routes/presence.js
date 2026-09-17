@@ -130,6 +130,23 @@ function horairePour(catClef, dateISO, ramadan) {
   return { entree: h.std[0], sortie: h.std[1], periode: 'standard' };
 }
 
+// Tolérances « entrée / sortie réglementaire » configurées par catégorie (Table « Tolérance de
+// retard et de sortie » dans Référentiel → Paramètres de Pointage). Si une catégorie a ses deux
+// valeurs renseignées ('HH:mm'), elles remplacent la grille par défaut (HORAIRES) pour tous les
+// calculs de retard / sortie anticipée. Sinon : horaire par défaut (std + période spéciale).
+function tolerancePour(tolerances, categorieId, catClef, dateISO, ramadan) {
+  const t = tolerances.get(categorieId);
+  if (t && t.entree_reglementaire && t.sortie_reglementaire) {
+    return {
+      entree: t.entree_reglementaire,
+      sortie: t.sortie_reglementaire,
+      periode: 'configure',
+      toleree: true,
+    };
+  }
+  return horairePour(catClef, dateISO, ramadan);
+}
+
 // Statut / anomalie d'une ligne de présence journalière
 function statutPour({ nb, horaire, retardSec, sortieSec }) {
   if (nb === 1) return 'Pointage unique';
@@ -181,7 +198,7 @@ function construire(req, contraintes = {}) {
 
   const rows = db.prepare(`
     SELECT p.employe_id, p.date,
-           e.matricule, e.nom, e.prenom, c.libelle AS categorie,
+           e.matricule, e.nom, e.prenom, e.categorie_id, c.libelle AS categorie,
            COUNT(*) AS nb,
            MIN(p.horodatage) AS entree,
            MAX(p.horodatage) AS sortie,
@@ -193,6 +210,12 @@ function construire(req, contraintes = {}) {
     GROUP BY p.employe_id, p.date
     ORDER BY CAST(e.matricule AS INTEGER), e.matricule, p.date
   `).all(...vals);
+
+  const tolerances = new Map(
+    db.prepare('SELECT categorie_id, entree_reglementaire, sortie_reglementaire FROM tolerances_categorie')
+      .all()
+      .map((t) => [t.categorie_id, t])
+  );
 
   const configs = db.prepare('SELECT annee, ramadan_debut, ramadan_fin FROM config_annees ORDER BY annee').all();
   const ramadanByAnnee = {};
@@ -206,7 +229,7 @@ function construire(req, contraintes = {}) {
 
   const lignes = rows.map((r) => {
     const annee = Number(r.date.slice(0, 4));
-    const horaire = horairePour(normaliser(r.categorie), r.date, ramadanByAnnee[annee] || null);
+    const horaire = tolerancePour(tolerances, r.categorie_id, normaliser(r.categorie), r.date, ramadanByAnnee[annee] || null);
     const entree_reelle = heureDe(r.entree);
     const sortie_reelle = r.nb >= 2 ? heureDe(r.sortie) : null;
     const corr = corrMap.get(`${r.employe_id}|${r.date}`);
@@ -230,6 +253,7 @@ function construire(req, contraintes = {}) {
       entree_regle: horaire ? horaire.entree : null,
       sortie_regle: horaire ? horaire.sortie : null,
       periode: horaire ? horaire.periode : null,
+      tolerance_config: !!(horaire && horaire.toleree),
       retard: retardSec === null ? null : secondesToHHMMSS(retardSec),
       retard_secondes: retardSec,
       sortie_anticipee: sortieSec === null ? null : secondesToHHMMSS(sortieSec),
@@ -250,6 +274,7 @@ function construire(req, contraintes = {}) {
     biometriques: lignes.filter((l) => l.source_biometrique).length,
     somme_retard_secondes: lignes.reduce((s, l) => s + (l.retard_secondes || 0), 0),
     somme_sortie_anticipee_secondes: lignes.reduce((s, l) => s + (l.sortie_anticipee_secondes || 0), 0),
+    categorie_tolerees: [...tolerances.values()].filter((t) => t.entree_reglementaire && t.sortie_reglementaire).length,
     debut: debut || null,
     fin: fin || null,
   };
@@ -361,10 +386,29 @@ router.post('/pointage', (req, res) => {
   const emp = db.prepare('SELECT id, matricule FROM employes WHERE id = ?').get(employe_id);
   if (!emp) return res.status(404).json({ error: 'Employé introuvable.' });
 
+  const MAX_FUTUR_SEC = 5 * 60;      // tolérance d'avance (dérive d'horloge borne/serveur)
+  const MAX_PASSE_SEC = 7 * 24 * 3600; // file hors-ligne de la borne (rejeu différé)
+  const isoLocalEpoch = (s) => {
+    const [d, t] = s.split(' ');
+    const [y, m, dd] = d.split('-').map(Number);
+    const [h, mi, se] = t.split(':').map(Number);
+    return Date.UTC(y, m - 1, dd, h, mi, se);
+  };
+
   let iso = null;
   if (body.horodatage != null && String(body.horodatage).trim() !== '') {
     const ts = normaliserHorodatage(body.horodatage);
     if (!ts) return res.status(400).json({ error: "Horodatage invalide (format attendu : 'AAAA-MM-JJ HH:mm:ss')." });
+    // Borne à une plage autour de l'heure du serveur : un pointage anormalement futur ou trop ancien
+    // (hors file hors-ligne raisonnable) est refusé — il ne doit pas injecter de fausse présence.
+    const now = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%S','now','localtime') AS v").get().v;
+    const deltaS = (isoLocalEpoch(ts.iso) - isoLocalEpoch(now)) / 1000;
+    if (deltaS > MAX_FUTUR_SEC) {
+      return res.status(400).json({ error: 'Horodatage dans le futur : refuse (5 min de tolérance).' });
+    }
+    if (-deltaS > MAX_PASSE_SEC) {
+      return res.status(400).json({ error: 'Horodatage trop ancien : refuse (7 jours de tolérance pour la file hors-ligne).' });
+    }
     iso = ts.iso;
   } else {
     iso = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%S','now','localtime') AS v").get().v;
@@ -673,6 +717,7 @@ module.exports.SEUIL_SORTIE_ANTICIPEE_SEC = SEUIL_SORTIE_ANTICIPEE_SEC;
 module.exports.retardComptable = retardComptable;
 module.exports.sortieAnticipeeComptable = sortieAnticipeeComptable;
 module.exports.horairePour = horairePour;
+module.exports.tolerancePour = tolerancePour;
 module.exports.estPeriodeSpeciale = estPeriodeSpeciale;
 module.exports.estRamadan = estRamadan;
 module.exports.statutPour = statutPour;
