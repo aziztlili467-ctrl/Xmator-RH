@@ -18,25 +18,26 @@ export function mediaSrc(path) {
   return /^(https?:\/\/|data:)/i.test(path) ? path : `${MEDIA_ORIGIN}${path.startsWith('/') ? '' : '/'}${path}`;
 }
 
-export const TOKEN_KEY = 'amicale_token';
-export const SESSION_KEY = 'amicale_session';
+// Session durable : le JWT d'accès vit UNIQUEMENT en mémoire (inaccessible à un éventuel
+// XSS), la session de longue durée est un refresh token opaque en cookie HttpOnly avec
+// rotation à chaque usage. Rien de sensible n'est persisté dans localStorage.
+let _token = null;
+let _sessionId = null;
 
 export function getToken() {
-  return localStorage.getItem(TOKEN_KEY);
+  return _token;
 }
 
 export function setToken(token) {
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
+  _token = token || null;
 }
 
 export function getSessionId() {
-  return localStorage.getItem(SESSION_KEY);
+  return _sessionId;
 }
 
 export function setSessionId(id) {
-  if (id) localStorage.setItem(SESSION_KEY, String(id));
-  else localStorage.removeItem(SESSION_KEY);
+  _sessionId = id !== undefined && id !== null && id !== '' ? String(id) : null;
 }
 
 // Identifiant unique de l'appareil (équivalent web de l'adresse MAC) :
@@ -51,9 +52,49 @@ export function getAppareilId() {
   return id;
 }
 
+// Renouvelle le jeton d'accès depuis le cookie HttpOnly (rotation à chaque usage).
+// Un seul refresh en vol, partagé par toutes les requêtes concurrentes.
+let _refreshing = null;
+async function tryRefresh() {
+  if (_refreshing) return _refreshing;
+  _refreshing = (async () => {
+    try {
+      const res = await fetch(BASE + '/auth/refresh', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) return false;
+      const data = await res.json().catch(() => ({}));
+      if (!data || !data.token) return false;
+      setToken(data.token);
+      setSessionId(data.session_id);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      _refreshing = null;
+    }
+  })();
+  return _refreshing;
+}
+
+// Redirige vers l'écran de connexion (la borne Xmator Terminal vit sous /terminal/).
+function versConnexion() {
+  if (typeof window === 'undefined') return;
+  const loginTarget = window.location.pathname.startsWith('/terminal')
+    ? '/terminal/login'
+    : '/login';
+  if (window.location.pathname !== loginTarget) {
+    window.location.href = loginTarget;
+  }
+}
+
 async function request(path, options = {}) {
-  const token = getToken();
-  const method = (options.method || 'GET').toUpperCase();
+  // « _retriedAuth » est une option interne : autorise UN SEUL renouvellement de jeton
+  // par requête (évite les boucles si la session est réellement révoquée).
+  const { _retriedAuth, ...netOptions } = options;
+  const method = (netOptions.method || 'GET').toUpperCase();
   // Course au démarrage : au lancement du serveur, l'API peut ne pas encore répondre
   // (le proxy Vite renvoie alors un 5xx / une erreur réseau). Les requêtes sans effet
   // de bord (GET/HEAD) tentent 3 fois avec un léger espacement — suffisant pour laisser
@@ -61,26 +102,32 @@ async function request(path, options = {}) {
   const essais = method === 'GET' || method === 'HEAD' ? 3 : 1;
   let dernierSouci;
   for (let i = 1; i <= essais; i += 1) {
-    if (i > 1) await new Promise((r) => setTimeout(r, 400 * (i - 1)));
+    if (i > 1) await new Promise((r) => setTimeout(r, 500 * i));
     try {
       const res = await fetch(BASE + path, {
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          ...(options.headers || {}),
+          ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+          ...(netOptions.headers || {}),
         },
-        ...options,
+        ...netOptions,
       });
       if (res.status >= 500 && i < essais) {
         dernierSouci = new Error(`Erreur serveur (${res.status})`);
         continue;
       }
       const data = await res.json().catch(() => ({}));
-      if (res.status === 401 && !path.startsWith('/auth/login')) {
+      // 401 : jeton d'accès expiré → renouvellement une fois via le cookie HttpOnly
+      if (res.status === 401 && !path.startsWith('/auth/') && !_retriedAuth) {
+        const refreshed = await tryRefresh();
+        if (refreshed) return request(path, { ...options, _retriedAuth: true });
         setToken(null);
-        if (!window.location.pathname.startsWith('/login')) {
-          window.location.href = '/login';
-        }
+        setSessionId(null);
+        versConnexion();
+        const err = new Error(data.error || 'Session expirée, veuillez vous reconnecter.');
+        err.status = 401;
+        throw err;
       }
       if (!res.ok) {
         const err = new Error(data.error || 'Une erreur est survenue.');
@@ -192,9 +239,26 @@ async function printPdf(path) {
 
 export const api = {
   auth: {
-    login: (login, password, device_id) => request('/auth/login', { method: 'POST', body: JSON.stringify({ login, password, device_id }) }),
-    logout: () => request('/auth/logout', { method: 'POST' }),
+    login: async (login, password, device_id) => {
+      const r = await request('/auth/login', { method: 'POST', body: JSON.stringify({ login, password, device_id }) });
+      setToken(r.token);
+      setSessionId(r.session_id);
+      return r;
+    },
+    logout: async () => {
+      try {
+        await request('/auth/logout', { method: 'POST' });
+      } catch { /* session déjà invalide : on nettoie quand même l'état local */ }
+      setToken(null);
+      setSessionId(null);
+    },
     me: () => request('/auth/me'),
+    refresh: async () => {
+      const r = await request('/auth/refresh', { method: 'POST' });
+      setToken(r.token);
+      setSessionId(r.session_id);
+      return r;
+    },
   },
 
   comptes: (params = {}) => request('/comptes' + buildQuery(params)),
@@ -261,7 +325,7 @@ export const api = {
   updateEmploye: (id, body) => request(`/employes/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteEmploye: (id) => request(`/employes/${id}`, { method: 'DELETE' }),
   faceEmploye: (id) => request(`/employes/${id}/face-descriptor`),
-  sauvegarderFace: (id, descriptor) => request(`/employes/${id}/face-descriptor`, { method: 'PUT', body: JSON.stringify({ descriptor }) }),
+  sauvegarderFace: (id, descriptor, repertoire = 'a') => request(`/employes/${id}/face-descriptor`, { method: 'PUT', body: JSON.stringify({ descriptor, repertoire }) }),
   supprimerFace: (id) => request(`/employes/${id}/face-descriptor`, { method: 'DELETE' }),
   descripteursFace: () => request('/employes/descriptors'),
 
@@ -353,6 +417,10 @@ export const api = {
   parametresPresence: () => request('/parametres-presence'),
   sauverParametresPresence: (body) => request('/parametres-presence', { method: 'PUT', body: JSON.stringify(body) }),
 
+  // Tolérances de retard et de sortie par catégorie (Référentiel → Paramètres de Pointage)
+  tolerances: () => request('/tolerances'),
+  sauverTolerances: (lignes) => request('/tolerances', { method: 'PUT', body: JSON.stringify({ lignes }) }),
+
   // Paramètres généraux (Référentiel) : identité de l'organisme — logo/signature encodés en base64
   parametresGeneraux: () => request('/parametres-generaux'),
   sauverParametresGeneraux: (body) => request('/parametres-generaux', { method: 'PUT', body: JSON.stringify(body) }),
@@ -423,12 +491,28 @@ export const api = {
 
   cyclesCalcul: (annee) => request(`/cycles-calcul/${annee}`),
   sauverCyclesCalcul: (annee, cycles) => request(`/cycles-calcul/${annee}`, { method: 'PUT', body: JSON.stringify({ cycles }) }),
+  // Cycle de calcul : règles générales (jour début/fin du cycle, base forfaitaire, carence maladie)
+  reglesCycleCalcul: () => request('/cycles-calcul/regles'),
+  sauverReglesCycleCalcul: (body) => request('/cycles-calcul/regles', { method: 'PUT', body: JSON.stringify(body) }),
+  // Règles de prélèvement (Congé & Maladie) : déduction maladie MA par épisodes
+  reglesPrelevement: () => request('/cycles-calcul/prelevement'),
+  sauverReglesPrelevement: (body) => request('/cycles-calcul/prelevement', { method: 'PUT', body: JSON.stringify(body) }),
+  // Nombre de jours de paie d'un employé pour un mois (cycle résolu automatiquement) — injecté
+  // dans la colonne « Nbr / Taux » de la ligne « Salaire de base » (5011) du bulletin de paie.
+  calculJoursPaie: (params = {}) => request('/cycles-calcul/calculer' + buildQuery(params)),
+  // Prévisions de paie : Nbr_Jours_Paie de tous les employés actifs pour un mois/année
+  // (une seule requête pour le calendrier de paie de Calcul de Paie).
+  previsionsBulletins: (params = {}) => request('/cycles-calcul/bulletins' + buildQuery(params)),
+  // Prix de l'heure par catégorie (régime horaire — taux par la grille)
+  prixHeuresCategorie: () => request('/cycles-calcul/prix-heures'),
+  sauverPrixHeuresCategorie: (prix) => request('/cycles-calcul/prix-heures', { method: 'PUT', body: JSON.stringify({ prix }) }),
 
   maintenance: {
     resetEmployes: (motDePasse) => request('/maintenance/reset/employes', { method: 'POST', body: JSON.stringify({ mot_de_passe: motDePasse }) }),
     resetSoldesConge: (motDePasse) => request('/maintenance/reset/soldes-conge', { method: 'POST', body: JSON.stringify({ mot_de_passe: motDePasse }) }),
     resetSoldesMaladie: (motDePasse) => request('/maintenance/reset/soldes-maladie', { method: 'POST', body: JSON.stringify({ mot_de_passe: motDePasse }) }),
     resetJournal: (motDePasse) => request('/maintenance/reset/journal', { method: 'POST', body: JSON.stringify({ mot_de_passe: motDePasse }) }),
+    changerMotDePasseDanger: (motDePasseActuel, nouveauMotDePasse) => request('/maintenance/password', { method: 'PUT', body: JSON.stringify({ mot_de_passe_actuel: motDePasseActuel, nouveau_mot_de_passe: nouveauMotDePasse }) }),
     backupCreer: (libelle) => request('/maintenance/backup', { method: 'POST', body: JSON.stringify({ libelle }) }),
     backupsListe: () => request('/maintenance/backups'),
     restaurerDepuisSauvegarde: (nom) => request(`/maintenance/restaurer/${encodeURIComponent(nom)}`, { method: 'POST' }),

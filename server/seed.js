@@ -8,14 +8,22 @@ function seed() {
   const fait = db.prepare("SELECT valeur FROM settings WHERE cle = 'seed_fait'").get();
   if (fait) return;
 
-  // Compte Super Admin initial (créé si la table utilisateurs est vide) — mot de passe hashé, jamais en clair
-  // Mot de passe : variable ADMIN_PASSWORD, sinon généré aléatoirement (affiché une seule fois dans la console).
+  // Compte Super Admin initial (créé si la table utilisateurs est vide) — mot de passe hashé, jamais en clair.
+  // ADMIN_PASSWORD est OBLIGATOIRE en production : plutôt que de générer et afficher un
+  // mot de passe dans les logs (fuite), refuse de démarrer si l'administrateur ne l'a pas défini.
   const usersCount = db.prepare('SELECT COUNT(*) AS n FROM utilisateurs').get().n;
   if (usersCount === 0) {
-    const adminPassword = process.env.ADMIN_PASSWORD || crypto.randomBytes(12).toString('hex');
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    if (!adminPassword) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('ADMIN_PASSWORD manquant : définir la variable ADMIN_PASSWORD dans l\'environnement pour créer le compte Super Admin initial.');
+      }
+      console.warn('[seed] ADMIN_PASSWORD non défini : mot de passe Super Admin aléatoire (voir ci-dessous) — à réinitialiser en production.');
+    }
+    const motDePasse = adminPassword || crypto.randomBytes(12).toString('hex');
     db.prepare('INSERT INTO utilisateurs (login, password_hash, role) VALUES (?,?,?)')
-      .run('Xmator', bcrypt.hashSync(adminPassword, 10), 'super_admin');
-    console.log(`Compte Super Admin créé : Xmator — mot de passe : ${adminPassword} (définir ADMIN_PASSWORD pour le personnaliser)`);
+      .run('Xmator', bcrypt.hashSync(motDePasse, 10), 'super_admin');
+    console.log(`Compte Super Admin créé : Xmator${adminPassword ? '' : ` — mot de passe : ${motDePasse}`}${adminPassword ? ' (mot de passe défini via ADMIN_PASSWORD).' : ''}`);
   }
 
   const count = db.prepare('SELECT COUNT(*) AS n FROM employes').get().n;

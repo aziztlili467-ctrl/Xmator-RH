@@ -54,6 +54,10 @@ export default function Maintenance() {
   const [dangerTarget, setDangerTarget] = useState(null);
   const [dangerPwd, setDangerPwd] = useState('');
   const [dangerError, setDangerError] = useState('');
+  const [pwdActuel, setPwdActuel] = useState('');
+  const [pwdNouveau, setPwdNouveau] = useState('');
+  const [pwdMsg, setPwdMsg] = useState('');
+  const [pwdErr, setPwdErr] = useState('');
 
   const loadBackups = () =>
     api.maintenance.backupsListe().then(setBackups).catch((e) => setError(e.message));
@@ -167,10 +171,23 @@ export default function Maintenance() {
     finally { setBusy(false); }
   };
 
+  const changerMotDePasse = async (e) => {
+    e.preventDefault();
+    setPwdMsg(''); setPwdErr('');
+    if (pwdNouveau.length < 8) return setPwdErr('Le nouveau mot de passe doit contenir au moins 8 caractères.');
+    setBusy(true); setError(''); setMsg(''); 
+    try {
+      const r = await api.maintenance.changerMotDePasseDanger(pwdActuel, pwdNouveau);
+      setPwdMsg(r.message || 'Mot de passe de sécurité mis à jour.');
+      setPwdActuel(''); setPwdNouveau('');
+    } catch (err) { setPwdErr(err.message); }
+    finally { setBusy(false); }
+  };
+
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-slate-900">Sauvegarde & réinitialisation</h2>
+        <h2 className="text-lg font-bold text-slate-900">SAUVEGARDE & RÉINITIALISATION</h2>
         <p className="text-sm text-slate-500">
           Sauvegarder toutes les données de toutes les rubriques à la dernière minute, restaurer une sauvegarde en cas de bug ou de mauvaise manipulation, ou remettre les données à l'état vide.
         </p>
@@ -294,6 +311,33 @@ export default function Maintenance() {
           <span className="text-amber-600">🗑️</span>
           {busy ? 'Nettoyage en cours…' : 'Réinitialiser les Bases DB (supprimer les fichiers obsolètes)'}
         </button>
+      </div>
+
+      {/* Mot de passe de sécurité */}
+      <div className="card border-red-200 p-6">
+        <h3 className="mb-1 text-sm font-bold uppercase tracking-wide text-red-600">Mot de passe de sécurité</h3>
+        <p className="mb-4 text-xs text-slate-400">
+          Protège les actions de la zone de danger (réinitialisations). Il est stocké uniquement hashé (bcrypt) et
+          n'est jamais affiché. En production, il est aussi configurable via la variable <span className="font-mono">DANGER_PASSWORD</span>.
+        </p>
+        <form onSubmit={changerMotDePasse} className="grid gap-3 sm:grid-cols-3 sm:items-end">
+          <div>
+            <label className="label">Mot de passe actuel</label>
+            <input className="input" type="password" autoComplete="off" value={pwdActuel}
+              onChange={(e) => setPwdActuel(e.target.value)} placeholder="••••••••••••" />
+          </div>
+          <div>
+            <label className="label">Nouveau mot de passe (8 caractères min.)</label>
+            <input className="input" type="password" autoComplete="new-password" value={pwdNouveau}
+              onChange={(e) => setPwdNouveau(e.target.value)} placeholder="••••••••••••" />
+          </div>
+          <button type="submit" disabled={busy}
+            className="flex items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50">
+            {busy ? 'Enregistrement…' : 'Changer le mot de passe'}
+          </button>
+        </form>
+        {pwdErr && <p className="mt-2 text-sm font-semibold text-red-600">{pwdErr}</p>}
+        {pwdMsg && <p className="mt-2 text-sm font-semibold text-emerald-700">{pwdMsg}</p>}
       </div>
 
       {/* Réinitialisation */}

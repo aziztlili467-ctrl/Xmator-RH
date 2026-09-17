@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { api, setToken, getToken, setSessionId, getAppareilId } from './api';
+import { api, getAppareilId } from './api';
 
 const AuthContext = createContext(null);
 
@@ -7,28 +7,26 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Redémarrage : la session durable est dans le cookie HttpOnly → renouvellement
+  // automatique du jeton d'accès (aucun token persistant côté client).
   useEffect(() => {
-    if (!getToken()) {
-      setLoading(false);
-      return;
-    }
-    api.auth.me()
-      .then((r) => setUser(r.user))
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false));
+    let actif = true;
+    api.auth.refresh()
+      .then((r) => { if (actif) setUser(r.user); })
+      .catch(() => { if (actif) setUser(null); })
+      .finally(() => { if (actif) setLoading(false); });
+    return () => { actif = false; };
   }, []);
 
   const login = async (login, password) => {
     const r = await api.auth.login(login, password, getAppareilId());
-    setToken(r.token);
-    setSessionId(r.session_id); // tracking des appareils connectés (Application Web)
     setUser(r.user);
     return r.user;
   };
 
-  const logout = () => {
-    setToken(null);
+  const logout = async () => {
     setUser(null);
+    await api.auth.logout();
   };
 
   return (
@@ -42,10 +40,12 @@ export function useAuth() {
   return useContext(AuthContext);
 }
 
+// Après connexion : portail de sélection des modules (hub), sauf les employés
+// qui vont directement sur leur espace personnel.
 const REDIRECT = {
-  super_admin: '/',
-  consultation: '/',
-  moderateur: '/',
+  super_admin: '/modules',
+  consultation: '/modules',
+  moderateur: '/modules',
   employe: '/mon-espace',
 };
 
@@ -63,7 +63,7 @@ export function canAccess(role, pathname) {
   if (pathname === '/borne') return role === 'super_admin';
   if (role === 'super_admin') return true;
   if (role === 'consultation') {
-    return pathname === '/' || pathname === '/stats-journal' || pathname === '/journal-rma' || pathname === '/horaires' || pathname === '/presence' || pathname === '/pointage-biometrique' || pathname === '/notification-absences';
+    return pathname === '/' || pathname === '/modules' || pathname === '/stats-journal' || pathname === '/journal-rma' || pathname === '/horaires' || pathname === '/presence' || pathname === '/pointage-biometrique' || pathname === '/notification-absences';
   }
   if (role === 'moderateur') {
     if (pathname === '/mon-espace' || pathname === '/comptes' || pathname === '/maintenance' || pathname === '/mouchard' || pathname === '/parametres-codification' || pathname === '/indemnites-fv' || pathname === '/parametres-indemnites') return false;

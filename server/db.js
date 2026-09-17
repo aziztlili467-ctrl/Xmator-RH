@@ -23,6 +23,13 @@ CREATE TABLE IF NOT EXISTS categories (
   created_at         TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
+CREATE TABLE IF NOT EXISTS tolerances_categorie (
+  categorie_id           INTEGER PRIMARY KEY REFERENCES categories(id) ON DELETE CASCADE,
+  entree_reglementaire   TEXT NOT NULL DEFAULT '',
+  sortie_reglementaire   TEXT NOT NULL DEFAULT '',
+  updated_at             TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
 CREATE TABLE IF NOT EXISTS employes (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   matricule    TEXT NOT NULL UNIQUE,
@@ -274,6 +281,20 @@ CREATE INDEX IF NOT EXISTS idx_sessions_login   ON sessions_appareils(login);
 CREATE INDEX IF NOT EXISTS idx_sessions_statut  ON sessions_appareils(statut);
 CREATE INDEX IF NOT EXISTS idx_sessions_date    ON sessions_appareils(date_connexion);
 
+-- Refresh tokens (opaque, HttpOnly cookie) : rotation à chaque rafraîchissement.
+-- Un jeton par session_appareil ; un seul actif à la fois (= le plus récent non révoqué).
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+  id            TEXT PRIMARY KEY,
+  utilisateur_id INTEGER NOT NULL REFERENCES utilisateurs(id) ON DELETE CASCADE,
+  session_id    INTEGER REFERENCES sessions_appareils(id) ON DELETE CASCADE,
+  expires_at    TEXT NOT NULL,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  revoked_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_refresh_utilisateur ON refresh_tokens(utilisateur_id);
+CREATE INDEX IF NOT EXISTS idx_refresh_session ON refresh_tokens(session_id);
+CREATE INDEX IF NOT EXISTS idx_refresh_expires ON refresh_tokens(expires_at);
+
 -- Application Web : chat en direct utilisateur ↔ Super Admin (1 conversation par compte)
 CREATE TABLE IF NOT EXISTS messages_chat (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -342,6 +363,17 @@ CREATE TABLE IF NOT EXISTS grille_salaire (
 );
 CREATE INDEX IF NOT EXISTS idx_grille_rubrique ON grille_salaire(rubrique);
 CREATE INDEX IF NOT EXISTS idx_grille_grade    ON grille_salaire(grade);
+
+-- Paie mensuelle : Prix de l'heure par CATÉGORIE (régime horaire). Valeur unique par catégorie ;
+-- utilisée lorsque le taux horaire est déterminé par la grille (« prix d'heures par catégorie »).
+CREATE TABLE IF NOT EXISTS prix_heure_categorie (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  categorie_id  INTEGER NOT NULL UNIQUE REFERENCES categories(id),
+  prix_heure    REAL NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  updated_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_prix_heure_cat ON prix_heure_categorie(categorie_id);
 
 -- Paie mensuelle : Indemnités F&V — montants fixes par CATÉGORIE (transport / présence) avec
 -- historique par mois d'effet. Un montant saisi pour (annee, mois) s'applique à ce mois et à
@@ -482,6 +514,8 @@ function migrate() {
   if (!empCols.includes('departement')) db.exec("ALTER TABLE employes ADD COLUMN departement TEXT DEFAULT ''");
   if (!empCols.includes('face_descriptor')) db.exec('ALTER TABLE employes ADD COLUMN face_descriptor TEXT');
   if (!empCols.includes('face_enrolled_at')) db.exec('ALTER TABLE employes ADD COLUMN face_enrolled_at TEXT');
+  if (!empCols.includes('face_descriptor_b')) db.exec('ALTER TABLE employes ADD COLUMN face_descriptor_b TEXT');
+  if (!empCols.includes('face_enrolled_at_b')) db.exec('ALTER TABLE employes ADD COLUMN face_enrolled_at_b TEXT');
   if (!empCols.includes('chef_famille')) db.exec('ALTER TABLE employes ADD COLUMN chef_famille TEXT');
   if (!empCols.includes('enfants_a_charge')) db.exec('ALTER TABLE employes ADD COLUMN enfants_a_charge INTEGER');
 

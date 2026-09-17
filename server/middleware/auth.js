@@ -1,11 +1,22 @@
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { db } = require('../db');
 
-const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? null : 'amicale-dev-secret-2026');
-if (!JWT_SECRET) {
-  throw new Error('JWT_SECRET manquant : définir la variable JWT_SECRET dans l\'environnement (voir .env.example).');
+// Aucun secret « par défaut » connu n'est utilisé : soit JWT_SECRET est défini dans
+// l'environnement, soit (hors production uniquement) une clé éphémère aléatoire est
+// générée à chaque démarrage — jamais une constante du dépôt.
+const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+if (!process.env.JWT_SECRET) {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECRET manquant : définir la variable JWT_SECRET dans l\'environnement (voir .env.example).');
+  }
+  console.warn('[auth] JWT_SECRET non défini : clé éphémère générée — les sessions seront invalidées au prochain redémarrage.');
 }
-const JWT_EXPIRES = '8h';
+
+// Le jeton d'accès est court (mémoire client) ; la session durable repose sur un
+// refresh token opaque transporté en cookie HttpOnly (rotation à chaque usage).
+const ACCESS_TOKEN_EXPIRES = process.env.JWT_EXPIRES || '15m';
+const REFRESH_TOKEN_EXPIRES_DAYS = Number(process.env.REFRESH_TOKEN_EXPIRES_DAYS) || 30;
 
 const ROLES = ['super_admin', 'consultation', 'moderateur', 'employe'];
 
@@ -58,25 +69,136 @@ function actionPour(req) {
   return 'modifier';
 }
 
-function sign(payload) {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+// ---- Cookies (parse + Set-Cookie) ----
+function parseCookies(req) {
+  const map = {};
+  const str = req.headers.cookie;
+  if (!str) return map;
+  for (const pair of str.split(';')) {
+    const eq = pair.indexOf('=');
+    if (eq === -1) continue;
+    const key = pair.slice(0, eq).trim();
+    if (key) {
+      try { map[key] = decodeURIComponent(pair.slice(eq + 1).trim()); } catch { map[key] = pair.slice(eq + 1).trim(); }
+    }
+  }
+  return map;
 }
 
-// Relit le compte en base à chaque requête : changement de rôle / permissions / désactivation immédiats
-function requireAuth(req, res, next) {
-  const header = req.headers.authorization || '';
-  if (!header.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Non authentifié.' });
-  }
+function setRefreshCookie(res, token, maxAgeDays = REFRESH_TOKEN_EXPIRES_DAYS) {
+  const parts = [
+    `refreshToken=${encodeURIComponent(token)}`,
+    'HttpOnly',
+    'Path=/',
+    'SameSite=Lax',
+    `Max-Age=${maxAgeDays * 86400}`,
+  ];
+  if (process.env.NODE_ENV === 'production') parts.push('Secure');
+  res.setHeader('Set-Cookie', parts.join('; '));
+}
+
+function clearRefreshCookie(res) {
+  res.setHeader('Set-Cookie', 'refreshToken=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0');
+}
+
+// ---- Refresh tokens opaques (stockés hashés ? Non : UUID aléatoire non devinable) ----
+function fmtLocal(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+function nettoyerRefreshTokens() {
   try {
-    const payload = jwt.verify(header.slice(7), JWT_SECRET);
-    const c = db.prepare('SELECT id, login, role, employe_id, actif, permissions FROM utilisateurs WHERE id = ?').get(payload.id);
-    if (!c || !c.actif) return res.status(401).json({ error: 'Session expirée ou compte désactivé.' });
-    req.user = { id: c.id, login: c.login, role: c.role, employe_id: c.employe_id, actif: c.actif, permissions: c.permissions, session_id: payload.session_id || null };
-    return next();
-  } catch {
-    return res.status(401).json({ error: 'Session expirée ou invalide.' });
+    db.prepare("DELETE FROM refresh_tokens WHERE expires_at <= datetime('now','localtime') OR (revoked_at IS NOT NULL AND datetime('now','localtime') > datetime(created_at, '+1 day'))").run();
+  } catch { /* best effort */ }
+}
+
+// Crée un refresh token opaque, lié à la session appareil. Un seul actif par session :
+// l'ancien (s'il existe) est révoqué pour garantir la rotation.
+function signRefreshToken(utilisateurId, sessionId, maxAgeDays = REFRESH_TOKEN_EXPIRES_DAYS) {
+  nettoyerRefreshTokens();
+  revokeRefreshForSession(sessionId);
+  const id = crypto.randomUUID();
+  const expires = fmtLocal(new Date(Date.now() + maxAgeDays * 86400000));
+  db.prepare('INSERT INTO refresh_tokens (id, utilisateur_id, session_id, expires_at) VALUES (?,?,?,?)')
+    .run(id, utilisateurId, sessionId, expires);
+  return { id, expiresAt: expires };
+}
+
+// Vérifie un refresh token non révoqué et non expiré.
+function verifierRefreshToken(id) {
+  if (!id) return null;
+  const r = db.prepare('SELECT * FROM refresh_tokens WHERE id = ?').get(id);
+  if (!r) return null;
+  if (r.revoked_at) return null;
+  if (r.expires_at <= db.prepare("SELECT datetime('now','localtime') AS v").get().v) {
+    revokeRefreshToken(id);
+    return null;
   }
+  return r;
+}
+
+function revokeRefreshToken(id) {
+  try { db.prepare("UPDATE refresh_tokens SET revoked_at = datetime('now','localtime') WHERE id = ?").run(id); } catch {}
+}
+
+function revokeRefreshForSession(sessionId) {
+  if (!sessionId) return;
+  try { db.prepare("UPDATE refresh_tokens SET revoked_at = datetime('now','localtime') WHERE session_id = ? AND revoked_at IS NULL").run(sessionId); } catch {}
+}
+
+// ---- JWT d'accès ----
+function sign(payload) {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRES });
+}
+
+// Reconstruit req.user à partir d'une ligne utilisateur, en revalidant l'activation.
+function creerReqUser(c, sessionId) {
+  if (!c || !c.actif) return null;
+  return {
+    id: c.id,
+    login: c.login,
+    role: c.role,
+    employe_id: c.employe_id,
+    actif: c.actif,
+    permissions: c.permissions,
+    session_id: sessionId || null,
+  };
+}
+
+// Relit le compte en base à chaque requête : changement de rôle / permissions / désactivation immédiats.
+// Authentification acceptée via (1) en-tête Authorization: Bearer ou (2) cookie refreshToken HttpOnly
+// (auto-régénérant : le nouveau cookie est posé sur la réponse).
+function requireAuth(req, res, next) {
+  const header = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  if (header) {
+    try {
+      const payload = jwt.verify(header, JWT_SECRET);
+      const u = creerReqUser(db.prepare('SELECT id, login, role, employe_id, actif, permissions FROM utilisateurs WHERE id = ?').get(payload.id), payload.session_id);
+      if (u) { req.user = u; return next(); }
+      return res.status(401).json({ error: 'Session expirée ou compte désactivé.' });
+    } catch {
+      return res.status(401).json({ error: 'Session expirée ou invalide.' });
+    }
+  }
+  const refresh = parseCookies(req).refreshToken;
+  if (refresh) {
+    const r = verifierRefreshToken(refresh);
+    const c = r
+      ? db.prepare('SELECT id, login, role, employe_id, actif, permissions FROM utilisateurs WHERE id = ?').get(r.utilisateur_id)
+      : null;
+    const u = creerReqUser(c, r ? r.session_id : null);
+    if (u) {
+      // Rotation : un nouveau refresh token est émis, posé en cookie, l'ancien est révoqué.
+      const nouveau = signRefreshToken(u.id, r.session_id);
+      setRefreshCookie(res, nouveau.id);
+      req.user = u;
+      return next();
+    }
+    clearRefreshCookie(res);
+    return res.status(401).json({ error: 'Session expirée.' });
+  }
+  return res.status(401).json({ error: 'Non authentifié.' });
 }
 
 function requireRole(...roles) {
@@ -128,4 +250,23 @@ function compteAvecEmploye(user) {
   };
 }
 
-module.exports = { JWT_SECRET, JWT_EXPIRES, sign, requireAuth, requireRole, requireModule, compteAvecEmploye, ROLES, MODULES, parsePermissions };
+module.exports = {
+  JWT_SECRET,
+  ACCESS_TOKEN_EXPIRES,
+  REFRESH_TOKEN_EXPIRES_DAYS,
+  sign,
+  requireAuth,
+  requireRole,
+  requireModule,
+  compteAvecEmploye,
+  parseCookies,
+  setRefreshCookie,
+  clearRefreshCookie,
+  signRefreshToken,
+  verifierRefreshToken,
+  revokeRefreshToken,
+  revokeRefreshForSession,
+  ROLES,
+  MODULES,
+  parsePermissions,
+};

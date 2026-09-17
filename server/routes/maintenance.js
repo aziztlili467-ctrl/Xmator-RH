@@ -1,4 +1,5 @@
 const { Router } = require('express');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
@@ -16,13 +17,25 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200
 
 // ---- Mot de passe de sécurité (zone de danger) ----
 // Stocké UNIQUEMENT hashé (bcrypt) dans settings.danger_password_hash — jamais en clair.
-const DEFAULT_DANGER_HASH = '$2b$10$mjJP6oLMARySDIgg/kuiLuWIiBJm6WR2bQfnLiD/VlGRwrBWWV2oi';
+// Aucun mot de passe par défaut connu n'existe : la première valeur vient de la variable
+// d'environnement DANGER_PASSWORD (obligatoire en production), sinon d'un mot de passe
+// aléatoire généré une seule fois en développement.
 
 function garantirMotDePasseDanger() {
   const h = db.prepare("SELECT valeur FROM settings WHERE cle = 'danger_password_hash'").get();
-  if (!h) {
-    db.prepare("INSERT OR REPLACE INTO settings (cle, valeur) VALUES ('danger_password_hash', ?)").run(DEFAULT_DANGER_HASH);
+  if (h && h.valeur) return;
+  const env = process.env.DANGER_PASSWORD;
+  if (env) {
+    db.prepare("INSERT OR REPLACE INTO settings (cle, valeur) VALUES ('danger_password_hash', ?)").run(bcrypt.hashSync(env, 10));
+    console.log('[danger] Mot de passe de sécurité initialisé depuis DANGER_PASSWORD.');
+    return;
   }
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('DANGER_PASSWORD manquant : définir la variable DANGER_PASSWORD dans l\'environnement (voir .env.example) pour protéger la zone de danger.');
+  }
+  const genere = crypto.randomBytes(12).toString('hex');
+  db.prepare("INSERT OR REPLACE INTO settings (cle, valeur) VALUES ('danger_password_hash', ?)").run(bcrypt.hashSync(genere, 10));
+  console.warn(`[danger] DANGER_PASSWORD non défini : mot de passe de sécurité aléatoire généré pour la zone de danger → ${genere} (à noter : il n'est plus affichable).`);
 }
 garantirMotDePasseDanger();
 
@@ -33,6 +46,23 @@ function verifierMotDePasseDanger(req) {
   if (!h || !h.valeur) return false;
   return bcrypt.compareSync(pwd, h.valeur);
 }
+
+// Rotation du mot de passe de sécurité (zone de danger).
+// Corps : { mot_de_passe_actuel, nouveau_mot_de_passe } — le mot de passe actuel est exigé
+// sauf si aucun n'est encore configuré (première initialisation par l'interface).
+router.put('/password', (req, res) => {
+  const actuel = String((req.body || {}).mot_de_passe_actuel || '');
+  const nouveau = String((req.body || {}).nouveau_mot_de_passe || '');
+  if (nouveau.length < 8) {
+    return res.status(400).json({ error: 'Le nouveau mot de passe doit contenir au moins 8 caractères.' });
+  }
+  const h = db.prepare("SELECT valeur FROM settings WHERE cle = 'danger_password_hash'").get();
+  if (h && h.valeur && !bcrypt.compareSync(actuel, h.valeur)) {
+    return res.status(403).json({ error: 'Mot de passe actuel incorrect.' });
+  }
+  db.prepare("INSERT OR REPLACE INTO settings (cle, valeur) VALUES ('danger_password_hash', ?)").run(bcrypt.hashSync(nouveau, 10));
+  res.json({ ok: true, message: 'Mot de passe de sécurité mis à jour.' });
+});
 
 // Tables copiées lors d'une restauration — TOUTES les tables de l'application (toutes les rubriques :
 // employés, catégories, comptes, soldes & mouvements, demandes de congé, arrêts maladie, présences &

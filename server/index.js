@@ -96,6 +96,11 @@ app.use('/api/parametres-presence', (req, res, next) =>
 app.use('/api/parametres-generaux', (req, res, next) =>
   req.method === 'GET' ? lecture(req, res, next) : requireRole('super_admin')(req, res, next),
   require('./routes/parametres-generaux'));
+// Tolérances de retard et de sortie par catégorie (Référentiel → Paramètres de Pointage) :
+// lecture pour super_admin + consultation + moderateur, écritures super_admin uniquement
+app.use('/api/tolerances', (req, res, next) =>
+  req.method === 'GET' ? lecture(req, res, next) : requireRole('super_admin')(req, res, next),
+  require('./routes/tolerances'));
 
 // Workflow congés / arrêts : écritures et décisions selon les permissions du modérateur
 app.use('/api/demandes-conge', requireModule('demandes'), require('./routes/demandes-conge'));
@@ -160,7 +165,7 @@ app.all('/api/appareils-connectes', requireAuth, (req, res) => {
 // Même serveur HTTP que l'API, même origine. Le JWT est transmis à la connexion du socket.
 const server = http.createServer(app);
 const { Server } = require('socket.io');
-const { JWT_SECRET } = require('./middleware/auth');
+const { JWT_SECRET, parseCookies, verifierRefreshToken } = require('./middleware/auth');
 const jwt = require('jsonwebtoken');
 const chat = require('./routes/chat');
 const io = new Server(server, { cors: { origin: corsOrigins || false }, maxHttpBufferSize: 1e5 });
@@ -183,10 +188,26 @@ function diffuserPresenceAdmin() {
 
 io.use((socket, next) => {
   try {
-    const payload = jwt.verify(String((socket.handshake.auth || {}).token || ''), JWT_SECRET);
-    const c = db.prepare('SELECT id, login, role, actif FROM utilisateurs WHERE id = ?').get(payload.id);
-    if (!c || !c.actif) return next(new Error('Session expirée ou compte désactivé.'));
-    socket.user = { id: c.id, login: c.login, role: c.role };
+    const token = String((socket.handshake.auth || {}).token || '');
+    let compte = null;
+    if (token) {
+      try {
+        const payload = jwt.verify(token, JWT_SECRET);
+        compte = db.prepare('SELECT id, login, role, actif FROM utilisateurs WHERE id = ?').get(payload.id);
+      } catch {
+        // Jeton d'accès expiré → repli sur la session durable (cookie HttpOnly) ci-dessous.
+      }
+    }
+    if (!compte) {
+      // Les cookies accompagnent la requête de handshake (même origine) : le refresh token
+      // HttpOnly authentifie aussi les sockets, indépendamment de la durée du JWT d'accès.
+      const refresh = verifierRefreshToken(parseCookies({ headers: socket.handshake.headers }).refreshToken);
+      if (refresh) {
+        compte = db.prepare('SELECT id, login, role, actif FROM utilisateurs WHERE id = ?').get(refresh.utilisateur_id);
+      }
+    }
+    if (!compte || !compte.actif) return next(new Error('Non authentifié.'));
+    socket.user = { id: compte.id, login: compte.login, role: compte.role };
     return next();
   } catch {
     return next(new Error('Non authentifié.'));
@@ -274,6 +295,21 @@ app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
   res.status(err.status || 500).json({ error: err.message || 'Erreur interne.' });
 });
+
+// ---- PWA Xmator Terminal (borne biométrique indépendante) ----
+const terminalDist = path.join(__dirname, '..', 'terminal', 'dist');
+if (fs.existsSync(terminalDist)) {
+  app.use('/terminal', express.static(terminalDist, { maxAge: '1y', immutable: true, index: false, etag: true }));
+  // Fallback SPA de la borne : les routes internes (/borne, /login…) servent l'index du terminal
+  // (le serveur de fichiers statiques ci-dessus répond aux assets ; les autres chemins tombent ici)
+  app.get(['/terminal', '/terminal/*'], (req, res) => {
+    // Jamais de mise en cache de l'app shell : un téléphone qui a déjà eu une réponse erronée
+    // (ex. page d'accueil du SaaS pendant un redémarrage) la reprendrait depuis son cache.
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.sendFile(path.join(terminalDist, 'index.html'));
+  });
+}
 
 const clientDist = path.join(__dirname, '..', 'client', 'dist');
 if (fs.existsSync(clientDist)) {

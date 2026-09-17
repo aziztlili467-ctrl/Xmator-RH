@@ -2,7 +2,11 @@ const { Router } = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { db } = require('../db');
-const { JWT_SECRET, sign, requireAuth, compteAvecEmploye } = require('../middleware/auth');
+const {
+  JWT_SECRET, sign, requireAuth, compteAvecEmploye,
+  setRefreshCookie, clearRefreshCookie, parseCookies,
+  signRefreshToken, verifierRefreshToken, revokeRefreshToken, revokeRefreshForSession,
+} = require('../middleware/auth');
 const { logActivite } = require('../middleware/audit');
 const router = Router();
 
@@ -77,12 +81,39 @@ router.post('/login', (req, res) => {
   // Tracking appareils : une ligne par connexion réussie ; l'id de session voyage dans le JWT
   const sessionId = ouvrirSession(c, req);
   const token = sign({ id: c.id, login: c.login, role: c.role, employe_id: c.employe_id, session_id: sessionId });
+  // Session durable : refresh token opaque en cookie HttpOnly (jamais accessible au JS)
+  const refresh = signRefreshToken(c.id, sessionId);
+  setRefreshCookie(res, refresh.id);
   res.json({ token, user: compteAvecEmploye(c), session_id: sessionId });
 });
 
-// POST /api/auth/logout — côté stateless : le client supprime le token
+// POST /api/auth/refresh — renouvelle le jeton d'accès depuis le cookie HttpOnly « refreshToken ».
+// Le refresh token est roté : l'ancien est révoqué, un nouveau est émis (détection de réutilisation).
+router.post('/refresh', (req, res) => {
+  const refresh = parseCookies(req).refreshToken;
+  if (!refresh) return res.status(401).json({ error: 'Non authentifié.' });
+  const r = verifierRefreshToken(refresh);
+  if (!r) {
+    clearRefreshCookie(res);
+    return res.status(401).json({ error: 'Session expirée, veuillez vous reconnecter.' });
+  }
+  const c = db.prepare('SELECT * FROM utilisateurs WHERE id = ?').get(r.utilisateur_id);
+  if (!c || !c.actif) {
+    revokeRefreshToken(refresh);
+    clearRefreshCookie(res);
+    return res.status(401).json({ error: 'Compte désactivé.' });
+  }
+  const nouveau = signRefreshToken(c.id, r.session_id);
+  setRefreshCookie(res, nouveau.id);
+  const token = sign({ id: c.id, login: c.login, role: c.role, employe_id: c.employe_id, session_id: r.session_id });
+  res.json({ token, user: compteAvecEmploye(c), session_id: r.session_id });
+});
+
+// POST /api/auth/logout — déconnexion explicite : révoque le refresh token de la session et efface le cookie
 router.post('/logout', requireAuth, (req, res) => {
   logActivite({ utilisateur_id: req.user.id, login: req.user.login, role: req.user.role, action: 'logout', detail: 'Déconnexion', statut: 200, ip: req.ip });
+  if (req.user.session_id) revokeRefreshForSession(req.user.session_id);
+  clearRefreshCookie(res);
   if (req.user.session_id) fermerSession(req.user.session_id, 'logout');
   res.json({ ok: true });
 });
@@ -92,8 +123,12 @@ router.post('/logout', requireAuth, (req, res) => {
 router.post('/logout-beacon', (req, res) => {
   try {
     const payload = jwt.verify(String((req.body || {}).token || ''), JWT_SECRET);
-    if (payload && payload.session_id) fermerSession(payload.session_id, 'fermeture navigateur');
+    if (payload && payload.session_id) {
+      fermerSession(payload.session_id, 'fermeture navigateur');
+      revokeRefreshForSession(payload.session_id);
+    }
   } catch { /* token expiré/invalide : rien à faire */ }
+  clearRefreshCookie(res);
   res.json({ ok: true });
 });
 
