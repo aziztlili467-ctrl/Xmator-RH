@@ -96,7 +96,10 @@ Exécute les suites critiques sur des bases SQLite temporaires
   source de vérité, correction-solde réellement décomptée, clear-soldes + purge,
   refus du prélèvement en mode historique) ;
 - `test-pointage.cjs` — horodatage de `POST /api/presence/pointage` borné autour
-  de l'heure serveur.
+  de l'heure serveur ;
+- `test-global.cjs` — smoke end-to-end du SaaS servi (statiques, PWA `sw.js` /
+  manisfest, borne `/terminal`, refresh token HttpOnly crunchy, socket) — exige
+  un build frais (`npm run build` avant, sinon il se saute).
 
 Audit de réconciliation (lecture seule, sur une copie de la base réelle) :
 
