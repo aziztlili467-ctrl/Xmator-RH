@@ -63,7 +63,7 @@ export function canAccess(role, pathname) {
   if (pathname === '/borne') return role === 'super_admin';
   if (role === 'super_admin') return true;
   if (role === 'consultation') {
-    return pathname === '/' || pathname === '/modules' || pathname === '/stats-journal' || pathname === '/journal-rma' || pathname === '/horaires' || pathname === '/presence' || pathname === '/pointage-biometrique' || pathname === '/notification-absences';
+    return pathname === '/' || pathname === '/modules' || pathname === '/calcul-paie' || pathname === '/indemnites-fv' || pathname === '/simulateur-impot' || pathname === '/stats-journal' || pathname === '/journal-rma' || pathname === '/horaires' || pathname === '/presence' || pathname === '/pointage-biometrique' || pathname === '/notification-absences';
   }
   if (role === 'moderateur') {
     if (pathname === '/mon-espace' || pathname === '/comptes' || pathname === '/maintenance' || pathname === '/mouchard' || pathname === '/parametres-codification' || pathname === '/indemnites-fv' || pathname === '/parametres-indemnites') return false;

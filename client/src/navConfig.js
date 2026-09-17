@@ -93,7 +93,7 @@ export const NAV = [
   { to: '/stats-journal', label: 'JOURNAL DE PRÉSENCE', icon: IconTrendUp, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
   { to: '/journal-rma', label: 'JOURNAL RMA', icon: IconClipboardList, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
   { section: 'POINTAGE BIOMÉTRIQUE', roles: ['super_admin', 'consultation', 'moderateur'] },
-  { to: '/borne', label: 'BORNE DE POINTAGE (XMATOR-EYE)', icon: IconCamera, end: true, roles: ['super_admin', 'consultation', 'moderateur'], module: 'presence' },
+  { to: '/borne', label: 'BORNE DE POINTAGE (XMATOR-EYE)', icon: IconCamera, end: true, roles: ['super_admin'] },
   { to: '/pointage-biometrique', label: 'POINTAGE BIOMÉTRIQUE', icon: IconCamera, end: true, roles: ['super_admin', 'consultation', 'moderateur'], module: 'presence' },
   { section: 'MALADIE', roles: ['super_admin', 'moderateur'] },
   { to: '/maladie/nouvel-arret', label: 'NOUVEL ARRÊT MALADIE', icon: IconStethoscope, end: true, roles: ['super_admin', 'moderateur'], module: 'maladie' },
