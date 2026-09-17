@@ -763,7 +763,16 @@ function soldeCongeRestantDate(employeId, date) {
     FROM codes_importes ci
     WHERE ci.employe_id = ? AND ci.code IN ('CA','DJ') AND ci.date <= ?
   `).get(employeId, d).c;
-  return Math.round((credits - prlv) * 1000) / 1000;
+  // Débits manuels « Correction de solde » (édition directe du solde, aucune cellule CA/DJ posée) :
+  // seule catégorie de prélèvements comptée directement depuis `mouvements` (les prélèvements RMA sont
+  // déjà décomptés via codes_importes, ils ne sont pas recomptés ici).
+  const correct = db.prepare(`
+    SELECT COALESCE(SUM(jours),0) AS c FROM mouvements
+    WHERE employe_id = ? AND solde_type = 'conge'
+      AND type_operation = 'prelevement' AND date_operation <= ?
+      AND motif LIKE 'Correction de solde%'
+  `).get(employeId, d).c;
+  return Math.round((credits - prlv - correct) * 1000) / 1000;
 }
 
 // « Journal du solde de congé » par employé — combinaison en lecture seule, triée chronologiquement :
@@ -793,6 +802,14 @@ function journalSoldeConge(employeId) {
     return 1;
   };
 
+  const corrections = db.prepare(`
+    SELECT * FROM mouvements
+    WHERE employe_id = ? AND solde_type = 'conge'
+      AND type_operation = 'prelevement'
+      AND motif LIKE 'Correction de solde%'
+    ORDER BY date_operation ASC, id ASC
+  `).all(employeId);
+
   const items = [];
   for (const m of mouvements) {
     items.push({
@@ -807,6 +824,23 @@ function journalSoldeConge(employeId) {
       source: 'mouvement',
       mouvement_id: m.id,
       id: m.id,
+      code: null,
+    });
+  }
+  for (const c of corrections) {
+    items.push({
+      type: 'prelevement_correction',
+      type_operation: 'prelevement',
+      date_operation: c.date_operation,
+      date_debut: c.date_debut || c.date_operation,
+      date_fin: c.date_fin || c.date_operation,
+      jours: c.jours,
+      signe: -1,
+      deduit: true,
+      motif: c.motif || null,
+      source: 'mouvement',
+      mouvement_id: c.id,
+      id: c.id,
       code: null,
     });
   }

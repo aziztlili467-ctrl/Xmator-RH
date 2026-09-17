@@ -97,8 +97,9 @@ router.get('/compte-jours', (req, res) => {
   res.json({ employe_id: emp.id, categorie_id: emp.categorie_id, date_debut: debut, date_fin: fin, ...detail, jours });
 });
 
-router.get('/', (req, res) => {
-  const { employe, categorie, type, debut, fin, search } = req.query;
+// Liste des mouvements (filtres communs à l'écran et à l'export PDF).
+function queryMouvements(query) {
+  const { employe, categorie, type, debut, fin, search, matricule } = query;
   let sql = `
     SELECT m.*, e.matricule, e.nom, e.prenom, e.categorie_id, c.libelle AS categorie
     FROM mouvements m
@@ -109,6 +110,11 @@ router.get('/', (req, res) => {
   const params = [];
   if (employe) { sql += ' AND m.employe_id = ?'; params.push(Number(employe)); }
   if (categorie) { sql += ' AND e.categorie_id = ?'; params.push(Number(categorie)); }
+  if (matricule) {
+    sql += ' AND (e.matricule = ? OR CAST(e.matricule AS INTEGER) = ?)';
+    const n = parseInt(matricule, 10);
+    params.push(String(matricule).trim(), isNaN(n) ? -1 : n);
+  }
   if (type && TYPES.includes(type)) { sql += ' AND m.type_operation = ?'; params.push(type); }
   if (debut && DATE_RE.test(debut)) { sql += ' AND m.date_operation >= ?'; params.push(debut); }
   if (fin && DATE_RE.test(fin)) { sql += ' AND m.date_operation <= ?'; params.push(fin); }
@@ -118,7 +124,68 @@ router.get('/', (req, res) => {
     params.push(p, p, p, p);
   }
   sql += ' ORDER BY m.date_operation DESC, m.id DESC';
-  res.json(db.prepare(sql).all(...params));
+  return db.prepare(sql).all(...params);
+}
+
+router.get('/', (req, res) => {
+  res.json(queryMouvements(req.query));
+});
+
+// GET /api/mouvements/pdf — impression du Journal des Mouvements (portrait par défaut, paysage au choix).
+router.get('/pdf', (req, res) => {
+  const rows = queryMouvements(req.query);
+  const { orientation, debut, fin, matricule, categorie, employe, type, search } = req.query;
+  const { buildListePdf, fmtFR } = require('../utils/pdfTable');
+
+  const TYPE_LABELS = {
+    solde_initial: 'Solde initial',
+    ajout_annuel: 'Ajout annuel',
+    prelevement: 'Prélèvement',
+    maladie: 'Maladie',
+    absence: 'Absence',
+  };
+  const signe = (m) => (m.type_operation === 'prelevement' || m.type_operation === 'maladie' ? '−' : m.type_operation === 'absence' ? '·' : '+');
+
+  const credits = rows.filter((m) => m.type_operation === 'solde_initial' || m.type_operation === 'ajout_annuel');
+  const debits = rows.filter((m) => m.type_operation === 'prelevement' || m.type_operation === 'maladie');
+  const absences = rows.filter((m) => m.type_operation === 'absence');
+  const sum = (arr) => Math.round(arr.reduce((s, m) => s + Number(m.jours || 0), 0) * 100) / 100;
+  const fmtN = (n) => String(n).replace('.', ',');
+
+  const filtres = [
+    debut || fin ? `Période : ${debut ? fmtFR(debut) : '…'} → ${fin ? fmtFR(fin) : '…'}` : 'Période : toutes',
+    matricule ? `Matricule : ${matricule}` : null,
+    type ? `Type : ${TYPE_LABELS[type] || type}` : null,
+    categorie ? 'Catégorie filtrée' : null,
+    employe ? 'Employé filtré' : null,
+    search ? `Recherche : « ${search} »` : null,
+  ].filter(Boolean).join(' · ');
+
+  return buildListePdf({
+    res,
+    orientation: orientation === 'landscape' ? 'landscape' : 'portrait',
+    titre: 'Journal des Mouvements',
+    sousTitre: `${filtres} — ${rows.length} opération(s)`,
+    refLigne: `Édité le ${fmtFR(new Date().toISOString().slice(0, 10))} · ${new Date().toTimeString().slice(0, 5)}`,
+    filename: `journal-mouvements_${fin || debut || 'tout'}.pdf`.toLowerCase().replace(/ /g, '-'),
+    kpis: [
+      { label: 'Opérations', value: rows.length, unit: 'lignes', color: '#1e3a5f' },
+      { label: 'Crédits', value: `+${fmtN(sum(credits))}`, unit: 'jours', color: '#059669' },
+      { label: 'Débits', value: `−${fmtN(sum(debits))}`, unit: 'jours', color: '#d97706' },
+      { label: 'Absences', value: fmtN(sum(absences)), unit: 'jours', color: '#64748b' },
+    ],
+    columns: [
+      { label: 'Date', key: 'date_operation', weight: 1.05, format: (m) => fmtFR(m.date_operation) },
+      { label: 'Matricule', key: 'matricule', weight: 0.8, align: 'center', bold: true, color: '#1d4ed8' },
+      { label: 'Agent', weight: 2.1, format: (m) => `${m.nom} ${m.prenom}` },
+      { label: 'Catégorie', key: 'categorie', weight: 1.6 },
+      { label: 'Type', weight: 1.25, format: (m) => TYPE_LABELS[m.type_operation] || m.type_operation },
+      { label: 'Jours', weight: 0.7, align: 'right', bold: true, format: (m) => `${signe(m)}${fmtN(m.jours)}` },
+      { label: 'Solde après', weight: 0.85, align: 'right', format: (m) => `${fmtN(m.solde_apres)} j` },
+      { label: 'Motif', weight: 3.0, color: '#475569', format: (m) => m.motif || '—' },
+    ],
+    rows,
+  });
 });
 
 // GET /api/mouvements/journal-solde/:id — « journal du solde de congé » d'un employé :
@@ -142,7 +209,7 @@ router.get('/journal-solde/:id/pdf', (req, res) => {
   const titre = 'Journal du solde de congé';
   const doc = new PDFDocument({
     size: 'A4',
-    layout: 'portrait',
+    layout: req.query.orientation === 'landscape' ? 'landscape' : 'portrait',
     margins: { top: 12, bottom: 20, left: 16, right: 16 },
   });
   doc.registerFont('Garamond', path.join(__dirname, '..', 'fonts', 'EBGaramond.ttf'));
@@ -450,6 +517,13 @@ router.post('/', (req, res) => {
     soldeType = type_operation === 'maladie' ? 'maladie' : 'conge';
     dOp = date_operation;
     motifFinal = motif;
+    // Un prélèvement de congé sans période ne peut pas être reflété dans la grille RMA (codes_importes,
+    // source de vérité du solde) : il créerait un débit fantôme ignoré par le solde canonique.
+    if (op === 'prelevement') {
+      return res.status(400).json({
+        error: 'Prélèvement de congé refusé en mode historique : utilisez « Prélèvement de congé » (période) ou le Journal RMA, la grille étant la source de vérité du solde.',
+      });
+    }
   }
 
   // Contrôle du solde de congé cohérent avec la fiche et le journal RMA (accorde − consomme)
@@ -717,10 +791,18 @@ router.post('/clear-soldes', (req, res) => {
   });
   const deleted = tx();
 
+  // Efface aussi la consommation CA/DJ de la grille RMA : le solde canonique se recalcule depuis
+  // codes_importes, sans cette purge la réinitialisation afficherait un solde négatif fantôme.
+  let codesEffaces = 0;
+  for (const e of list) {
+    const r = db.prepare("DELETE FROM codes_importes WHERE employe_id = ? AND code IN ('CA','DJ')").run(e.id);
+    codesEffaces += r.changes;
+  }
+
   // Recalcule les soldes courant (désormais 0) pour les employés concernés
   for (const e of list) recomputeSoldeChain(e.id, 'conge');
 
-  res.json({ ok: true, count: list.length, deleted, soldes_reinitialises: list.length });
+  res.json({ ok: true, count: list.length, deleted, soldes_reinitialises: list.length, codes_effaces: codesEffaces });
 });
 
 // PUT /api/mouvements/:id — éditer une dotation de solde (Éditer solde de congé)
