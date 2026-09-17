@@ -53,30 +53,54 @@ export function getAppareilId() {
 }
 
 // Renouvelle le jeton d'accès depuis le cookie HttpOnly (rotation à chaque usage).
-// Un seul refresh en vol, partagé par toutes les requêtes concurrentes.
+// Un seul refresh en vol, partagé par toutes les requêtes concurrentes (double effet
+// React StrictMode, AuthContext + socket au démarrage, deux onglets…). Sans cette
+// déduplication, deux appels simultanés consomment le même cookie et la rotation
+// serveur révoque celui du perdant → 401 intempestif.
+// Tolérance à la rotation concurrente : si le premier essai échoue en 401 (token juste
+// roté par un appel concurrent), on laisse le Set-Cookie du gagnant arriver dans le
+// navigateur puis on relit le cookie (le navigateur détient le plus récent) et on
+// n'émet qu'UN seul nouvel essai.
 let _refreshing = null;
+let _refreshUser = null;
 async function tryRefresh() {
   if (_refreshing) return _refreshing;
   _refreshing = (async () => {
-    try {
-      const res = await fetch(BASE + '/auth/refresh', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (!res.ok) return false;
-      const data = await res.json().catch(() => ({}));
-      if (!data || !data.token) return false;
-      setToken(data.token);
-      setSessionId(data.session_id);
-      return true;
-    } catch {
-      return false;
-    } finally {
-      _refreshing = null;
+    for (let essai = 0; essai < 2; essai += 1) {
+      try {
+        const res = await fetch(BASE + '/auth/refresh', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        if (!res.ok) {
+          if (essai === 0 && res.status === 401) {
+            await new Promise((r) => setTimeout(r, 250));
+            continue;
+          }
+          return false;
+        }
+        const data = await res.json().catch(() => ({}));
+        if (!data || !data.token) return false;
+        _refreshUser = data.user || null;
+        setToken(data.token);
+        setSessionId(data.session_id);
+        return true;
+      } catch {
+        if (essai === 0) {
+          await new Promise((r) => setTimeout(r, 250));
+          continue;
+        }
+        return false;
+      }
     }
+    return false;
   })();
-  return _refreshing;
+  try {
+    return await _refreshing;
+} finally {
+    _refreshing = null;
+  }
 }
 
 // Redirige vers l'écran de connexion (la borne Xmator Terminal vit sous /terminal/).
@@ -156,13 +180,35 @@ const buildQuery = (params = {}) => {
   return qs ? `?${qs}` : '';
 };
 
+// Requête authentifiée brute pour les fichiers binaires (PDF, XLS, CSV, ZIP, photos…).
+// Les impressions / exports n'utilisent pas `request()` : sans ce helper, un jeton d'accès
+// expiré provoquait « Session expirée ou invalide. » (401) car le cookie HttpOnly n'était
+// jamais utilisé pour renouveler le jeton. Ici, comme dans `request()`, un 401 déclenche
+// UN renouvellement via `/auth/refresh` puis un nouvel essai. À utiliser pour tout nouvel
+// export/impression afin que les journaux futurs fonctionnent sans configuration supplémentaire.
+async function fetchAuth(path, options = {}) {
+  const { _retriedAuth, headers, ...netOptions } = options;
+  const res = await fetch(BASE + path, {
+    credentials: 'include',
+    ...netOptions,
+    headers: {
+      ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+      ...(headers || {}),
+    },
+  });
+  if (res.status === 401 && !path.startsWith('/auth/') && !_retriedAuth) {
+    const refreshed = await tryRefresh();
+    if (refreshed) return fetchAuth(path, { ...options, _retriedAuth: true });
+    setToken(null);
+    setSessionId(null);
+    versConnexion();
+  }
+  return res;
+}
+
 // Récupère un PDF protégé (token Bearer) et l'ouvre dans un nouvel onglet
 async function openPdf(path, options = {}) {
-  const token = getToken();
-  const res = await fetch(BASE + path, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    ...options,
-  });
+  const res = await fetchAuth(path, options);
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     const err = new Error(data.error || 'Génération du PDF impossible.');
@@ -177,10 +223,7 @@ async function openPdf(path, options = {}) {
 
 // Récupère un fichier protégé (token Bearer) et le télécharge avec un nom donné
 async function downloadFichier(path, nom) {
-  const token = getToken();
-  const res = await fetch(BASE + path, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+  const res = await fetchAuth(path);
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     const err = new Error(data.error || 'Téléchargement impossible.');
@@ -200,10 +243,7 @@ async function downloadFichier(path, nom) {
 
 // Récupère un PDF protégé (token Bearer) et ouvre directement la boîte d'impression du navigateur
 async function printPdf(path) {
-  const token = getToken();
-  const res = await fetch(BASE + path, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+  const res = await fetchAuth(path);
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     const err = new Error(data.error || 'Génération du PDF impossible.');
@@ -254,10 +294,15 @@ export const api = {
     },
     me: () => request('/auth/me'),
     refresh: async () => {
-      const r = await request('/auth/refresh', { method: 'POST' });
-      setToken(r.token);
-      setSessionId(r.session_id);
-      return r;
+      // Dédié : passe par tryRefresh() (single-flight + retry après rotation concurrente)
+      // pour ne jamais consommer le cookie deux fois en parallèle (StrictMode, socket…).
+      const ok = await tryRefresh();
+      if (!ok) {
+        const err = new Error('Session expirée, veuillez vous reconnecter.');
+        err.status = 401;
+        throw err;
+      }
+      return { token: getToken(), session_id: getSessionId(), user: _refreshUser };
     },
   },
 
@@ -272,11 +317,9 @@ export const api = {
   mouchardSupprimer: (params = {}) => request('/mouchard' + buildQuery(params), { method: 'DELETE' }),
   mouchardRestaurer: (evenements) => request('/mouchard/restaurer', { method: 'POST', body: JSON.stringify({ evenements }) }),
   mouchardPdf: (params = {}) => openPdf('/mouchard/pdf' + buildQuery(params)),
+  mouchardPrint: (params = {}) => printPdf('/mouchard/pdf' + buildQuery(params)),
   mouchardExport: async (params = {}) => {
-    const token = getToken();
-    const res = await fetch(BASE + '/mouchard/export' + buildQuery(params), {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
+    const res = await fetchAuth('/mouchard/export' + buildQuery(params));
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       const err = new Error(data.error || 'Export impossible.');
@@ -297,14 +340,9 @@ export const api = {
   employeStats: (matricule, params = {}) => request(`/employes/${matricule}/stats` + buildQuery(params)),
   employeHeures: (matricule, params = {}) => request(`/employes/${matricule}/heures` + buildQuery(params)),
   uploadPhoto: async (matricule, file) => {
-    const token = getToken();
     const fd = new FormData();
     fd.append('photo', file);
-    const res = await fetch(BASE + `/employes/${matricule}/photo`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: fd,
-    });
+    const res = await fetchAuth(`/employes/${matricule}/photo`, { method: 'POST', body: fd });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       const err = new Error(data.error || 'Upload impossible.');
@@ -330,6 +368,8 @@ export const api = {
   descripteursFace: () => request('/employes/descriptors'),
 
   mouvements: (params = {}) => request('/mouvements' + buildQuery(params)),
+  mouvementsPdf: (params = {}) => openPdf('/mouvements/pdf' + buildQuery(params)),
+  mouvementsPrint: (params = {}) => printPdf('/mouvements/pdf' + buildQuery(params)),
   createMouvement: (body) => request('/mouvements', { method: 'POST', body: JSON.stringify(body) }),
   compteJoursPrelevement: (params = {}) => request('/mouvements/compte-jours' + buildQuery(params)),
   correctionSolde: (body) => request('/mouvements/correction-solde', { method: 'POST', body: JSON.stringify(body) }),
@@ -341,8 +381,8 @@ export const api = {
   updateMouvement: (id, body) => request(`/mouvements/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteMouvement: (id) => request(`/mouvements/${id}`, { method: 'DELETE' }),
   journalSoldeConge: (id) => request(`/mouvements/journal-solde/${id}`),
-  journalSoldePdf: (id) => openPdf(`/mouvements/journal-solde/${id}/pdf`),
-  journalSoldePrint: (id) => printPdf(`/mouvements/journal-solde/${id}/pdf`),
+  journalSoldePdf: (id, params = {}) => openPdf(`/mouvements/journal-solde/${id}/pdf` + buildQuery(params)),
+  journalSoldePrint: (id, params = {}) => printPdf(`/mouvements/journal-solde/${id}/pdf` + buildQuery(params)),
   journalSoldeXls: (id) => downloadFichier(`/mouvements/journal-solde/${id}/xls`, `journal-solde-conge_${id}.xls`),
 
   arretsMaladie: (params = {}) => request('/arrets-maladie' + buildQuery(params)),
@@ -358,6 +398,8 @@ export const api = {
   editionCongesXls: (params = {}) => downloadFichier('/edition-conges/xls' + buildQuery(params), `journal-conges_${params.fin || 'ref'}.xls`),
 
   journalMaladie: (params = {}) => request('/journal-maladie' + buildQuery(params)),
+  journalMaladiePdf: (params = {}) => openPdf('/journal-maladie/pdf' + buildQuery(params)),
+  journalMaladiePrint: (params = {}) => printPdf('/journal-maladie/pdf' + buildQuery(params)),
   statsJournal: (params = {}) => request('/stats-journal' + buildQuery(params)),
 
   codesPaie: () => request('/codes-paie'),
@@ -372,10 +414,7 @@ export const api = {
   grilleSalaireSupprimerRubrique: (rubrique) => request(`/grille-salaire/rubrique/${encodeURIComponent(rubrique)}`, { method: 'DELETE' }),
   grilleSalaireSupprimerTout: () => request('/grille-salaire/all', { method: 'DELETE' }),
   grilleSalaireExporter: async () => {
-    const token = getToken();
-    const res = await fetch(BASE + '/grille-salaire/export', {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
+    const res = await fetchAuth('/grille-salaire/export');
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       throw new Error(data.error || 'Export impossible.');
@@ -391,12 +430,7 @@ export const api = {
   grilleSalaireImporter: async (fichier) => {
     const fd = new FormData();
     fd.append('fichier', fichier);
-    const token = getToken();
-    const res = await fetch(BASE + '/grille-salaire/import', {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: fd,
-    });
+    const res = await fetchAuth('/grille-salaire/import', { method: 'POST', body: fd });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Erreur lors de l\'import.');
     return data;
@@ -435,6 +469,7 @@ export const api = {
 
   // Journal RMA (Repos · Maladie · Absence) — codifications importées fusionnées au journal de paie
   journalRma: (params = {}) => request('/journal-rma' + buildQuery(params)),
+  journalRmaPdf: (params = {}) => openPdf('/journal-rma/pdf' + buildQuery(params)),
   journalRmaPrint: (params = {}) => printPdf('/journal-rma/pdf' + buildQuery(params)),
   importCodesRma: (texte, periode = {}) => request('/journal-rma/import', { method: 'POST', body: JSON.stringify({ texte, ...periode }) }),
   deleteCodesRma: (params = {}) => request('/journal-rma' + buildQuery(params), { method: 'DELETE' }),
@@ -520,10 +555,7 @@ export const api = {
     backupSupprimerToutes: () => request('/maintenance/backups', { method: 'DELETE' }),
     resetDb: () => request('/maintenance/reset-db', { method: 'DELETE' }),
     backupTelecharger: async (nom) => {
-      const token = getToken();
-      const res = await fetch(BASE + `/maintenance/backups/${encodeURIComponent(nom)}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const res = await fetchAuth(`/maintenance/backups/${encodeURIComponent(nom)}`);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         const err = new Error(data.error || 'Téléchargement impossible.');
@@ -539,14 +571,9 @@ export const api = {
       URL.revokeObjectURL(url);
     },
     restaurer: async (file) => {
-      const token = getToken();
       const fd = new FormData();
       fd.append('fichier', file);
-      const res = await fetch(BASE + '/maintenance/restaurer', {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: fd,
-      });
+      const res = await fetchAuth('/maintenance/restaurer', { method: 'POST', body: fd });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         const err = new Error(data.error || 'Restauration impossible.');
@@ -558,10 +585,7 @@ export const api = {
   },
 
   photosBackup: async () => {
-    const token = getToken();
-    const res = await fetch(BASE + '/comptes/photos/backup', {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
+    const res = await fetchAuth('/comptes/photos/backup');
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       const err = new Error(data.error || 'Téléchargement des photos impossible.');
@@ -583,14 +607,9 @@ export const api = {
   },
 
   photosRestaurer: async (file) => {
-    const token = getToken();
     const fd = new FormData();
     fd.append('fichier', file);
-    const res = await fetch(BASE + '/comptes/photos/restaurer', {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: fd,
-    });
+    const res = await fetchAuth('/comptes/photos/restaurer', { method: 'POST', body: fd });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       const err = new Error(data.error || 'Restauration des photos impossible.');

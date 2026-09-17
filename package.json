@@ -5,7 +5,7 @@
   "description": "SaaS de gestion des congés, maladies et absences — Amicale du Personnel de la Banque Centrale",
   "scripts": {
     "install:all": "npm install && npm --prefix server install && npm --prefix client install && npm --prefix terminal install",
-    "test": "node server/tests/test-auth.cjs && node server/tests/test-soldes.cjs && node server/tests/test-pointage.cjs && node server/tests/test-global.cjs",
+    "test": "node server/tests/test-auth.cjs && node server/tests/test-multitab.cjs && node server/tests/test-soldes.cjs && node server/tests/test-pointage.cjs && node server/tests/test-global.cjs",
     "dev": "node scripts/start-dev.js",
     "build": "npm --prefix client run build && npm --prefix terminal run build",
     "start": "npm --prefix client run build && npm --prefix terminal run build && node --env-file-if-exists=.env server/index.js"

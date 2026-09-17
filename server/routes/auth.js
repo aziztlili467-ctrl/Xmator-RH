@@ -5,7 +5,7 @@ const { db } = require('../db');
 const {
   JWT_SECRET, sign, requireAuth, compteAvecEmploye,
   setRefreshCookie, clearRefreshCookie, parseCookies,
-  signRefreshToken, verifierRefreshToken, revokeRefreshToken, revokeRefreshForSession,
+  signRefreshToken, verifierRefreshToken, raisonRefreshInvalide, revokeRefreshToken, revokeRefreshForSession,
 } = require('../middleware/auth');
 const { logActivite } = require('../middleware/audit');
 const router = Router();
@@ -92,6 +92,18 @@ router.post('/login', (req, res) => {
 router.post('/refresh', (req, res) => {
   const refresh = parseCookies(req).refreshToken;
   if (!refresh) return res.status(401).json({ error: 'Non authentifié.' });
+  const raison = raisonRefreshInvalide(refresh);
+  if (raison === 'revoked') {
+    // Réutilisation d'un token déjà roté (rotation concurrente légitime : deux onglets,
+    // double effet StrictMode, AuthContext + socket au démarrage). Un jeton plus récent
+    // existe pour la même session et son cookie frais arrive dans le navigateur : on ne
+    // force pas la déconnexion, on laisse le client relire le cookie le plus récent.
+    return res.status(401).json({ error: 'Session expirée.' });
+  }
+  if (raison === 'absent' || raison === 'expired') {
+    clearRefreshCookie(res);
+    return res.status(401).json({ error: 'Session expirée, veuillez vous reconnecter.' });
+  }
   const r = verifierRefreshToken(refresh);
   if (!r) {
     clearRefreshCookie(res);

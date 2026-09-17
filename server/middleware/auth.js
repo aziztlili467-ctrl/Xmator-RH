@@ -138,6 +138,22 @@ function verifierRefreshToken(id) {
   return r;
 }
 
+// Distingue l'origine d'un refresh token invalide pour décider si le cookie peut être effacé :
+//   'absent'  → token inconnu / aucun cookie : on peut effacer le cookie (défensif)
+//   'expired' → session expirée : on efface le cookie (défensif)
+//   'revoked' → token ROTÉ (réutilisation) : un jeton plus récent de la même session vient d'être
+//               émis (rotation concurrente légitime : deux onglets, double effet StrictMode,
+//               AuthContext + socket au démarrage). Le cookie frais est en cours d'arrivée dans le
+//               navigateur : il NE FAUT PAS effacer le cookie, sinon la session valide est détruite.
+function raisonRefreshInvalide(id) {
+  if (!id) return 'absent';
+  const r = db.prepare('SELECT * FROM refresh_tokens WHERE id = ?').get(id);
+  if (!r) return 'absent';
+  if (r.revoked_at) return 'revoked';
+  if (r.expires_at <= db.prepare("SELECT datetime('now','localtime') AS v").get().v) return 'expired';
+  return null;
+}
+
 function revokeRefreshToken(id) {
   try { db.prepare("UPDATE refresh_tokens SET revoked_at = datetime('now','localtime') WHERE id = ?").run(id); } catch {}
 }
@@ -183,7 +199,8 @@ function requireAuth(req, res, next) {
   }
   const refresh = parseCookies(req).refreshToken;
   if (refresh) {
-    const r = verifierRefreshToken(refresh);
+    const raison = raisonRefreshInvalide(refresh);
+    const r = raison === null ? verifierRefreshToken(refresh) : null;
     const c = r
       ? db.prepare('SELECT id, login, role, employe_id, actif, permissions FROM utilisateurs WHERE id = ?').get(r.utilisateur_id)
       : null;
@@ -194,6 +211,13 @@ function requireAuth(req, res, next) {
       setRefreshCookie(res, nouveau.id);
       req.user = u;
       return next();
+    }
+    if (raison === 'revoked') {
+      // Rotation concurrente légitime (deux onglets, StrictMode, AuthContext+socket) :
+      // un jeton plus récent de la même session vient d'être émis et le cookie frais
+      // est en cours d'arrivée dans le navigateur. Ne pas effacer le cookie, sinon
+      // on détruirait une session encore valide (le client relira le cookie le plus récent).
+      return res.status(401).json({ error: 'Session expirée.' });
     }
     clearRefreshCookie(res);
     return res.status(401).json({ error: 'Session expirée.' });
@@ -264,6 +288,7 @@ module.exports = {
   clearRefreshCookie,
   signRefreshToken,
   verifierRefreshToken,
+  raisonRefreshInvalide,
   revokeRefreshToken,
   revokeRefreshForSession,
   ROLES,
