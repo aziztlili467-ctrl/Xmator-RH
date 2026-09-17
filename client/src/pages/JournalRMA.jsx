@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { today, debutMois, fmtDate } from '../utils';
-import { IconUpload, IconTrash, IconPrinter } from '../components/icons';
+import { IconUpload, IconTrash, IconPrinter, IconFilter } from '../components/icons';
 
 const isWeekend = (iso) => {
   const wd = new Date(iso + 'T00:00:00').getDay();
@@ -18,6 +18,7 @@ export default function JournalRMA() {
   const { user } = useAuth();
   const [debut, setDebut] = useState(debutMois());
   const [fin, setFin] = useState(today());
+  const [matricule, setMatricule] = useState('');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -52,25 +53,23 @@ export default function JournalRMA() {
     return { backgroundColor: meta.couleur + '1f', color: meta.couleur, boxShadow: 'inset 0 0 0 1px ' + meta.couleur + '55' };
   };
 
-  const load = (d, f) => {
+  const load = (d, f, m) => {
     if (!d || !f) return;
     if (f < d) return setError('La date de fin doit être postérieure ou égale à la date de début.');
     if (new Date(f) - new Date(d) > 370 * 86400000) return setError('Période trop longue (maximum 12 mois) — resserrez le filtre.');
     setLoading(true);
     setError('');
-    api.journalRma({ debut: d, fin: f })
+    api.journalRma({ debut: d, fin: f, matricule: m })
       .then((r) => { setData(r); setImportResult(null); })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => {
-    load(debut, fin);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Les lignes ne sont chargées qu'après un clic sur « Exécuter » (page vide par défaut).
+  const executer = () => load(debut, fin, matricule);
 
-  const changeDebut = (v) => { setDebut(v); load(v, fin); };
-  const changeFin = (v) => { setFin(v); load(debut, v); };
+  const changeDebut = (v) => setDebut(v);
+  const changeFin = (v) => setFin(v);
 
   // Prévient les autres sous-rubriques (ex. « Éditer solde de congé ») qu'un jour de congé CA/DJ
   // vient d'être ajouté, rectifié ou supprimé : elles se rechargent immédiatement.
@@ -119,7 +118,7 @@ tfoot td{border-top:0.8px solid #333;background:#f8fafc;font-weight:700}
 @media print{body{padding:0;margin:0}#printBtn{display:none!important}}
 </style></head><body>
 <div id="top"><button id="printBtn" onclick="window.print()" style="display:block;margin:0 0 6px;padding:6px 16px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid #2563eb;background:#2563eb;color:#fff;border-radius:6px">Imprimer / Enregistrer en PDF</button></div>
-<h2>Journal RMA — Période : ${fmtDate(debut)} → ${fmtDate(fin)}</h2>
+<h2>JOURNAL RMA — Période : ${fmtDate(debut)} → ${fmtDate(fin)}</h2>
 <p class="sub">${legends} — Total : ${data.totaux.total} jours codifiés</p>
 <table><thead><tr><th style="text-align:left">Mat.</th><th style="text-align:left">Nom / Prénom</th>${dateHeaders}<th style="text-align:center">Tot.</th></tr></thead><tbody>${rows}</tbody>
 <tfoot><tr><td colspan="2">Total employés</td>${footerCells}<td class="tot">${data.totaux.total}</td></tr></tfoot></table>
@@ -127,8 +126,12 @@ tfoot td{border-top:0.8px solid #333;background:#f8fafc;font-weight:700}
 </body></html>`;
     const w = window.open('', '_blank', 'width=1200,height=800');
     if (!w) { alert('Popup bloqué — autorisez les popups pour ce site.'); return; }
-    w.document.write(html);
-    w.document.close();
+    // Remplissage via une URL blob plutôt que document.write (recommandé avec les
+    // navigateurs modernes) : la fenêtre vierge navigue vers le document HTML généré.
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    w.location.replace(url);
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
 
   const lireFichier = (e) => {
@@ -245,7 +248,7 @@ tfoot td{border-top:0.8px solid #333;background:#f8fafc;font-weight:700}
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-slate-900">Journal RMA (Repos · Maladie · Absence)</h2>
+        <h2 className="text-lg font-bold text-slate-900">JOURNAL RMA (REPOS · MALADIE · ABSENCE)</h2>
         <p className="text-sm text-slate-500">
           Codifications complémentaires (A1, CA, MA, R3, RP…) importées par matricule et date. Elles sont fusionnées avec P1
           dans le Journal de présence ; les couleurs sont celles configurées dans « Paramètres & Codification ».
@@ -286,6 +289,17 @@ tfoot td{border-top:0.8px solid #333;background:#f8fafc;font-weight:700}
             <span className="text-slate-400">→</span>
             <input type="date" className="input" value={fin} onChange={(e) => changeFin(e.target.value)} />
           </div>
+          <label className="text-sm font-semibold text-slate-600">Matricule :</label>
+          <input
+            type="text"
+            className="input w-28 font-mono"
+            placeholder="ex : 35"
+            value={matricule}
+            onChange={(e) => setMatricule(e.target.value)}
+          />
+          <button className="btn-primary" onClick={executer} disabled={loading}>
+            <IconFilter /> {loading ? 'Chargement…' : 'Exécuter'}
+          </button>
         </div>
         {data && (
           <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
@@ -377,6 +391,16 @@ tfoot td{border-top:0.8px solid #333;background:#f8fafc;font-weight:700}
               )}
             </p>
           ))}
+        </div>
+      )}
+
+      {!data && !loading && (
+        <div className="card flex flex-col items-center gap-2 p-8 text-center">
+          <IconFilter className="h-8 w-8 text-slate-300" />
+          <p className="text-sm font-semibold text-slate-700">Aucune ligne affichée</p>
+          <p className="text-sm text-slate-500">
+            Choisissez une période (12 mois maximum) et, si besoin, un matricule, puis cliquez sur <strong>Exécuter</strong> pour afficher la matrice RMA.
+          </p>
         </div>
       )}
 
