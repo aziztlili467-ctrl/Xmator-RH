@@ -33,6 +33,7 @@ cp .env.example .env
 | `PORT` | Port HTTP (défaut 4000) |
 | `JWT_SECRET` | Clé de signature des jetons JWT — **obligatoire en production** |
 | `ADMIN_PASSWORD` | Mot de passe du super admin initial (si base vide) |
+| `DANGER_PASSWORD` | Confirmation d'une action dangereuse (purge biométrie, écrasement) — **obligatoire en production** |
 | `DB_PATH` | Chemin de la base SQLite (défaut `data/amicale.db`) |
 | `CORS_ORIGIN` | Origines autorisées, séparées par des virgules (vide = même origine) |
 
@@ -77,7 +78,37 @@ nécessaire.
 > ne convient donc qu'à une démonstration jetable.
 
 Un workflow GitHub Actions (`.github/workflows/ci.yml`) vérifie à chaque push que
-le client se build, que le serveur démarre et que `/api/health` répond.
+le client se build, que le serveur démarre, que `/api/health` répond **et que les
+tests critiques passent** (voir section Tests).
+
+## Tests
+
+```bash
+npm test
+```
+
+Exécute les suites critiques sur des bases SQLite temporaires
+(`server/tests/`, aucune dépendance nouvelle) :
+
+- `test-auth.cjs` — cycle complet du refresh token HttpOnly (rotation,
+  détection de réutilisation, logout, socket authentifié par cookie) ;
+- `test-soldes.cjs` — cohérence du solde de congés (grille `codes_importes` =
+  source de vérité, correction-solde réellement décomptée, clear-soldes + purge,
+  refus du prélèvement en mode historique) ;
+- `test-pointage.cjs` — horodatage de `POST /api/presence/pointage` borné autour
+  de l'heure serveur.
+
+Audit de réconciliation (lecture seule, sur une copie de la base réelle) :
+
+```bash
+cp data/amicale.db data/amicale-copie-audit.db
+node server/audit-sync.cjs          # matricule par défaut : 68
+node server/audit-sync.cjs 42       # autre matricule
+```
+
+Vérifie que le journal des soldes est cohérent avec `soldeCongeRestantDate`,
+qu'aucune ligne RMA n'est oubliée et que les jours fériés sont décomptés.
+Réponse attendue : aucun écart.
 
 ### Pourquoi pas GitHub Pages ?
 
@@ -106,8 +137,9 @@ hébergeur applicatif (Render, Fly.io, Railway, VPS…) convient.
 ## Sécurité
 
 - Les mots de passe sont hashés (bcrypt), jamais stockés en clair
-- `data/` (base réelle, photos, sauvegardes) et `instructions2026.md` sont **ignorés par git**
-- En production : définir `NODE_ENV=production` et une `JWT_SECRET` forte
+- `data/` (base réelle, photos, sauvegardes) , `instructions2026.md` et les scripts de debug (`dbg*.js`, `resetpw*.js`) sont **ignorés par git**
+- En production : le serveur **refuse de démarrer** sans `NODE_ENV=production`, `JWT_SECRET` forte et `DANGER_PASSWORD`
+- Le refresh token est un cookie `HttpOnly`, roté à chaque usage, invalidé au logout ; sa réutilisation coupe la session
 
 ## Licence
 
