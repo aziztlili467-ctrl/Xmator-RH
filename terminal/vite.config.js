@@ -36,19 +36,9 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
   if (url.origin !== location.origin) return;
 
-  // API : réseau d'abord, cache si hors-ligne
+  // API : jamais interceptée ni mise en cache — données sensibles + fraîcheur obligatoire.
+  // Hors-ligne, l'échec réseau remonte au kiosque qui met le pointage en file IndexedDB.
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/terminal/api/')) {
-    e.respondWith(
-      fetch(req)
-        .then((res) => {
-          if (res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
-          }
-          return res;
-        })
-        .catch(() => caches.match(req))
-    );
     return;
   }
 

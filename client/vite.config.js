@@ -34,20 +34,12 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
   if (url.origin !== location.origin) return;
 
-  // API : réseau d'abord, cache en secours si hors-ligne (n'jamais mettre en cache une
-  // réponse en erreur 5xx : une panne transitoire de l'API ne doit pas masquer la reprise)
+  // API : JAMÁIS interceptée ni mise en cache — les réponses contiennent des données
+  // sensibles (employés, soldes, paie, sessions) et doivent rester fraîches. On laisse la
+  // requête partir vers le réseau sans modification : aucune copie dans CacheStorage,
+  // aucune réponse périmée servie hors-ligne (l'échec réseau remonte naturellement au
+  // client, qui applique sa logique de reprise).
   if (url.pathname.startsWith('/api/')) {
-    e.respondWith(
-      fetch(req)
-        .then((res) => {
-          if (res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
-          }
-          return res;
-        })
-        .catch(() => caches.match(req))
-    );
     return;
   }
 
@@ -153,6 +145,9 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:4000',
       '/photos': 'http://localhost:4000',
+      // La borne Xmator Terminal est un build séparé servi par Express (/terminal/) :
+      // en dev le serveur Vite relaie ces chemins pour que le bouton d'installation marche aussi sur :5173
+      '/terminal': 'http://localhost:4000',
     },
   },
   preview: {
