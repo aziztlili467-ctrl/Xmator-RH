@@ -28,6 +28,9 @@ jobs:
       - name: Vérifier la syntaxe du serveur
         run: node --check server/index.js
 
+      - name: Tests critiques (auth, soldes, pointage)
+        run: npm test
+
       - name: Démarrer le serveur et tester la sonde de santé
         env:
           NODE_ENV: production
