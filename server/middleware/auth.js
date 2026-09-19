@@ -102,11 +102,11 @@ function parseCookies(req) {
 }
 
 // Cross-origin (déploiement Render : client et API sur des hôtes différents) →
-// le navigateur n'envoie jamais un cookie SameSite=Lax sur la requête cross-site
-// POST /auth/refresh (seule une navigation GET de niveau supérieur transporterait
-// le cookie Lax). Conséquence : à chaque F5 en production, le refresh de session
-// 401 → déconnexion. Il faut donc SameSite=None + Secure pour ce cas-là.
-const SAME_SITE_REFRESH = process.env.CORS_ORIGIN ? 'None' : 'Lax';
+// SameSite=None n'est valide QUE si l'origine est en https:// et exige Secure.
+// En développement (http://localhost) ou CORS_ORIGIN absent → SameSite=Lax sans
+// Secure : le navigateur accepte et envoie le cookie sur HTTP, pas de boucle 401.
+const isHttpsOrigin = process.env.CORS_ORIGIN && /^https:\/\//.test(process.env.CORS_ORIGIN);
+const SAME_SITE_REFRESH = isHttpsOrigin ? 'None' : 'Lax';
 
 function setRefreshCookie(res, token, maxAgeDays = REFRESH_TOKEN_EXPIRES_DAYS) {
   const parts = [
@@ -116,8 +116,8 @@ function setRefreshCookie(res, token, maxAgeDays = REFRESH_TOKEN_EXPIRES_DAYS) {
     `SameSite=${SAME_SITE_REFRESH}`,
     `Max-Age=${maxAgeDays * 86400}`,
   ];
-  // Cross-origin → SameSite=None exige Secure ; sur notre backend Render c'est HTTPS.
-  if (SAME_SITE_REFRESH === 'None' || process.env.NODE_ENV === 'production') parts.push('Secure');
+   // Secure uniquement si SameSite=None (cross-origin HTTPS) ; jamais en HTTP
+   if (SAME_SITE_REFRESH === 'None') parts.push('Secure');
   res.setHeader('Set-Cookie', parts.join('; '));
 }
 
