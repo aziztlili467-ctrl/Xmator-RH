@@ -66,34 +66,40 @@ function Chargement() {
   );
 }
 
+/**
+ * RequireAuth : garde de route protégée avec gestion du loading F5
+ * Correction bug F5 : bloque toute redirection tant que loading === true
+ * Sinon, user=null au reload provoque redirection prématurée vers /login
+ * avant que /api/auth/refresh (cookie HttpOnly) ne réponde.
+ */
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
   const location = useLocation();
+
+  // CORRECTION F5 : bloque tout rendu ou redirection tant que loading est true
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-100 text-slate-500">
-        Chargement…
-      </div>
-    );
+    return <div className="flex items-center justify-center h-screen">Chargement de la session...</div>;
   }
+
   if (!user) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    return <Navigate replace to="/login" state={{ from: location }} />;
   }
+
   if (!canAccess(user.role, location.pathname)) {
     return <Navigate to="/acces-refuse" replace />;
   }
+
   return children;
 }
 
 function PublicOnly({ children }) {
   const { user, loading } = useAuth();
+
+  // Même garde loading pour éviter redirect prématuré au F5
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-100 text-slate-500">
-        Chargement…
-      </div>
-    );
+    return <div className="flex items-center justify-center h-screen">Chargement de la session...</div>;
   }
+
   if (user) return <Navigate to={homeForRole(user.role)} replace />;
   return children;
 }
