@@ -97,7 +97,7 @@ export default function SimulateurImpot() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-slate-900">Simulateur IRPP</h2>
+        <h2 className="text-lg font-bold text-slate-900">SIMULATEUR IRPP</h2>
         <p className="text-sm text-slate-500">
           Estimation de l'impôt sur le revenu (IRPP) et de la Contribution Sociale de Solidarité (CSS) selon la
           législation fiscale tunisienne 2026.

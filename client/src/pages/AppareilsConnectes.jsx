@@ -98,7 +98,7 @@ export default function AppareilsConnectes() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-slate-900">Appareils connectés</h2>
+        <h2 className="text-lg font-bold text-slate-900">APPAREILS CONNECTÉS</h2>
         <p className="mt-0.5 text-sm text-slate-500">
           Un appareil = une ligne (identifié par son identifiant unique, équivalent MAC web) avec toutes ses sessions agrégées. Statut en temps réel, rafraîchissement automatique toutes les 10 s.
         </p>

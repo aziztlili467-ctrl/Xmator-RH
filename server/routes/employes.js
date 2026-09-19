@@ -90,29 +90,43 @@ const BASE = `
          e.cnam, e.type_contrat, e.banque, e.titulaire_compte, e.type_compte, e.rib,
          e.salaire_base, e.indemnite_presence, e.indemnite_transport, e.indemnite_fonction, e.intitule_poste,
          e.departement,
-         (e.face_descriptor IS NOT NULL AND e.face_descriptor <> '') AS has_face,
+         (e.face_descriptor IS NOT NULL AND e.face_descriptor <> '') OR
+         (e.face_descriptor_b IS NOT NULL AND e.face_descriptor_b <> '') AS has_face,
          c.libelle AS categorie
   FROM employes e
   JOIN categories c ON c.id = e.categorie_id
 `;
 
-// Liste des signatures faciales (descripteurs 128-D) des employés ENRÔLÉS — destiné à la
-// borne de pointage biométrique Xmator-Eye (reconnaissance faciale côté client kiosque).
+// Liste des signatures faciales (descripteurs 128-D, jusqu'à 2 par employé) des employés
+// ENRÔLÉS — destiné à la borne de pointage biométrique Xmator-Eye (reconnaissance faciale
+// côté client kiosque). L'employé est comparé à TOUTES ses empreintes (ex. sans / avec lunettes).
 // Donnée biométrique : réservée aux gestionnaires RH (même garde que le GET face-descriptor).
-// Retourne uniquement les employés ayant une signature ; neutre sur le reste de la fiche.
 router.get('/descriptors', gestionFace, (req, res) => {
   const rows = db.prepare(`
-    SELECT e.id, e.matricule, e.nom, e.prenom, e.actif, e.face_descriptor, c.libelle AS categorie
+    SELECT e.id, e.matricule, e.nom, e.prenom, e.actif,
+           e.face_descriptor, e.face_descriptor_b,
+           c.libelle AS categorie
     FROM employes e
     JOIN categories c ON c.id = e.categorie_id
-    WHERE e.face_descriptor IS NOT NULL AND e.face_descriptor <> ''
+    WHERE (e.face_descriptor IS NOT NULL AND e.face_descriptor <> '')
+       OR (e.face_descriptor_b IS NOT NULL AND e.face_descriptor_b <> '')
     ORDER BY CAST(e.matricule AS INTEGER), e.matricule
   `).all();
+  const decodage = (raw) => {
+    if (!raw) return null;
+    try {
+      const d = JSON.parse(raw);
+      return Array.isArray(d) && d.length === 128 ? d : null;
+    } catch { return null; }
+  };
   const employes = [];
   for (const r of rows) {
-    let descriptor = null;
-    try { descriptor = JSON.parse(r.face_descriptor); } catch { descriptor = null; }
-    if (!descriptor || !Array.isArray(descriptor) || descriptor.length !== 128) continue;
+    const a = decodage(r.face_descriptor);
+    const b = decodage(r.face_descriptor_b);
+    if (!a && !b) continue;
+    const descriptors = [];
+    if (a) descriptors.push(a);
+    if (b) descriptors.push(b);
     employes.push({
       id: r.id,
       matricule: r.matricule,
@@ -120,7 +134,8 @@ router.get('/descriptors', gestionFace, (req, res) => {
       prenom: r.prenom,
       actif: !!r.actif,
       categorie: r.categorie,
-      descriptor,
+      descriptor: a,              // rétrocompatibilité (empreinte A)
+      descriptors,                // toutes les empreintes comparées par la borne
     });
   }
   res.json({ count: employes.length, employes });
@@ -776,20 +791,30 @@ router.post('/:matricule/photo', validerAccesMatricule, upload.single('photo'), 
   }
 });
 
-// ---- Reconnaissance faciale Xmator-Eye : signature (descriptor 128 floats) liée au matricule ----
+// ---- Reconnaissance faciale Xmator-Eye : signatures (descripteur 128 floats) liées au matricule ----
+// Jusqu'à 2 empreintes par employé : A « sans lunettes » (face_descriptor) et B « avec lunettes »
+// (face_descriptor_b). La borne compare le visage entrant aux deux signatures (invariance lunettes).
 router.get('/:id/face-descriptor', gestionFace, (req, res) => {
-  const e = db.prepare('SELECT id, matricule, face_descriptor, face_enrolled_at FROM employes WHERE id = ?').get(Number(req.params.id));
+  const e = db.prepare('SELECT id, matricule, face_descriptor, face_enrolled_at, face_descriptor_b, face_enrolled_at_b FROM employes WHERE id = ?').get(Number(req.params.id));
   if (!e) return res.status(404).json({ error: 'Employé introuvable.' });
-  let descriptor = null;
-  if (e.face_descriptor) {
-    try { descriptor = JSON.parse(e.face_descriptor); } catch { descriptor = null; }
-  }
-  const enrole = Array.isArray(descriptor) && descriptor.length === 128;
+  const decodage = (raw) => {
+    if (!raw) return null;
+    try {
+      const d = JSON.parse(raw);
+      return Array.isArray(d) && d.length === 128 ? d : null;
+    } catch { return null; }
+  };
+  const a = decodage(e.face_descriptor);
+  const b = decodage(e.face_descriptor_b);
   res.json({
     matricule: e.matricule,
-    enrole,
-    descriptor: enrole ? descriptor : null,
-    enrole_le: enrole ? e.face_enrolled_at : null,
+    enrole: !!a,
+    descriptor: a || null,
+    enrole_le: a ? e.face_enrolled_at : null,
+    enrole_b: !!b,
+    descriptor_b: b || null,
+    enrole_le_b: b ? e.face_enrolled_at_b : null,
+    nb_signatures: (a ? 1 : 0) + (b ? 1 : 0),
   });
 });
 
@@ -801,18 +826,24 @@ router.put('/:id/face-descriptor', (req, res) => {
   if (!Array.isArray(d) || d.length !== 128 || !d.every((v) => typeof v === 'number' && Number.isFinite(v))) {
     return res.status(400).json({ error: 'Descriptor facial invalide : tableau de 128 nombres attendu.' });
   }
+  const repertoire = req.body && req.body.repertoire === 'b' ? 'b' : 'a';
   const compacte = JSON.stringify(Array.from(d, (v) => Number(v.toFixed(6))));
   const enroleLe = new Date().toISOString();
-  db.prepare('UPDATE employes SET face_descriptor = ?, face_enrolled_at = ? WHERE id = ?')
-    .run(compacte, enroleLe, id);
-  res.json({ ok: true, id, enrole: true, enrole_le: enroleLe });
+  if (repertoire === 'b') {
+    db.prepare('UPDATE employes SET face_descriptor_b = ?, face_enrolled_at_b = ? WHERE id = ?')
+      .run(compacte, enroleLe, id);
+  } else {
+    db.prepare('UPDATE employes SET face_descriptor = ?, face_enrolled_at = ? WHERE id = ?')
+      .run(compacte, enroleLe, id);
+  }
+  res.json({ ok: true, id, repertoire, enrole: true, enrole_le: enroleLe });
 });
 
 router.delete('/:id/face-descriptor', (req, res) => {
   const id = Number(req.params.id);
   const e = db.prepare('SELECT id FROM employes WHERE id = ?').get(id);
   if (!e) return res.status(404).json({ error: 'Employé introuvable.' });
-  db.prepare('UPDATE employes SET face_descriptor = NULL, face_enrolled_at = NULL WHERE id = ?').run(id);
+  db.prepare('UPDATE employes SET face_descriptor = NULL, face_enrolled_at = NULL, face_descriptor_b = NULL, face_enrolled_at_b = NULL WHERE id = ?').run(id);
   res.json({ ok: true, id });
 });
 

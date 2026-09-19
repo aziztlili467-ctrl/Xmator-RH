@@ -57,14 +57,21 @@ function isWeekend(iso) {
 // Matrice quotidienne : dates × employés → code du jour.
 // Sources fusionnées : pointages badgeuse → P1 (présent) + codifications importées du Journal RMA
 // (`codes_importes` : A1/CA/MA/R3/RP…) — plusieurs codes le même jour sont joints par '/'.
-function computeStats(debut, fin) {
-  const employes = db.prepare(`
+function computeStats(debut, fin, matricule) {
+  let sqlEmp = `
     SELECT e.id, e.matricule, e.nom, e.prenom, e.departement, e.categorie_id, c.libelle AS categorie
     FROM employes e
     JOIN categories c ON c.id = e.categorie_id
     WHERE e.actif = 1
-    ORDER BY CAST(e.matricule AS INTEGER), e.matricule
-  `).all();
+  `;
+  const paramsEmp = [];
+  if (matricule) {
+    sqlEmp += ' AND (e.matricule = ? OR CAST(e.matricule AS INTEGER) = ?)';
+    const n = parseInt(matricule, 10);
+    paramsEmp.push(String(matricule).trim(), isNaN(n) ? -1 : n);
+  }
+  sqlEmp += ' ORDER BY CAST(e.matricule AS INTEGER), e.matricule';
+  const employes = db.prepare(sqlEmp).all(...paramsEmp);
 
   const dates = listDates(debut, fin);
   // Calendrier administratif (ligne complète source/label) + repos hebdomadaire par catégorie :
@@ -174,14 +181,14 @@ function fmtDateShort(iso) {
 
 // ---- Journal JSON (matrice quotidienne) ----
 router.get('/', (req, res) => {
-  const { debut, fin } = req.query;
+  const { debut, fin, matricule } = req.query;
   if (!debut || !fin || !DATE_RE.test(debut) || !DATE_RE.test(fin)) {
     return res.status(400).json({ error: 'Paramètres debut et fin requis au format AAAA-MM-JJ.' });
   }
   if (fin < debut) return res.status(400).json({ error: 'La date de fin doit être postérieure ou égale à la date de début.' });
 
   res.json({
-    ...computeStats(debut, fin),
+    ...computeStats(debut, fin, matricule),
     // Métadonnées des codes (couleur + libellé) pour l'affichage coloré — accessibles à tous les rôles en lecture
     codes: db.prepare('SELECT code, libelle, couleur FROM codes_paie ORDER BY code').all(),
   });
@@ -189,13 +196,17 @@ router.get('/', (req, res) => {
 
 // ---- Export PDF (modèle identique RMA - voir server/utils/pdfJournal.js) ----
 router.get('/pdf', (req, res) => {
-  const { debut, fin } = req.query;
+  const { debut, fin, matricule, orientation } = req.query;
   if (!debut || !fin || !DATE_RE.test(debut) || !DATE_RE.test(fin)) {
     return res.status(400).json({ error: 'Paramètres debut et fin requis au format AAAA-MM-JJ.' });
   }
   if (fin < debut) return res.status(400).json({ error: 'La date de fin doit être postérieure ou égale à la date de début.' });
-  const { dates, employes, jours, joursDemi, totaux } = computeStats(debut, fin);
-  return buildPdf({ res, debut, fin, dates, employes, jours, joursDemi, totaux, titre: 'Journal de paie' });
+  const { dates, employes, jours, joursDemi, totaux } = computeStats(debut, fin, matricule);
+  return buildPdf({
+    res, debut, fin, dates, employes, jours, joursDemi, totaux,
+    titre: 'Journal de paie',
+    orientation: orientation === 'portrait' ? 'portrait' : 'landscape',
+  });
 });
 
 // ---- Export Excel (.xls SpreadsheetML) : même matrice, cellules colorées selon la codification ----
@@ -210,13 +221,13 @@ function teinte(hex, ratio = 0.82) {
 }
 
 router.get('/xls', (req, res) => {
-  const { debut, fin } = req.query;
+  const { debut, fin, matricule } = req.query;
   if (!debut || !fin || !DATE_RE.test(debut) || !DATE_RE.test(fin)) {
     return res.status(400).json({ error: 'Paramètres debut et fin requis au format AAAA-MM-JJ.' });
   }
   if (fin < debut) return res.status(400).json({ error: 'La date de fin doit être postérieure ou égale à la date de début.' });
 
-  const stats = computeStats(debut, fin);
+  const stats = computeStats(debut, fin, matricule);
   const { dates, employes, jours, joursDemi } = stats;
   const codesMeta = codesPaie();
   // Styles générés par code présent dans la période (cellules colorées selon la codification)

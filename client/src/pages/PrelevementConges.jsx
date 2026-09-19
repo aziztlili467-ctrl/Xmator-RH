@@ -112,7 +112,7 @@ export default function PrelevementConges() {
   return (
     <div className="max-w-3xl space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-slate-900">Prélèvement de congé</h2>
+        <h2 className="text-lg font-bold text-slate-900">PRÉLÈVEMENT DE CONGÉ</h2>
         <p className="text-sm text-slate-500">
           Saisissez le matricule : le nom, le prénom et la fonction s'affichent automatiquement. Choisissez le type de congé et la
           période [date début → date fin] : les jours de congé sont calculés automatiquement en excluant les jours fériés et les

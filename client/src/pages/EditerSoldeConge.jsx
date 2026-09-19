@@ -4,7 +4,8 @@ import { fmtDate, fmtJours, today } from '../utils';
 import Field from '../components/Field';
 import EmployePicker from '../components/EmployePicker';
 import BadgeType from '../components/BadgeType';
-import { IconEdit, IconTrash, IconPlus, IconDownload, IconFileText, IconPrinter } from '../components/icons';
+import ImprimerPdf from '../components/ImprimerPdf';
+import { IconEdit, IconTrash, IconPlus, IconDownload, IconFileText } from '../components/icons';
 
 function Modal({ title, children, onClose, danger }) {
   return (
@@ -45,6 +46,8 @@ export default function EditerSoldeConge() {
   const [success, setSuccess] = useState('');
   const [resetKey, setResetKey] = useState(0);
   const [exportOpen, setExportOpen] = useState(false);
+  const [orientation, setOrientation] = useState('portrait');
+  const [printing, setPrinting] = useState(false);
 
   useEffect(() => {
     api.categories().then(setCategories).catch(() => {});
@@ -224,25 +227,28 @@ export default function EditerSoldeConge() {
 
   // Export du journal de l'employé consulté : téléchargement PDF (nouvel onglet) ou XLS (fichier),
   // et impression directe (boîte d'impression du navigateur → « Enregistrer en PDF »).
-  const exportJournal = async (fmt) => {
+  const exportJournal = async (fmt, o) => {
     if (!selected) return;
     setError('');
     setExportOpen(false);
     try {
       if (fmt === 'xls') await api.journalSoldeXls(selected.id);
-      else await api.journalSoldePdf(selected.id);
+      else await api.journalSoldePdf(selected.id, { orientation: o || orientation });
     } catch (err) {
       setError(err.message);
     }
   };
 
-  const imprimerJournal = async () => {
+  const imprimerJournal = async (o) => {
     if (!selected) return;
     setError('');
+    setPrinting(true);
     try {
-      await api.journalSoldePrint(selected.id);
+      await api.journalSoldePrint(selected.id, { orientation: o || orientation });
     } catch (err) {
       setError(err.message);
+    } finally {
+      setPrinting(false);
     }
   };
 
@@ -251,7 +257,7 @@ export default function EditerSoldeConge() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-slate-900">Éditer solde de congé</h2>
+        <h2 className="text-lg font-bold text-slate-900">ÉDITER SOLDE DE CONGÉ</h2>
         <p className="text-sm text-slate-500">
           Consultez, ajoutez, modifiez ou supprimez une dotation de solde de congé (période début → fin et nombre de jours), pour un employé ou en masse par catégorie.
         </p>
@@ -323,9 +329,13 @@ export default function EditerSoldeConge() {
                       </div>
                     )}
                   </div>
-                  <button type="button" onClick={imprimerJournal} className="btn-secondary">
-                    <IconPrinter /> Imprimer en PDF
-                  </button>
+                  <ImprimerPdf
+                    orientation={orientation}
+                    onOrientationChange={setOrientation}
+                    onPrint={imprimerJournal}
+                    onDownload={(o) => exportJournal('pdf', o)}
+                    busy={printing}
+                  />
                 </div>
               </div>
               <div className="table-wrap">

@@ -121,7 +121,7 @@ export default function Categories() {
     <div className="max-w-3xl space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Catégories professionnelles</h2>
+          <h2 className="text-lg font-bold text-slate-900">CATÉGORIES PROFESSIONNELLES</h2>
           <p className="text-sm text-slate-500">
             Liste paramétrable — modifiez, renommez ou ajoutez de nouvelles catégories de fonctions.
           </p>

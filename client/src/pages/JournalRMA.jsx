@@ -2,7 +2,8 @@ import { useRef, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { today, debutMois, fmtDate } from '../utils';
-import { IconUpload, IconTrash, IconPrinter, IconFilter } from '../components/icons';
+import ImprimerPdf from '../components/ImprimerPdf';
+import { IconUpload, IconTrash, IconFilter } from '../components/icons';
 
 const isWeekend = (iso) => {
   const wd = new Date(iso + 'T00:00:00').getDay();
@@ -19,8 +20,10 @@ export default function JournalRMA() {
   const [debut, setDebut] = useState(debutMois());
   const [fin, setFin] = useState(today());
   const [matricule, setMatricule] = useState('');
+  const [orientation, setOrientation] = useState('landscape');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [printing, setPrinting] = useState(false);
   const [error, setError] = useState('');
 
   // --- Import des codifications (super_admin) ---
@@ -77,61 +80,27 @@ export default function JournalRMA() {
     try { window.dispatchEvent(new CustomEvent('rh:solde-changed', { detail: { source: 'journal-rma' } })); } catch {}
   };
 
-  const handlePrint = () => {
+  const imprimerPdf = async (o) => {
     if (!data || !data.employes || data.employes.length === 0) return;
-    const empFiltered = data.employes.filter((e) => data.jours[e.id]);
-    const legends = (data.codes || []).map((c) => `<span style="display:inline-block;margin-right:6px;font-size:8px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${c.couleur || '#666'};vertical-align:middle;margin-right:2px"></span>${c.code} = ${c.libelle}</span>`).join('');
-    const dateHeaders = data.dates.map((iso) => {
-      const we = isWeekend(iso);
-      return `<th style="padding:1px 2px;text-align:center;font-size:6px;background:${we ? '#e2e8f0' : '#eef2f7'};border:0.4px solid #888;white-space:nowrap">${fmtDateShort(iso)}</th>`;
-    }).join('');
-    const rows = empFiltered.map((e) => {
-      const cells = data.dates.map((iso) => {
-        const cellule = data.jours[e.id] ? data.jours[e.id][iso] : null;
-        const isDemiCA = !!(data.joursDemi && data.joursDemi[e.id] && data.joursDemi[e.id][iso]);
-        const premier = String(cellule || '').split('/')[0];
-        const meta = metaCodes[premier];
-        const bg = isDemiCA ? '#00000014' : (meta?.couleur ? meta.couleur + '1f' : 'transparent');
-        const fg = isDemiCA ? '#000' : (meta?.couleur || '#000');
-        const we = isWeekend(iso);
-        return `<td style="padding:0.5px 1.5px;text-align:center;border:0.4px solid #888;font-size:5.5px;background:${we ? '#f1f5f9' : 'transparent'}">${cellule ? `<span style="display:inline-block;padding:0 1px;background:${bg};color:${fg};border-radius:1px;font-size:5.5px;font-weight:700">${cellule}</span>` : ''}</td>`;
-      }).join('');
-      return `<tr><td style="padding:0.5px 1.5px;border:0.4px solid #888;font-size:5.5px;white-space:nowrap">${e.matricule}</td><td style="padding:0.5px 1.5px;border:0.4px solid #888;font-size:5.5px;white-space:nowrap">${e.nom} ${e.prenom}</td>${cells}<td style="padding:0.5px 1.5px;text-align:center;border:0.4px solid #888;font-size:6px;font-weight:700">${totalJours(e.id)}</td></tr>`;
-    }).join('');
-    const footerCells = data.dates.map((iso) => `<td style="padding:0.5px 1.5px;text-align:center;border:0.4px solid #888;font-size:6px;font-weight:700;background:#f8fafc">${countDate(iso)}</td>`).join('');
-    const now = new Date().toLocaleDateString('fr-FR');
-    const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Journal RMA ${fmtDate(debut)}-${fmtDate(fin)}</title>
-<style>
-@page{size:landscape;margin:5mm 4mm 5mm 4mm}
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,Helvetica,sans-serif;background:#fff;padding:10px;margin:0}
-h2{font-size:10px;font-weight:700;margin:0 0 1px}
-p.sub{font-size:7px;color:#555;margin:0 0 3px}
-.legend{margin-bottom:3px}
-table{width:100%;border-collapse:collapse;font-size:5.5px;table-layout:auto}
-th{padding:1px 2px;background:#eef2f7;border:0.4px solid #888;font-size:6px;font-weight:700;text-transform:uppercase;text-align:center;white-space:nowrap}
-td{padding:0.5px 1.5px;border:0.4px solid #888;white-space:nowrap}
-tr:nth-child(even){background:#fafbfc}
-.tot{font-weight:700;text-align:center}
-tfoot td{border-top:0.8px solid #333;background:#f8fafc;font-weight:700}
-.footer{margin-top:3px;font-size:6px;color:#888;text-align:right}
-@media print{body{padding:0;margin:0}#printBtn{display:none!important}}
-</style></head><body>
-<div id="top"><button id="printBtn" onclick="window.print()" style="display:block;margin:0 0 6px;padding:6px 16px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid #2563eb;background:#2563eb;color:#fff;border-radius:6px">Imprimer / Enregistrer en PDF</button></div>
-<h2>JOURNAL RMA — Période : ${fmtDate(debut)} → ${fmtDate(fin)}</h2>
-<p class="sub">${legends} — Total : ${data.totaux.total} jours codifiés</p>
-<table><thead><tr><th style="text-align:left">Mat.</th><th style="text-align:left">Nom / Prénom</th>${dateHeaders}<th style="text-align:center">Tot.</th></tr></thead><tbody>${rows}</tbody>
-<tfoot><tr><td colspan="2">Total employés</td>${footerCells}<td class="tot">${data.totaux.total}</td></tr></tfoot></table>
-<div class="footer">Imprimé le ${now} — Amicale du Personnel BCT</div>
-</body></html>`;
-    const w = window.open('', '_blank', 'width=1200,height=800');
-    if (!w) { alert('Popup bloqué — autorisez les popups pour ce site.'); return; }
-    // Remplissage via une URL blob plutôt que document.write (recommandé avec les
-    // navigateurs modernes) : la fenêtre vierge navigue vers le document HTML généré.
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    w.location.replace(url);
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    setPrinting(true);
+    setError('');
+    try {
+      await api.journalRmaPrint({ debut, fin, matricule, orientation: o || orientation });
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setPrinting(false);
+    }
+  };
+
+  const telechargerPdf = async (o) => {
+    if (!data || !data.employes || data.employes.length === 0) return;
+    setError('');
+    try {
+      await api.journalRmaPdf({ debut, fin, matricule, orientation: o || orientation });
+    } catch (e) {
+      setError(e.message);
+    }
   };
 
   const lireFichier = (e) => {
@@ -312,13 +281,14 @@ tfoot td{border-top:0.8px solid #333;background:#f8fafc;font-weight:700}
           </p>
         )}
         {data && codesUtilises.length > 0 && (
-          <button
-            className="rma-screen-only inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-            onClick={handlePrint}
-            title="Imprimer / Exporter PDF"
-          >
-            <IconPrinter /> Imprimer PDF
-          </button>
+          <ImprimerPdf
+            className="rma-screen-only"
+            orientation={orientation}
+            onOrientationChange={setOrientation}
+            onPrint={imprimerPdf}
+            onDownload={telechargerPdf}
+            busy={printing}
+          />
         )}
       </div>
 

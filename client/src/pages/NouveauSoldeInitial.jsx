@@ -51,7 +51,7 @@ export default function NouveauSoldeInitial() {
   return (
     <div className="max-w-3xl space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-slate-900">Nouveau solde initial</h2>
+        <h2 className="text-lg font-bold text-slate-900">NOUVEAU SOLDE INITIAL</h2>
         <p className="text-sm text-slate-500">
           Saisissez le solde de départ d'un employé. Ce solde sert de base au calcul du solde courant.
         </p>

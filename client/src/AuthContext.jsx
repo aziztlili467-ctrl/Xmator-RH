@@ -9,11 +9,14 @@ export function AuthProvider({ children }) {
 
   // Redémarrage : la session durable est dans le cookie HttpOnly → renouvellement
   // automatique du jeton d'accès (aucun token persistant côté client).
+  // Verrou anti-race au (re)demarrage : on ne leve la barriere de chargement qu'une
+  // fois le refresh de session resolu (succes OU echec). Pendant ce temps, aucune
+  // redirection vers /login n'est possible, meme si la session etait persiste localement.
   useEffect(() => {
     let actif = true;
     api.auth.refresh()
-      .then((r) => { if (actif) setUser(r.user); })
-      .catch(() => { if (actif) setUser(null); })
+      .then((r) => { if (actif) { setUser(r.user); localStorage.setItem('has_session', '1'); } })
+      .catch(() => { if (actif) { setUser(null); localStorage.removeItem('has_session'); } })
       .finally(() => { if (actif) setLoading(false); });
     return () => { actif = false; };
   }, []);
@@ -21,11 +24,13 @@ export function AuthProvider({ children }) {
   const login = async (login, password) => {
     const r = await api.auth.login(login, password, getAppareilId());
     setUser(r.user);
+    localStorage.setItem('has_session', '1');
     return r.user;
   };
 
   const logout = async () => {
     setUser(null);
+    localStorage.removeItem('has_session');
     await api.auth.logout();
   };
 

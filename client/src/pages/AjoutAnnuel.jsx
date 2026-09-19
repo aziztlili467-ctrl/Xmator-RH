@@ -83,7 +83,7 @@ export default function AjoutAnnuel() {
   return (
     <div className="max-w-3xl space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-slate-900">Ajout de solde annuel</h2>
+        <h2 className="text-lg font-bold text-slate-900">AJOUT DE SOLDE ANNUEL</h2>
         <p className="text-sm text-slate-500">
           Crédite un nouveau droit de congé qui s'additionne au solde restant existant (report + droit annuel), sans écraser l'historique.
         </p>

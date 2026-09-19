@@ -295,7 +295,7 @@ export default function PointageBiometrique() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Pointage biométrique (Xmator-Eye)</h2>
+          <h2 className="text-lg font-bold text-slate-900">POINTAGE BIOMÉTRIQUE (XMATOR-EYE)</h2>
           <p className="text-sm text-slate-500">
             Analyse des badgeages enregistrés via la borne biométrique : entrée (min) / sortie (max) du jour, retards et sorties
             anticipées par rapport aux horaires réglementaires de la catégorie.
@@ -403,9 +403,10 @@ export default function PointageBiometrique() {
       </div>
 
       <p className="rounded-lg bg-cyan-50 px-4 py-3 text-sm text-cyan-800 ring-1 ring-cyan-200">
-        Seuls les pointages horodatés sur la borne biométrique (source « biometrique ») sont comptabilisés ici. Détail des contrôles :
-        un retard n'est comptabilisé que s'il dépasse 30 minutes ; une sortie anticipée que si elle précède de plus de 15 minutes
-        l'heure réglementaire.
+        Seuls les pointages horodatés sur la borne biométrique (source « biometrique ») sont comptabilisés ici. Les
+        horaires réglementaires (entrée / sortie) sont définis par catégorie dans{' '}
+        <strong>Paramètres de Pointage → Tolérance de retard et de sortie</strong>. Un retard n'est comptabilisé que
+        s'il dépasse 30 minutes ; une sortie anticipée que si elle précède de plus de 15 minutes l'heure réglementaire.
       </p>
 
       {data && kpi && (

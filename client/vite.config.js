@@ -22,9 +22,9 @@ self.addEventListener('activate', (e) => {
     caches.keys()
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
-      // Recharge les pages déjà ouvertes pour éviter d'afficher l'ancienne version
-      .then(() => self.clients.matchAll({ type: 'window' }))
-      .then((clients) => clients.forEach((c) => c.navigate(c.url)))
+      // NOTE: pas de navigate() force ici — cela coupait les requetes /api en vol (refresh)
+      // au F5 et provoquait ECONNREFUSED + retour /login. Les onglets prennent la
+      // nouvelle version au prochain chargement naturel.
   );
 });
 

@@ -85,7 +85,7 @@ export default function ArretsMaladieInstance() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-slate-900">Arrêts maladie</h2>
+        <h2 className="text-lg font-bold text-slate-900">ARRÊTS MALADIE</h2>
         <p className="text-sm text-slate-500">{`Workflow de validation — ${arrets.length} arrêt(s) affiché(s). Validé → solde maladie déduit. Rejeté → l'employé est considéré comme absent.`}</p>
       </div>
 

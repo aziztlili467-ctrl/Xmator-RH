@@ -84,7 +84,7 @@ export default function AjoutSoldeMaladie() {
   return (
     <div className="max-w-3xl space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-slate-900">Ajout de solde maladie annuel</h2>
+        <h2 className="text-lg font-bold text-slate-900">AJOUT DE SOLDE MALADIE ANNUEL</h2>
         <p className="text-sm text-slate-500">
           {'Les employés bénéficient de'} <strong>{'20 jours de maladie payés annuellement'}</strong> {"Ce module crédite le solde maladie en masse (tous les employés ou par catégorie), sans écraser l'historique."}
         </p>

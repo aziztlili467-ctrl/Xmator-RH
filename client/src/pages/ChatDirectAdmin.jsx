@@ -84,7 +84,7 @@ export default function ChatDirectAdmin() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-slate-900">Chat en direct avec les utilisateurs</h2>
+        <h2 className="text-lg font-bold text-slate-900">CHAT EN DIRECT AVEC LES UTILISATEURS</h2>
         <p className="mt-0.5 text-sm text-slate-500">
           Conversations avec chaque compte (tous rôles) — messages en temps réel, historique persistant.
           <span className={`ms-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold ${adminEnLigne ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-slate-100 text-slate-500 ring-1 ring-slate-200'}`}>

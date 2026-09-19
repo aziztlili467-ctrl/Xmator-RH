@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { IconPrinter, IconPlus, IconTrash, IconRefresh, IconBanknotes, IconSave } from './icons';
 import { calculerIRPP, parseSituationFamille } from '../utils/irpp';
@@ -66,6 +66,11 @@ function fmt(n) {
   return s.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 }
 
+function fmtQ(n, max = 2) {
+  const v = Number(n) || 0;
+  return v.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: max });
+}
+
 // ---------------------------------------------------------------------------
 // Classification des codes du bulletin de paie
 // ---------------------------------------------------------------------------
@@ -129,7 +134,7 @@ const MODES_PAIEMENT = ['Virement bancaire', 'Chèque', 'Espèces'];
 // ---------------------------------------------------------------------------
 // Composant réutilisable : bulletin de paie interactif
 // ---------------------------------------------------------------------------
-export default function BulletinDePaie({ employe: employeProp, montants: montantsProp, masquerSansValeur = false, peutSauver = false, chefFamille: chefFamilleProp, nbEnfants: nbEnfantsProp }) {
+export default function BulletinDePaie({ employe: employeProp, montants: montantsProp, masquerSansValeur = false, peutSauver = false, chefFamille: chefFamilleProp, nbEnfants: nbEnfantsProp, periode: periodeProp, onPeriodeChange }) {
   const montantsBase = montantsProp && Object.keys(montantsProp).length ? montantsProp : MONTANTS_ECHANTILLON;
   const [org, setOrg] = useState({});
   const [lignes, setLignes] = useState([]);
@@ -138,10 +143,17 @@ export default function BulletinDePaie({ employe: employeProp, montants: montant
     ? { cf: chefFamilleProp ? 1 : 0, enfants: Number(nbEnfantsProp) || 0 }
     : parseSituationFamille((employeProp || EMPLOYE_DEFAUT).situationFamille);
   const [sitSaisie, setSitSaisie] = useState(() => ({ cf: sitFam.cf, enfants: sitFam.enfants }));
-  const [periode, setPeriode] = useState(() => {
+  const [periodeInterne, setPeriodeInterne] = useState(() => {
     const d = new Date();
     return { mois: d.getMonth(), annee: d.getFullYear() };
   });
+  // Période contrôlable : si le parent fournit « periode » (ex. calendrier de Calcul de Paie),
+  // elle pilote le bulletin ; sinon le bulletin garde sa période interne (comportement actuel).
+  const periode = periodeProp || periodeInterne;
+  const changerPeriode = (p) => {
+    if (periodeProp && onPeriodeChange) onPeriodeChange(p);
+    else setPeriodeInterne(p);
+  };
   const [modePaiement, setModePaiement] = useState(MODES_PAIEMENT[0]);
   const [rib, setRib] = useState('');
   const [loading, setLoading] = useState(true);
@@ -151,6 +163,13 @@ export default function BulletinDePaie({ employe: employeProp, montants: montant
   const [clignotant, setClignotant] = useState(null);
   const [savingRates, setSavingRates] = useState(false);
   const [msgRates, setMsgRates] = useState(null);
+  // Cycle de calcul : résultat unifié du mois sélectionné (jours ou heures selon le mode — base −
+  // absences A1 / MALD − carence MA), injecté dans la colonne « Nbr / Taux » de la ligne « Salaire de
+  // base » (5011) et appliqué au montant (prorata jours ou régime horaire × prix heure).
+  const [cycle, setCycle] = useState(null);
+  // Retenues de crédits / avances du mois (module Crédits & Avances) : injectées
+  // automatiquement dans la colonne « À déduire » tant que le CRD n'est pas soldé.
+  const [prets, setPrets] = useState([]);
   const tauxInitRef = useRef({});
   const refDoc = useRef(null);
 
@@ -184,6 +203,65 @@ export default function BulletinDePaie({ employe: employeProp, montants: montant
     return () => { mort = true; };
   }, []);
 
+  // Cycle de calcul : nbr_unites / base_unites / unite + prix_heure du mois sélectionné (résolu
+  // dynamiquement sur le serveur selon le mode de calcul — forfaitaire, prorata ou régime horaire).
+  useEffect(() => {
+    let mort = false;
+    const mat = String(employe?.matricule || '').trim();
+    if (!mat) { setCycle(null); return undefined; }
+    api.calculJoursPaie({ matricule: mat, annee: periode.annee, mois: periode.mois + 1 })
+      .then((d) => {
+        if (mort) return;
+        if (d?.employe && d?.result && d?.periode) setCycle({ ...d.result, periode: d.periode });
+        else setCycle(null);
+      })
+      .catch(() => { if (!mort) setCycle(null); });
+    return () => { mort = true; };
+  }, [employe?.matricule, periode.mois, periode.annee]);
+
+  // Retenues de crédits/avances du mois : rechargées à chaque changement de période
+  // (ou d'employé). Les lignes produites sont figées (non éditables) et ressortent
+  // « À déduire » tant que le contrat est en cours — elles disparaissent quand le CRD = 0.
+  useEffect(() => {
+    let mort = false;
+    const mat = String(employe?.matricule || '').trim();
+    if (!mat) { setPrets([]); return undefined; }
+    api.creditsPrets({ matricule: mat, annee: periode.annee, mois: periode.mois + 1 })
+      .then((d) => {
+        if (mort) return;
+        setPrets((d?.prets || []).map((p, i) => ({
+          id: `pret-${p.code_paie}-${i}`,
+          code: String(p.code_paie),
+          libelle: p.libelle,
+          type: 'diverse',
+          montant: Number(p.montant) || 0,
+          taux: null,
+          pret: true,
+        })));
+      })
+      .catch(() => { if (!mort) setPrets([]); });
+    return () => { mort = true; };
+  }, [employe?.matricule, periode.mois, periode.annee]);
+
+  // Sous-total des rubriques : lignes officielles + retenues de crédit du mois.
+  // Les retenues sont insérées avant la première ligne « total » du bulletin
+  // (avant NET À PAYER), comme les autres rubriques de déduction.
+  // ---- Placement des retenues de crédits / avances dans le bulletin ----
+  // Exigence de rattachement : la rubrique 5301 « AID IL IDHAA » et TOUTES les autres retenues
+  // de crédit doivent figurer SOUS la ligne « SALAIRE NET (Total/Sous-total) » (code 70011),
+  // c'est-à-dire entre cette ligne et « NET À PAYER » (10000), comme les autres déductions du net.
+  // On insère donc les crédits juste après la ligne de totale 70011 (et non avant le premier
+  // total rencontré, qui serait le BRUT COTISABLE 50000 et placerait les crédits trop haut).
+  const lignesEff = useMemo(() => {
+    if (!prets.length) return lignes;
+    const cible = String(CODES_TOTAUX.find((c) => String(c) === '70011') ?? '70011');
+    const idxNet = lignes.findIndex((x) => x.type === 'total' && String(x.code) === cible);
+    if (idxNet !== -1) return [...lignes.slice(0, idxNet + 1), ...prets, ...lignes.slice(idxNet + 1)];
+    const idx = lignes.findIndex((x) => x.type === 'total');
+    if (idx === -1) return [...lignes, ...prets];
+    return [...lignes.slice(0, idx), ...prets, ...lignes.slice(idx)];
+  }, [lignes, prets]);
+
   const setEmp = (k) => (e) => { setEmploye((x) => ({ ...x, [k]: e.target.value })); };
   const setMontant = (id) => (e) => {
     const v = e.target.value;
@@ -202,14 +280,28 @@ export default function BulletinDePaie({ employe: employeProp, montants: montant
 
   const estTauxCode = (x) => CODES_TAUX_RETENUES.includes(String(x.code));
 
-  const brutCotis = lignes.filter((x) => x.type === 'gain').reduce((s, x) => s + (Number(x.montant) || 0), 0);
-  const cnssRow = lignes.find((x) => x.type === 'cnss');
+  const brutGains = lignesEff.filter((x) => x.type === 'gain').reduce((s, x) => s + (Number(x.montant) || 0), 0);
+  // Cycle de calcul actif : résultat unifié du serveur — « nbr_unites / base_unites / unite » où l'unité
+  // est 'jours' (modes forfaitaire & prorata) ou 'heures' (mode régime horaire, avec « prix_heure »).
+  // Mode jours : montant 5011 = salaire de base × Nbr unités / base. Mode horaire : montant 5011 = Nbr
+  // heures × prix de l'heure (équivaut à base × N / régime horaire). Le brut cotisable retient toujours
+  // le salaire de base adapté au cycle au lieu du salaire contractuel plein.
+  const cycleActif = cycle && cycle.nbr_unites != null && cycle.base_unites != null ? cycle : null;
+  const estModeHeures = (cycleActif || {}).unite === 'heures';
+  const base5011 = cycleActif ? (Number(lignesEff.find((x) => String(x.code) === '5011')?.montant) || 0) : 0;
+  const montant5011 = cycleActif
+    ? estModeHeures
+      ? cycleActif.nbr_unites * (cycleActif.prix_heure || base5011 / (cycleActif.base_unites || 30))
+      : base5011 * (cycleActif.nbr_unites / (cycleActif.base_unites || 30))
+    : 0;
+  const brutCotis = cycleActif ? brutGains - base5011 + montant5011 : brutGains;
+  const cnssRow = lignesEff.find((x) => x.type === 'cnss');
   const irreTaux = cnssRow?.taux ?? 9.18;
   const cnss = brutCotis * (irreTaux / 100);
 
   // Retenues sociales : 53011 / 53021 / 53031 calculées par un taux (% du brut cotisable), comme la CNSS ;
   // les autres rubriques sociales restent saisies en montant.
-  const sociales = lignes.filter((x) => x.type === 'sociale').reduce((s, x) => {
+  const sociales = lignesEff.filter((x) => x.type === 'sociale').reduce((s, x) => {
     if (estTauxCode(x)) {
       const t = valeurTaux(x);
       return s + (t !== null ? brutCotis * (t / 100) : 0);
@@ -221,8 +313,8 @@ export default function BulletinDePaie({ employe: employeProp, montants: montant
   // Déduction structurale : toute ligne située entre la ligne « SALAIRE BRUT COTISABLE » (50000)
   // et la ligne « SALAIRE IMPOSABLE » (55000) — CNSS, assurance/mutuelle, caisse sociale/amicale,
   // cantine, etc. — est automatiquement soustraite du brut.
-  const idxBrut = lignes.findIndex((x) => String(x.code) === '50000');
-  const idxImposable = lignes.findIndex((x) => String(x.code) === '55000');
+  const idxBrut = lignesEff.findIndex((x) => String(x.code) === '50000');
+  const idxImposable = lignesEff.findIndex((x) => String(x.code) === '55000');
   const deductionLigne = (x) => {
     const t = valeurTaux(x);
     if (x.type === 'cnss') return brutCotis * (Number(x.taux ?? 9.18) / 100);
@@ -230,7 +322,7 @@ export default function BulletinDePaie({ employe: employeProp, montants: montant
     return Number(x.montant) || 0;
   };
   const deductionsSousBrut = idxBrut !== -1 && idxImposable !== -1 && idxImposable > idxBrut
-    ? lignes.slice(idxBrut + 1, idxImposable).filter((x) => x.type !== 'total').reduce((s, x) => s + deductionLigne(x), 0)
+    ? lignesEff.slice(idxBrut + 1, idxImposable).filter((x) => x.type !== 'total').reduce((s, x) => s + deductionLigne(x), 0)
     : cnss + sociales;
   const imposable = brutCotis - deductionsSousBrut;
 
@@ -238,7 +330,7 @@ export default function BulletinDePaie({ employe: employeProp, montants: montant
 
   // IRPP (55011) : taux saisi (% du salaire imposable) si renseigné, sinon simulation IRPP 2026
   // (même calcul que le Simulateur IRPP : F24 = impôt mensuel à partir du salaire imposable mensuel).
-  const irppRow = lignes.find((x) => x.type === 'irpp');
+  const irppRow = lignesEff.find((x) => x.type === 'irpp');
   const irppTaux = irppRow ? valeurTaux(irppRow) : null;
   const irpp = irppTaux !== null
     ? imposable * (irppTaux / 100)
@@ -252,12 +344,20 @@ export default function BulletinDePaie({ employe: employeProp, montants: montant
   // déduit en valeur absolue ; le résultat équivaut au « Salaire net mensuel F26 » du simulateur.
   const net = imposable - Math.abs(irpp) - css;
 
-  const diverses = lignes.filter((x) => x.type === 'diverse').reduce((s, x) => s + (Number(x.montant) || 0), 0);
+  const diverses = lignesEff.filter((x) => x.type === 'diverse').reduce((s, x) => s + (Number(x.montant) || 0), 0);
   const netAPayer = net - diverses;
 
   const totaux = { brutCotis, cnss, sociales, imposable, irpp, css, net, diverses, netAPayer };
 
   const montantDe = (x) => {
+    if (String(x.code) === '5011' && cycleActif) {
+      const base = Number(x.montant) || 0;
+      if (estModeHeures) {
+        const prix = cycleActif.prix_heure || base / (cycleActif.base_unites || 30);
+        return cycleActif.nbr_unites * prix;
+      }
+      return base * (cycleActif.nbr_unites / (cycleActif.base_unites || 30));
+    }
     switch (x.type) {
       case 'total':
         if (String(x.code) === '50000') return totaux.brutCotis;
@@ -292,8 +392,9 @@ export default function BulletinDePaie({ employe: employeProp, montants: montant
   };
 
   const lignesVisibles = masquerSansValeur
-    ? lignes.filter((x) => x.type === 'total' || estTauxCode(x) || montantDe(x) !== 0)
-    : lignes;
+    ? lignesEff.filter((x) => x.type === 'total' || estTauxCode(x) || montantDe(x) !== 0
+        || (String(x.code) === '5011' && cycleActif))
+    : lignesEff;
 
   const prochainCode = (type, lignesActuelles) => {
     const groupe = type === 'gain' ? lignesActuelles.filter((x) => x.type === 'gain')
@@ -639,6 +740,20 @@ export default function BulletinDePaie({ employe: employeProp, montants: montant
         </p>
       )}
 
+      {cycleActif && (
+        <p className="no-print mb-4 rounded-lg bg-brand-50/60 px-4 py-2 text-xs text-brand-700 ring-1 ring-brand-200">
+          {estModeHeures ? (
+            <>Salaire de base au <b>régime horaire</b> : <b>{fmtQ(cycleActif.nbr_unites)} h</b> sur {fmtQ(cycleActif.base_unites)} h
+              {' '}({fmtQ(cycleActif.heures_par_jour, 2)} h/j) à <b>{fmt(cycleActif.prix_heure)} DT/h</b>
+              {' '}— déductions : A1 {fmtQ(cycleActif.heures_a1)} h · MALD {fmtQ(cycleActif.heures_mald)} h
+              {' '}· MA déduit {fmtQ(cycleActif.heures_carence)} h.</>
+          ) : (
+            <>Salaire de base proratisé au cycle de paie : <b>{cycleActif.nbr_unites}</b> jour(s) de paie sur {cycleActif.base_unites}
+              {' '}— déductions : A1 {cycleActif.jours_a1 || 0} · MALD {cycleActif.jours_mald || 0} · MA déduit {cycleActif.carence_appliquee || 0}.</>
+          )}
+        </p>
+      )}
+
       {error && <p className="no-print mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-200">{error}</p>}
 
       {loading ? (
@@ -694,11 +809,11 @@ export default function BulletinDePaie({ employe: employeProp, montants: montant
             </ChampInfo>
             <ChampInfo label="Mois / Année">
               <div className="flex gap-1">
-                <select className="bul-input" value={periode.mois} onChange={(e) => setPeriode({ ...periode, mois: Number(e.target.value) })}>
+                <select className="bul-input" value={periode.mois} onChange={(e) => changerPeriode({ ...periode, mois: Number(e.target.value) })}>
                   {MOIS_FR.map((m, i) => <option key={m} value={i}>{m}</option>)}
                 </select>
                 <input className="bul-input w-20" type="number" value={periode.annee} min={2000} max={2100}
-                  onChange={(e) => setPeriode({ ...periode, annee: Number(e.target.value) })} />
+                  onChange={(e) => changerPeriode({ ...periode, annee: Number(e.target.value) })} />
               </div>
             </ChampInfo>
             <ChampInfo label="Situation familiale">
@@ -741,9 +856,9 @@ export default function BulletinDePaie({ employe: employeProp, montants: montant
                     <tr key={x.id} className={`bul-row-total border-t border-slate-200 ${clignotant === x.id ? 'bg-amber-100' : estTotal ? 'bg-slate-100 font-bold' : ''}`}>
                       <td className="px-2 py-1 text-center font-mono text-[11px] text-slate-500">{x.code}</td>
                       <td className="px-2 py-1 text-slate-700">
-                        {estTotal || x.type === 'irpp' ? null : <input className="bul-input -mx-1 my-0.5 w-full" value={x.libelle}
+                        {estTotal || x.type === 'irpp' || x.pret ? null : <input className="bul-input -mx-1 my-0.5 w-full" value={x.libelle}
                           onChange={(e) => setLignes((xs) => xs.map((y) => y.id === x.id ? { ...y, libelle: e.target.value } : y))} />}
-                        <span className={estTotal ? 'uppercase' : ''}>{estTotal || x.type === 'irpp' ? libelleDe(x) : null}</span>
+                        <span className={estTotal ? 'uppercase' : ''}>{estTotal || x.type === 'irpp' || x.pret ? libelleDe(x) : null}</span>
                       </td>
                       <td className="px-2 py-1 text-center">
                         {x.type === 'cnss' || x.type === 'css' || x.type === 'irpp' || (x.type === 'sociale' && estTauxCode(x)) ? (
@@ -752,6 +867,16 @@ export default function BulletinDePaie({ employe: employeProp, montants: montant
                               value={x.taux ?? ''} onChange={setTaux(x.id)} />
                             <span className="text-[10px] text-slate-400">%</span>
                           </div>
+                        ) : String(x.code) === '5011' && cycleActif ? (
+                          estModeHeures ? (
+                            <b className="bul-nbr text-brand-700" title={`${fmtQ(cycleActif.nbr_unites)} h sur ${fmtQ(cycleActif.base_unites)} h de régime — cycle ${cycleActif.periode?.debut || ''} → ${cycleActif.periode?.fin || ''}`}>
+                              {fmtQ(cycleActif.nbr_unites)} <span className="text-[9px]">h</span>
+                            </b>
+                          ) : (
+                            <b className="bul-nbr text-brand-700" title={`${cycleActif.nbr_unites} jour(s) de paie sur ${cycleActif.base_unites} — cycle ${cycleActif.periode?.debut || ''} → ${cycleActif.periode?.fin || ''}`}>
+                              {cycleActif.nbr_unites}
+                            </b>
+                          )
                         ) : (
                           <span className="text-slate-400">{estTotal ? '=' : ''}</span>
                         )}
@@ -761,6 +886,8 @@ export default function BulletinDePaie({ employe: employeProp, montants: montant
                           <td className="px-2 py-1 text-end">
                             {x.type === 'cnss' || x.type === 'irpp' || x.type === 'css' || (x.type === 'sociale' && estTauxCode(x)) ? (
                               <b className="text-red-700">{fmt(montant)}</b>
+                            ) : x.pret ? (
+                              <b className="text-red-700" title="Retenue crédit/avance du mois (module Crédits & Avances)">{fmt(montant)}</b>
                             ) : (
                               <input className="bul-input w-24 text-end" type="number" min="0" step="0.001" value={x.montant}
                                 onChange={setMontant(x.id)} />
@@ -774,6 +901,10 @@ export default function BulletinDePaie({ employe: employeProp, montants: montant
                           <td className="px-2 py-1 text-end">
                             {estTotal ? (
                               <b className={String(x.code) === '10000' ? 'text-lg text-brand-700' : ''}>{fmt(montant)}</b>
+                            ) : String(x.code) === '5011' && cycleActif ? (
+                              <b className="text-emerald-700" title={estModeHeures
+                                ? `Montant au régime horaire : ${fmtQ(cycleActif.nbr_unites)} h × ${fmt(cycleActif.prix_heure)} DT/h`
+                                : `Montant proratisé au cycle : salaire de base × Nbr jours / base`}>{fmt(montant)}</b>
                             ) : (
                               <input className="bul-input w-24 text-end" type="number" min="0" step="0.001" value={x.montant}
                                 onChange={setMontant(x.id)} />
@@ -782,7 +913,7 @@ export default function BulletinDePaie({ employe: employeProp, montants: montant
                         </>
                       )}
                       <td className="no-print px-1 py-1 text-center">
-                        {!estTotal && (
+                        {!estTotal && !x.pret && (
                           <button
                             type="button"
                             title="Supprimer cette rubrique"

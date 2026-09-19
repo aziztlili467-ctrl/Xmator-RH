@@ -12,12 +12,12 @@ import {
  * toucher au Layout réel ni à l'authentification.
  */
 const RAIL = [
-  { icon: IconDashboard, label: 'Tableau de bord', to: '/', active: true },
-  { icon: IconUsers, label: 'Employés', to: '/employes' },
-  { icon: IconCalendarCheck, label: 'Congés', to: '/demandes/instance' },
-  { icon: IconClipboardList, label: 'Paie', to: '/calcul-paie' },
-  { icon: IconCamera, label: 'Borne Xmator-Eye', to: '/borne' },
-  { icon: IconSettings, label: 'Paramètres', to: '/parametres-codification' },
+  { icon: IconDashboard, label: 'TABLEAU DE BORD', to: '/', active: true },
+  { icon: IconUsers, label: 'EMPLOYÉS', to: '/employes' },
+  { icon: IconCalendarCheck, label: 'CONGÉS', to: '/demandes/instance' },
+  { icon: IconClipboardList, label: 'PAIE', to: '/calcul-paie' },
+  { icon: IconCamera, label: 'BORNE XMATOR-EYE', to: '/borne' },
+  { icon: IconSettings, label: 'PARAMÈTRES', to: '/parametres-codification' },
 ];
 
 export default function Maquette() {

@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { downloadFile } from '../utils';
-import { IconDownload } from '../components/icons';
+import { IconDownload, IconFilter } from '../components/icons';
 
 const fmtDate = (iso) => {
   const [, m, d] = iso.split('-');
@@ -43,14 +43,7 @@ export default function Horaires() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => {
-    load(debut, fin, matricule);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const changeDebut = (v) => { setDebut(v); load(v, fin, matricule); };
-  const changeFin = (v) => { setFin(v); load(debut, v, matricule); };
-  const changeMatricule = (v) => { setMatricule(v); load(debut, fin, v); };
+  const executer = () => load(debut, fin, matricule);
 
   const totalDate = (iso) => {
     return data.employes.reduce((s, e) => {
@@ -105,7 +98,7 @@ export default function Horaires() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Horaires de travail</h2>
+          <h2 className="text-lg font-bold text-slate-900">HORAIRES DE TRAVAIL</h2>
           <p className="text-sm text-slate-500">
             Heures travaillées par employé et par date, calculées depuis les données de{' '}
             <strong>« Présences & pointages »</strong> : pour chaque jour et chaque matricule, la durée ={' '}
@@ -126,9 +119,9 @@ export default function Horaires() {
         <div className="flex flex-wrap items-center gap-3">
           <label className="text-sm font-semibold text-slate-600">Période :</label>
           <div className="flex items-center gap-2">
-            <input type="date" className="input" value={debut} onChange={(e) => changeDebut(e.target.value)} />
+            <input type="date" className="input" value={debut} onChange={(e) => setDebut(e.target.value)} />
             <span className="text-slate-400">→</span>
-            <input type="date" className="input" value={fin} onChange={(e) => changeFin(e.target.value)} />
+            <input type="date" className="input" value={fin} onChange={(e) => setFin(e.target.value)} />
           </div>
           {user?.role === 'super_admin' && (debut || fin) && (
             <button
@@ -146,11 +139,14 @@ export default function Horaires() {
             className="input w-28 font-mono"
             placeholder="ex : 35"
             value={matricule}
-            onChange={(e) => changeMatricule(e.target.value)}
+            onChange={(e) => setMatricule(e.target.value)}
           />
           {matricule && (
-            <button className="text-xs font-semibold text-brand-600 hover:underline" onClick={() => changeMatricule('')}>Effacer</button>
+            <button className="text-xs font-semibold text-brand-600 hover:underline" onClick={() => setMatricule('')}>Effacer</button>
           )}
+          <button className="btn-primary" onClick={executer} disabled={loading}>
+            <IconFilter /> {loading ? 'Chargement…' : 'Exécuter'}
+          </button>
         </div>
         <p className="text-xs text-slate-400">
           {data && (
@@ -164,7 +160,7 @@ export default function Horaires() {
       {viderErr && <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-200">{viderErr}</p>}
       {viderMsg && <p className="rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700 ring-1 ring-emerald-200">{viderMsg}</p>}
 
-      {data && (
+      {data ? (
         <>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="card p-4">
@@ -248,6 +244,12 @@ export default function Horaires() {
             )}
           </div>
         </>
+      ) : (
+        !loading && (
+          <div className="card px-4 py-10 text-center text-sm text-slate-400">
+            Aucune donnée affichée — sélectionnez une période (et éventuellement un matricule), puis cliquez sur <strong>Exécuter</strong>.
+          </div>
+        )
       )}
     </div>
   );

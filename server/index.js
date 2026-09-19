@@ -148,6 +148,12 @@ app.use('/api/employes', (req, res, next) => {
   return next();
 }, require('./routes/employes'));
 
+// Crédits & avances : lecture pour super_admin + consultation + moderateur ;
+// écritures (référentiel, octroi, échéances) par permissions du module 'credits'
+app.use('/api/credits-avances', (req, res, next) =>
+  req.method === 'GET' ? lecture(req, res, next) : requireModule('credits')(req, res, next),
+  require('./routes/credits-avances'));
+
 // ---- Application Web : routes chat + appareils connectés (super_admin pour les listes,
 // tout compte authentifié pour son propre chat / heartbeat) ----
 app.use('/api/chat', require('./routes/chat'));

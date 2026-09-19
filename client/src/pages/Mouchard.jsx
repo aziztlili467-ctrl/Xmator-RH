@@ -1,21 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { fmtDate } from '../utils';
-import { IconTrash, IconDownload, IconUpload, IconFileText } from '../components/icons';
+import ImprimerPdf from '../components/ImprimerPdf';
+import { IconTrash, IconDownload, IconUpload } from '../components/icons';
 
 const MODULES = [
-  { key: 'employes', label: 'Employés' },
-  { key: 'categories', label: 'Catégories' },
-  { key: 'soldes', label: 'Soldes & op.' },
-  { key: 'demandes', label: 'Demandes de congé' },
-  { key: 'maladie', label: 'Maladie' },
-  { key: 'statistiques', label: 'TdB & stats' },
-  { key: 'comptes', label: 'Comptes' },
-  { key: 'administration', label: 'Sauvegarde & import' },
-  { key: 'horaires', label: 'Horaires de travail' },
-  { key: 'paie', label: 'Paie & codification' },
-  { key: 'rma', label: 'Journal RMA' },
-  { key: 'notif_absence', label: "Notification d'absences" },
+  { key: 'employes', label: 'EMPLOYÉS' },
+  { key: 'categories', label: 'CATÉGORIES' },
+  { key: 'soldes', label: 'SOLDES & OP.' },
+  { key: 'demandes', label: 'DEMANDES DE CONGÉ' },
+  { key: 'maladie', label: 'MALADIE' },
+  { key: 'statistiques', label: 'TdB & STATS' },
+  { key: 'comptes', label: 'COMPTES' },
+  { key: 'administration', label: 'SAUVEGARDE & IMPORT' },
+  { key: 'horaires', label: 'HORAIRES DE TRAVAIL' },
+  { key: 'paie', label: 'PAIE & CODIFICATION' },
+  { key: 'rma', label: 'JOURNAL RMA' },
+  { key: 'notif_absence', label: "NOTIFICATION D'ABSENCES" },
+  { key: 'credits', label: 'CRÉDITS & AVANCES' },
 ];
 
 const ACTION_LABELS = {
@@ -89,6 +91,7 @@ export default function Mouchard() {
   const [busy, setBusy] = useState(false);
   const [dateDebut, setDateDebut] = useState('');
   const [dateFin, setDateFin] = useState('');
+  const [orientation, setOrientation] = useState('landscape');
   const [msg, setMsg] = useState('');
   const fileRef = useRef(null);
 
@@ -166,11 +169,11 @@ export default function Mouchard() {
     }
   };
 
-  const imprimer = async () => {
+  const imprimer = async (o) => {
     if (!checkRange()) return;
     setBusy(true); setMsg(''); setError('');
     try {
-      await api.mouchardPdf(rangeParams());
+      await api.mouchardPrint({ ...rangeParams(), orientation: o || orientation });
     } catch (e) {
       setError(e.message);
     } finally {
@@ -203,7 +206,7 @@ export default function Mouchard() {
   if (!data) {
     return (
       <div className="space-y-6">
-        <h2 className="text-lg font-bold text-slate-900">Mouchard — journal des activités</h2>
+        <h2 className="text-lg font-bold text-slate-900">MOUCHARD — JOURNAL DES ACTIVITÉS</h2>
         {error && <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-200">{error}</p>}
         <p className="text-sm text-slate-400">Chargement…</p>
       </div>
@@ -232,7 +235,7 @@ export default function Mouchard() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Mouchard — journal des activités</h2>
+          <h2 className="text-lg font-bold text-slate-900">MOUCHARD — JOURNAL DES ACTIVITÉS</h2>
           <p className="text-sm text-slate-500">
             Détecte et journalise chaque opération (lecture · ajout · modification · suppression) et chaque connexion,
             par compte. Réservé au Super Admin.
@@ -302,9 +305,12 @@ export default function Mouchard() {
           <button className="btn-secondary" onClick={() => fileRef.current?.click()} disabled={busy}>
             <IconUpload /> Restaurer
           </button>
-          <button className="btn-secondary" onClick={imprimer} disabled={busy}>
-            <IconFileText /> Imprimer PDF
-          </button>
+          <ImprimerPdf
+            orientation={orientation}
+            onOrientationChange={setOrientation}
+            onPrint={imprimer}
+            busy={busy}
+          />
           <button
             className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
             onClick={supprimer}

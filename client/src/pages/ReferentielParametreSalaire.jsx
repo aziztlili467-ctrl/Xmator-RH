@@ -112,7 +112,7 @@ export default function ReferentielParametreSalaire() {
   return (
     <div className="space-y-6">
       <div className="print:hidden">
-        <h2 className="text-lg font-bold text-slate-900">Paramètre de Salaire</h2>
+        <h2 className="text-lg font-bold text-slate-900">PARAMÈTRE DE SALAIRE</h2>
         <p className="text-sm text-slate-500">
           Référentiel des éléments de salaire : grilles, barèmes, primes, indices et paramètres de calcul de la paie.
         </p>

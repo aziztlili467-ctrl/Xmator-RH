@@ -135,7 +135,7 @@ export default function ParametresGeneraux() {
         <div className="flex items-center gap-3">
           <span className="icon-badge" style={{ color: 'var(--brand-700)' }}><IconBuildingOffice /></span>
           <div>
-            <h2 className="text-xl font-bold text-brand-700">Identité de l’organisme</h2>
+            <h2 className="text-xl font-bold text-brand-700">IDENTITÉ DE L’ORGANISME</h2>
             <p className="text-sm text-slate-500">Chargement des informations de l’employeur…</p>
           </div>
         </div>
@@ -152,7 +152,7 @@ export default function ParametresGeneraux() {
           <IconBuildingOffice />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="text-xl font-bold text-brand-700">Identité de l’organisme</h2>
+          <h2 className="text-xl font-bold text-brand-700">IDENTITÉ DE L’ORGANISME</h2>
           <p className="text-sm text-slate-500">
             Informations légales, sociales, bancaires et administratives de l’employeur — utilisées sur les
             bulletins de paie, attestations et documents officiels.

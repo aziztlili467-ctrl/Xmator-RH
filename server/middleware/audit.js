@@ -17,6 +17,7 @@ const MODULES = {
   paie: 'Paie mensuelle & codification',
   rma: "Journal RMA (repos · maladie · absence)",
   notif_absence: "Notification d'absences",
+  credits: 'Crédits & avances',
 };
 
 function modulePourPath(path) {
@@ -40,6 +41,7 @@ function modulePourPath(path) {
     ['/codes-paie', 'paie'],
     ['/journal-rma', 'rma'],
     ['/notifications-absence', 'notif_absence'],
+    ['/credits-avances', 'credits'],
     ['/chat', 'application_web'],
     ['/appareils', 'application_web'],
   ];

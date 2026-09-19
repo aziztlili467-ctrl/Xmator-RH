@@ -296,7 +296,7 @@ export default function CalendrierAnnee() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">Calendrier de l'année</h2>
+          <h2 className="text-xl font-bold text-slate-900">CALENDRIER DE L'ANNÉE</h2>
           <p className="text-sm text-slate-500">Heures de travail, ramadan, jours fériés et jours travaillés — Administration</p>
         </div>
         <label className="flex items-center gap-2 text-sm font-semibold text-slate-600">

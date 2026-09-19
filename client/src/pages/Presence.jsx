@@ -402,7 +402,7 @@ export default function Presence() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Présences & pointages</h2>
+          <h2 className="text-lg font-bold text-slate-900">PRÉSENCES & POINTAGES</h2>
           <p className="text-sm text-slate-500">
             Analyse des badgeages : entrée (min) / sortie (max) du jour, retards et sorties anticipées par rapport aux horaires réglementaires de la catégorie.
           </p>
@@ -473,7 +473,10 @@ export default function Presence() {
       )}
 
       <p className="rounded-lg bg-indigo-50 px-4 py-3 text-sm text-indigo-800 ring-1 ring-indigo-200">
-        Tolérance : un retard n'est comptabilisé que s'il dépasse 30 minutes ; une sortie anticipée n'est comptabilisée que si l'employé part 15 minutes avant l'heure réglementaire de sortie.
+        Les horaires réglementaires (entrée / sortie) sont définis par catégorie dans{' '}
+        <strong>Paramètres de Pointage → Tolérance de retard et de sortie</strong>. Un retard n'est comptabilisé que
+        s'il dépasse 30 minutes ; une sortie anticipée n'est comptabilisée que si l'employé part 15 minutes avant
+        l'heure réglementaire de sortie.
       </p>
 
       {!data && !loading && (

@@ -135,7 +135,7 @@ export default function FicheProfil() {
 
     const feuille1 = `
       <div class="f-title-wrap">
-        <h2 class="f-title">Fiche Signalétique</h2>
+        <h2 class="f-title">FICHE SIGNALÉTIQUE</h2>
         <div class="f-title-ref"><b>${esc(nom)}</b>Document établi le ${dateDoc} à ${heureDoc}</div>
       </div>
       ${identite}

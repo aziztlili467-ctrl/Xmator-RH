@@ -60,13 +60,14 @@ export function getAppareilId() {
 // Tolérance à la rotation concurrente : si le premier essai échoue en 401 (token juste
 // roté par un appel concurrent), on laisse le Set-Cookie du gagnant arriver dans le
 // navigateur puis on relit le cookie (le navigateur détient le plus récent) et on
-// n'émet qu'UN seul nouvel essai.
+// n'émet que peu de nouveaux essais espacés (le Set-Cookie doit être appliqué).
 let _refreshing = null;
 let _refreshUser = null;
+const _DELAIS_ROTATION = [400, 800, 1200, 1600]; // ms avant chaque nouvel essai
 async function tryRefresh() {
   if (_refreshing) return _refreshing;
   _refreshing = (async () => {
-    for (let essai = 0; essai < 2; essai += 1) {
+    for (let essai = 0; essai < _DELAIS_ROTATION.length + 1; essai += 1) {
       try {
         const res = await fetch(BASE + '/auth/refresh', {
           method: 'POST',
@@ -74,8 +75,8 @@ async function tryRefresh() {
           headers: { 'Content-Type': 'application/json' },
         });
         if (!res.ok) {
-          if (essai === 0 && res.status === 401) {
-            await new Promise((r) => setTimeout(r, 250));
+          if (essai < _DELAIS_ROTATION.length && res.status === 401) {
+            await new Promise((r) => setTimeout(r, _DELAIS_ROTATION[essai]));
             continue;
           }
           return false;
@@ -87,8 +88,8 @@ async function tryRefresh() {
         setSessionId(data.session_id);
         return true;
       } catch {
-        if (essai === 0) {
-          await new Promise((r) => setTimeout(r, 250));
+        if (essai < _DELAIS_ROTATION.length) {
+          await new Promise((r) => setTimeout(r, _DELAIS_ROTATION[essai]));
           continue;
         }
         return false;
@@ -466,6 +467,24 @@ export const api = {
   supprimerRegleCalculPaie: (id) => request('/regles-calcul-paie/' + id, { method: 'DELETE' }),
   // Taux des rubriques calculées (CNSS, CSS, IRPP, retenues sociales) — enregistrés depuis l'onglet Bulletin de Paie
   sauverTauxPaie: (body) => request('/regles-calcul-paie/taux', { method: 'PUT', body: JSON.stringify(body) }),
+
+  // ---- Crédits & Avances Emploi ----
+  creditsTypes: () => request('/credits-avances/types'),
+  creditCreateType: (body) => request('/credits-avances/types', { method: 'POST', body: JSON.stringify(body) }),
+  creditUpdateType: (id, body) => request(`/credits-avances/types/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  creditDeleteType: (id) => request(`/credits-avances/types/${id}`, { method: 'DELETE' }),
+  creditAddChamp: (body) => request('/credits-avances/champs', { method: 'POST', body: JSON.stringify(body) }),
+  creditUpdateChamp: (id, body) => request(`/credits-avances/champs/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  creditDeleteChamp: (id) => request(`/credits-avances/champs/${id}`, { method: 'DELETE' }),
+  creditEmployes: () => request('/credits-avances/employes'),
+  creditContrats: (params = {}) => request('/credits-avances/contrats' + buildQuery(params)),
+  creditCreerContrat: (body) => request('/credits-avances/contrats', { method: 'POST', body: JSON.stringify(body) }),
+  creditSupprimerContrat: (id) => request(`/credits-avances/contrats/${id}`, { method: 'DELETE' }),
+  creditEcheancePayer: (id, eid) => request(`/credits-avances/contrats/${id}/echeances/${eid}/payer`, { method: 'POST' }),
+  creditEcheanceDepayer: (id, eid) => request(`/credits-avances/contrats/${id}/echeances/${eid}/depayer`, { method: 'POST' }),
+  creditAnnuler: (id) => request(`/credits-avances/contrats/${id}/annuler`, { method: 'POST' }),
+  // Retenues crédit du mois (injectées « À déduire » dans le bulletin de paie)
+  creditsPrets: (params = {}) => request('/credits-avances/prets' + buildQuery(params)),
 
   // Journal RMA (Repos · Maladie · Absence) — codifications importées fusionnées au journal de paie
   journalRma: (params = {}) => request('/journal-rma' + buildQuery(params)),

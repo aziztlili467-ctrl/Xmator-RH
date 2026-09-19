@@ -54,19 +54,26 @@ function normaliserDate(v) {
 
 // ---- Matrice des codifications importées (Journal RMA) ----
 router.get('/', (req, res) => {
-  const { debut, fin } = req.query;
+  const { debut, fin, matricule } = req.query;
   if (!debut || !fin || !DATE_RE.test(debut) || !DATE_RE.test(fin)) {
     return res.status(400).json({ error: 'Paramètres debut et fin requis au format AAAA-MM-JJ.' });
   }
   if (fin < debut) return res.status(400).json({ error: 'La date de fin doit être postérieure ou égale à la date de début.' });
 
-  const employes = db.prepare(`
+  let sqlEmp = `
     SELECT e.id, e.matricule, e.nom, e.prenom, c.libelle AS categorie
     FROM employes e
     JOIN categories c ON c.id = e.categorie_id
     WHERE e.actif = 1
-    ORDER BY CAST(e.matricule AS INTEGER), e.matricule
-  `).all();
+  `;
+  const paramsEmp = [];
+  if (matricule) {
+    sqlEmp += ' AND (e.matricule = ? OR CAST(e.matricule AS INTEGER) = ?)';
+    const n = parseInt(matricule, 10);
+    paramsEmp.push(String(matricule).trim(), isNaN(n) ? -1 : n);
+  }
+  sqlEmp += ' ORDER BY CAST(e.matricule AS INTEGER), e.matricule';
+  const employes = db.prepare(sqlEmp).all(...paramsEmp);
 
   const rows = db.prepare(`
     SELECT employe_id, date AS jour, code, demi_journee FROM codes_importes
@@ -502,17 +509,25 @@ router.delete('/cell', (req, res) => {
 
 // ---- Export PDF RMA — modèle IDENTIQUE au Journal de paie (server/utils/pdfJournal.js) ----
 router.get('/pdf', (req, res) => {
-  const { debut, fin } = req.query;
+  const { debut, fin, matricule, orientation } = req.query;
   if (!debut || !fin || !DATE_RE.test(debut) || !DATE_RE.test(fin)) {
     return res.status(400).json({ error: 'Paramètres debut et fin requis au format AAAA-MM-JJ.' });
   }
   if (fin < debut) return res.status(400).json({ error: 'La date de fin doit être postérieure ou égale à la date de début.' });
 
-  const employes = db.prepare(`
+  let sqlEmp = `
     SELECT e.id, e.matricule, e.nom, e.prenom, c.libelle AS categorie
     FROM employes e JOIN categories c ON c.id = e.categorie_id
-    WHERE e.actif = 1 ORDER BY CAST(e.matricule AS INTEGER), e.matricule
-  `).all();
+    WHERE e.actif = 1
+  `;
+  const paramsEmp = [];
+  if (matricule) {
+    sqlEmp += ' AND (e.matricule = ? OR CAST(e.matricule AS INTEGER) = ?)';
+    const n = parseInt(matricule, 10);
+    paramsEmp.push(String(matricule).trim(), isNaN(n) ? -1 : n);
+  }
+  sqlEmp += ' ORDER BY CAST(e.matricule AS INTEGER), e.matricule';
+  const employes = db.prepare(sqlEmp).all(...paramsEmp);
   const rows = db.prepare(`SELECT employe_id, date AS jour, code, demi_journee FROM codes_importes WHERE date >= ? AND date <= ? ORDER BY date, code`).all(debut, fin);
   const jours = {};
   const joursDemi = {};
@@ -528,7 +543,12 @@ router.get('/pdf', (req, res) => {
     parCode[r.code] = (parCode[r.code] || 0) + 1;
   }
   const dates = listDates(debut, fin);
-  return buildPdf({ res, debut, fin, dates, employes, jours, joursDemi, totaux: { par_code: parCode, total: rows.length }, titre: 'Journal RMA' });
+  return buildPdf({
+    res, debut, fin, dates, employes, jours, joursDemi,
+    totaux: { par_code: parCode, total: rows.length },
+    titre: 'Journal RMA',
+    orientation: orientation === 'portrait' ? 'portrait' : 'landscape',
+  });
 });
 
 module.exports = router;

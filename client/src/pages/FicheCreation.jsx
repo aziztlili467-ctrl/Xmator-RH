@@ -381,7 +381,7 @@ export default function FicheCreation() {
 
   const sectionActive = sections?.[activeFiche]?.id || 'perso';
   const section = sections?.[activeFiche];
-  const sectionIcon = section ? (ICONS[section.iconName] || IconUser) : IconUser;
+  const SectionIcon = section ? (ICONS[section.iconName] || IconUser) : IconUser;
 
   const renderFieldBody = (c, accent, soft) => {
     if (c.id === 'nationalite') {
@@ -780,7 +780,7 @@ export default function FicheCreation() {
             <form onSubmit={submit} className="card fade-in" style={{ borderTop: `4px solid ${section.color}` }}>
               <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3" style={{ borderColor: `${section.color}40`, background: section.soft }}>
                 <span className="icon-badge text-white" style={{ background: `linear-gradient(135deg, ${section.color}, ${section.color}bb)`, width: 44, height: 44 }}>
-                  <FitIcon size={22} color="#fff"><sectionIcon /></FitIcon>
+                  <FitIcon size={22} color="#fff"><SectionIcon /></FitIcon>
                 </span>
                 <div className="flex-1">
                   <p className="text-sm font-extrabold tracking-wide" style={{ color: section.color }}>{section.title}</p>

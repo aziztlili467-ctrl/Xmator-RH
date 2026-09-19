@@ -3,31 +3,38 @@ import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { fmtDate, fmtJours, downloadFile } from '../utils';
 import BadgeType from '../components/BadgeType';
-import { IconDownload } from '../components/icons';
+import ImprimerPdf from '../components/ImprimerPdf';
+import { IconDownload, IconFilter } from '../components/icons';
 
 export default function JournalMaladie() {
-  const [data, setData] = useState({ total: 0, operations: [] });
+  const [data, setData] = useState(null);
   const [employes, setEmployes] = useState([]);
-  const [filters, setFilters] = useState({ employe: '', type: '', annee: '', search: '' });
-  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState({ employe: '', type: '', annee: '', matricule: '', search: '' });
+  const [orientation, setOrientation] = useState('portrait');
+  const [loading, setLoading] = useState(false);
+  const [printing, setPrinting] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     api.employes().then(setEmployes).catch(() => {});
   }, []);
 
-  useEffect(() => {
-    setLoading(true);
-    api.journalMaladie(filters)
-      .then(setData)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [filters]);
-
   const set = (k, v) => setFilters((f) => ({ ...f, [k]: v }));
 
+  // Les lignes ne sont chargées qu'après un clic sur « Exécuter » (page vide par défaut).
+  const executer = () => {
+    setLoading(true);
+    setError('');
+    api.journalMaladie(filters)
+      .then(setData)
+      .catch((e) => { setError(e.message); setData(null); })
+      .finally(() => setLoading(false));
+  };
+
+  const reinitialiser = () => setFilters({ employe: '', type: '', annee: '', matricule: '', search: '' });
+
   const stats = useMemo(() => {
-    const ops = data.operations;
+    const ops = (data && data.operations) || [];
     const valides = ops.filter((o) => o.type_operation === 'maladie');
     const absences = ops.filter((o) => o.type_operation === 'absence');
     const credits = ops.filter((o) => o.type_operation === 'solde_initial' || o.type_operation === 'ajout_annuel');
@@ -40,14 +47,38 @@ export default function JournalMaladie() {
       absenceJours: absences.reduce((s, o) => s + o.jours, 0),
       creditsJours: credits.reduce((s, o) => s + o.jours, 0),
     };
-  }, [data.operations]);
+  }, [data]);
 
   const exportCsv = () => {
+    if (!data) return;
     const header = 'Date opération;N° arrêt;Matricule;Agent;Catégorie;Type;Bulletin;Certificat;Jours;Solde après';
     const lines = data.operations.map((m) =>
       [m.date_operation, m.arret_numero ? `N°${String(m.arret_numero).padStart(3, '0')}` : '', m.matricule, `${m.nom} ${m.prenom}`, m.categorie, m.type_operation, m.numero_bulletin || '', m.certificat || '', m.jours, m.solde_apres].join(';')
     );
     downloadFile('journal_arrêts_maladie.csv', [header, ...lines].join('\n'));
+  };
+
+  const imprimerPdf = async (o) => {
+    if (!data) return;
+    setPrinting(true);
+    setError('');
+    try {
+      await api.journalMaladiePrint({ ...filters, orientation: o || orientation });
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setPrinting(false);
+    }
+  };
+
+  const telechargerPdf = async (o) => {
+    if (!data) return;
+    setError('');
+    try {
+      await api.journalMaladiePdf({ ...filters, orientation: o || orientation });
+    } catch (e) {
+      setError(e.message);
+    }
   };
 
   const selectCls = 'input bg-white';
@@ -56,16 +87,31 @@ export default function JournalMaladie() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Journal des arrêts maladie</h2>
-          <p className="text-sm text-slate-500">{`Toutes les opérations liées à la maladie (soldes, arrêts validés, absences) — ${data.operations.length} opération(s)`}</p>
+          <h2 className="text-lg font-bold text-slate-900">JOURNAL DES ARRÊTS MALADIE</h2>
+          <p className="text-sm text-slate-500">
+            {data
+              ? `Toutes les opérations liées à la maladie (soldes, arrêts validés, absences) — ${data.operations.length} opération(s)`
+              : 'Toutes les opérations liées à la maladie — cliquez sur Exécuter pour afficher les lignes.'}
+          </p>
         </div>
-        <button className="btn-secondary" onClick={exportCsv}>
-          <IconDownload /> Exporter CSV
-        </button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <button className="btn-secondary" onClick={exportCsv} disabled={!data || data.operations.length === 0}>
+            <IconDownload /> Exporter CSV
+          </button>
+          <ImprimerPdf
+            orientation={orientation}
+            onOrientationChange={setOrientation}
+            onPrint={imprimerPdf}
+            onDownload={telechargerPdf}
+            disabled={!data || data.operations.length === 0}
+            busy={printing}
+          />
+        </div>
       </div>
 
       {error && <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-200">{error}</p>}
 
+      {data && (
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className="card p-4">
           <p className="text-[11px] font-semibold uppercase text-slate-400">Arrêts traités</p>
@@ -88,10 +134,12 @@ export default function JournalMaladie() {
           <p className="text-xs text-slate-500">soldes initiaux + ajouts annuels</p>
         </div>
       </div>
+      )}
 
       <div className="card p-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <input className="input" placeholder="Recherche (nom, matricule, bulletin…)" value={filters.search} onChange={(e) => set('search', e.target.value)} />
+          <input className="input" placeholder="Recherche (nom, bulletin…)" value={filters.search} onChange={(e) => set('search', e.target.value)} />
+          <input type="text" className="input font-mono" placeholder="Matricule (ex : 35)" value={filters.matricule} onChange={(e) => set('matricule', e.target.value)} />
           <select className={selectCls} value={filters.employe} onChange={(e) => set('employe', e.target.value)}>
             <option value="">Tous les employés</option>
             {employes.map((e) => (
@@ -107,11 +155,25 @@ export default function JournalMaladie() {
           </select>
           <div className="flex items-center gap-2">
             <input type="number" className="input" placeholder="Année (ex. 2026)" value={filters.annee} onChange={(e) => set('annee', e.target.value)} />
-            <button className="btn-secondary" onClick={() => setFilters({ employe: '', type: '', annee: '', search: '' })}>Réinitialiser</button>
+            <button className="btn-secondary" onClick={reinitialiser}>Réinitialiser</button>
           </div>
+          <button className="btn-primary" onClick={executer} disabled={loading}>
+            <IconFilter /> {loading ? 'Chargement…' : 'Exécuter'}
+          </button>
         </div>
       </div>
 
+      {!data && !loading && (
+        <div className="card flex flex-col items-center gap-2 p-8 text-center">
+          <IconFilter className="h-8 w-8 text-slate-300" />
+          <p className="text-sm font-semibold text-slate-700">Aucune ligne affichée</p>
+          <p className="text-sm text-slate-500">
+            Renseignez une année et/ou un matricule, puis cliquez sur <strong>Exécuter</strong> pour afficher le journal des arrêts maladie.
+          </p>
+        </div>
+      )}
+
+      {data && (
       <div className="card overflow-hidden">
         <div className="table-wrap">
           <table className="w-max-table text-sm">
@@ -168,6 +230,7 @@ export default function JournalMaladie() {
           </table>
         </div>
       </div>
+      )}
     </div>
   );
 }

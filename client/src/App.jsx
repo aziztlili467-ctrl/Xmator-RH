@@ -24,6 +24,7 @@ const ArretMaladie = lazy(() => import('./pages/ArretMaladie'));
 const ArretsMaladieInstance = lazy(() => import('./pages/ArretsMaladieInstance'));
 const AjoutSoldeMaladie = lazy(() => import('./pages/AjoutSoldeMaladie'));
 const JournalMaladie = lazy(() => import('./pages/JournalMaladie'));
+const CreditsAvances = lazy(() => import('./pages/CreditsAvances'));
 const StatsJournal = lazy(() => import('./pages/StatsJournal'));
 const ParametresCodification = lazy(() => import('./pages/ParametresCodification'));
 const ParametresPresence = lazy(() => import('./pages/ParametresPresence'));
@@ -54,6 +55,7 @@ const ReferentielParametresPointage = lazy(() => import('./pages/ReferentielPara
 const ReferentielPromotionNotation = lazy(() => import('./pages/ReferentielPromotionNotation'));
 const ReferentielSaasTableauBord = lazy(() => import('./pages/ReferentielSaasTableauBord'));
 const BorneXmatorEye = lazy(() => import('./pages/BorneXmatorEye'));
+const ModulesHub = lazy(() => import('./pages/ModulesHub'));
 const Maquette = lazy(() => import('./pages/Maquette'));
 
 function Chargement() {
@@ -103,6 +105,9 @@ function AppRoutes() {
       <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
       <Route path="/acces-refuse" element={<AccesRefuse />} />
       <Route path="/borne" element={<RequireAuth><BorneXmatorEye /></RequireAuth>} />
+      {/* Portail de sélection des modules : route STANDALONE (hors Layout) pour
+          offrir 100 % de l'écran aux cartes sur mobile / PWA, sans sidebar. */}
+      <Route path="/modules" element={<RequireAuth><ModulesHub /></RequireAuth>} />
       {/* Vitrine design du tableau de bord (données de démo embarquées, aucune API) */}
       <Route path="/maquette" element={<Maquette />} />
 
@@ -160,6 +165,7 @@ function AppRoutes() {
         <Route path="/maladie/instance" element={<ArretsMaladieInstance />} />
         <Route path="/maladie/ajout-solde" element={<AjoutSoldeMaladie />} />
         <Route path="/maladie/journal" element={<JournalMaladie />} />
+        <Route path="/credits-avances" element={<CreditsAvances />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
       </Routes>

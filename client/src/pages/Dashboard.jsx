@@ -815,7 +815,7 @@ export default function Dashboard({ demo: demoProp = false }) {
         <div className="min-w-0">
           <p className="eyebrow flex items-center gap-2">Xmator RH · Poste de pilotage <span className="live-dot" /></p>
           <h1 className="mt-1.5 text-[22px] font-black leading-none tracking-tight gold-text sm:text-[26px] lg:text-[30px]" style={{ fontFamily: 'var(--font-sans)', letterSpacing: '-0.03em' }}>
-            Tableau de bord
+            TABLEAU DE BORD
           </h1>
           <p className="num mt-2 text-[11px] font-semibold" style={{ color: 'var(--dp-text-3)' }}>
             Période pilotée : {fmtDate(periode.debut)} → {fmtDate(periode.fin)}
@@ -1263,7 +1263,7 @@ export default function Dashboard({ demo: demoProp = false }) {
                 <div className="panel rise overflow-hidden p-0" style={{ '--d': '460ms' }}>
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4 sm:px-5" style={{ borderColor: 'var(--dp-hairline)' }}>
                     <div>
-                      <h2 className="sec-title">Détail par employé</h2>
+                      <h2 className="sec-title">DÉTAIL PAR EMPLOYÉ</h2>
                       <p className="num text-[10.5px]" style={{ color: 'var(--dp-text-3)' }}>
                         {employesFiltres.length} / {data.employes.length} employé(s) affiché(s){situation ? ` · ${situation.text}` : ''}
                       </p>

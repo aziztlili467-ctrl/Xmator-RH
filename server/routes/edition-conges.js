@@ -21,7 +21,7 @@ function fmtJours(n) {
 
 // ─── GET /  (JSON) ───────────────────────────────────────────────────────────
 router.get('/', (req, res) => {
-  const { employe, categorie, debut, fin, search } = req.query;
+  const { employe, categorie, debut, fin, search, matricule } = req.query;
   let sql = `
     SELECT e.id AS employe_id, e.matricule, e.nom, e.prenom,
            c.libelle AS categorie, e.departement
@@ -32,6 +32,11 @@ router.get('/', (req, res) => {
   const params = [];
   if (employe) { sql += ' AND e.id = ?'; params.push(Number(employe)); }
   if (categorie) { sql += ' AND e.categorie_id = ?'; params.push(Number(categorie)); }
+  if (matricule) {
+    sql += ' AND (e.matricule = ? OR CAST(e.matricule AS INTEGER) = ?)';
+    const n = parseInt(matricule, 10);
+    params.push(String(matricule).trim(), isNaN(n) ? -1 : n);
+  }
   if (search) {
     sql += ' AND (e.matricule LIKE ? OR e.nom LIKE ? OR e.prenom LIKE ?)';
     const p = `%${search}%`;
@@ -54,7 +59,7 @@ router.get('/', (req, res) => {
 
 // ─── Helpers requête commune (filtres) ────────────────────────────────────────
 function buildList(req) {
-  const { employe, categorie, debut, fin, search } = req.query;
+  const { employe, categorie, debut, fin, search, matricule } = req.query;
   let sql = `
     SELECT e.id AS employe_id, e.matricule, e.nom, e.prenom,
            c.libelle AS categorie, e.departement
@@ -65,6 +70,11 @@ function buildList(req) {
   const params = [];
   if (employe) { sql += ' AND e.id = ?'; params.push(Number(employe)); }
   if (categorie) { sql += ' AND e.categorie_id = ?'; params.push(Number(categorie)); }
+  if (matricule) {
+    sql += ' AND (e.matricule = ? OR CAST(e.matricule AS INTEGER) = ?)';
+    const n = parseInt(matricule, 10);
+    params.push(String(matricule).trim(), isNaN(n) ? -1 : n);
+  }
   if (search) {
     sql += ' AND (e.matricule LIKE ? OR e.nom LIKE ? OR e.prenom LIKE ?)';
     const p = `%${search}%`;
@@ -87,12 +97,15 @@ function buildList(req) {
 }
 
 // ─── GET /pdf  (PDF imprimable — maquette cabinet GRH) ──────────────────────
+// `orientation` = portrait (défaut) ou paysage : la mise en page (bandeau, indicateurs,
+// tableau à largeur variable) s'adapte automatiquement au format demandé.
 router.get('/pdf', (req, res) => {
   const { dateRef, data } = buildList(req);
   const titre = 'Journal des Congés';
+  const paysage = req.query.orientation === 'landscape';
   const doc = new PDFDocument({
     size: 'A4',
-    layout: 'portrait',
+    layout: paysage ? 'landscape' : 'portrait',
     margins: { top: 12, bottom: 20, left: 16, right: 16 },
   });
   doc.registerFont('Garamond', path.join(__dirname, '..', 'fonts', 'EBGaramond.ttf'));

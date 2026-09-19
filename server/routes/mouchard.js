@@ -1,7 +1,5 @@
 const { Router } = require('express');
-const path = require('path');
 const { db } = require('../db');
-const PDFDocument = require('pdfkit');
 const router = Router();
 
 const MODULES = ['employes', 'categories', 'soldes', 'demandes', 'maladie', 'statistiques', 'comptes', 'administration', 'horaires', 'calendrier'];
@@ -204,7 +202,8 @@ router.post('/restaurer', (req, res) => {
   res.json({ ok: true, ...result });
 });
 
-// GET /api/mouchard/pdf?debut=&fin= — imprimer les événements d'une période (PDF)
+// GET /api/mouchard/pdf?debut=&fin=&orientation= — imprimer les événements d'une période
+// (paysage par défaut, portrait au choix — le tableau s'adapte au format demandé)
 router.get('/pdf', (req, res) => {
   const { where, vals, debut, fin } = plage(req);
   if (debut && fin && fin < debut) return res.status(400).json({ error: 'La date de fin doit être postérieure ou égale à la date de début.' });
@@ -213,99 +212,35 @@ router.get('/pdf', (req, res) => {
     FROM audit_logs ${where} ORDER BY id
   `).all(...vals);
 
-  const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margins: { top: 40, bottom: 40, left: 40, right: 40 } });
-  doc.registerFont('Garamond', path.join(__dirname, '..', 'fonts', 'EBGaramond.ttf'));
-  const { drawPDFBrandFooter } = require('../utils/pdfBranding');
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="mouchard-evenements_${debut || 'tout'}_${fin || 'tout'}.pdf"`);
-  doc.pipe(res);
-
-  const L = doc.page.margins.left;
-  const R = doc.page.width - doc.page.margins.right;
-  const W = R - L;
-  const pageH = doc.page.height;
-
-  const COLS = [
-    { label: '#', w: 28 },
-    { label: 'Date & heure', w: 92 },
-    { label: 'Login', w: 100 },
-    { label: 'Rôle', w: 78 },
-    { label: 'Action', w: 88 },
-    { label: 'Rubrique', w: 108 },
-    { label: 'Détail', w: 232 },
-    { label: 'Statut', w: 36 },
-  ];
-  const rowH = 16;
-
+  const { buildListePdf } = require('../utils/pdfTable');
   const periode = debut && fin
-    ? `Période : du ${fmtDateFR(debut)} au ${fmtDateFR(fin)}`
+    ? `du ${fmtDateFR(debut)} au ${fmtDateFR(fin)}`
     : debut
-      ? `Période : à partir du ${fmtDateFR(debut)}`
+      ? `à partir du ${fmtDateFR(debut)}`
       : fin
-        ? `Période : jusqu'au ${fmtDateFR(fin)}`
-        : 'Période : toutes les dates';
+        ? `jusqu'au ${fmtDateFR(fin)}`
+        : 'toutes les dates';
 
-  const drawHeader = (y) => {
-    doc.font('Garamond').fontSize(15).fillColor('#1f2937').text('Amicale du Personnel de la Banque Centrale de Tunisie', L, y, { align: 'center', width: W, lineBreak: false });
-    doc.font('Garamond').fontSize(19).fillColor('#111827').text('Journal des activités (Mouchard)', L, y + 18, { align: 'center', width: W, lineBreak: false });
-    doc.font('Helvetica').fontSize(9).fillColor('#6b7280').text(`${periode} — ${evenements.length} événement(s)`, L, y + 39, { align: 'center', width: W, lineBreak: false });
-    return y + 58;
-  };
-
-  const drawCols = (y) => {
-    doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#111827');
-    let x = L;
-    for (const c of COLS) {
-      doc.text(c.label, x + 3, y + 4, { width: c.w - 6, lineBreak: false });
-      x += c.w;
-    }
-    doc.moveTo(L, y).lineTo(R, y).strokeColor('#111827').lineWidth(0.8).stroke();
-    doc.moveTo(L, y + rowH).lineTo(R, y + rowH).strokeColor('#111827').lineWidth(0.8).stroke();
-    return y + rowH;
-  };
-
-  const drawRow = (ev, idx, y) => {
-    const vals = [
-      String(idx + 1),
-      fmtDateTimeFR(ev.created_at),
-      String(ev.login || '?'),
-      ROLE_LABELS[ev.role] || ev.role || '—',
-      ACTION_LABELS[ev.action] || ev.action || '—',
-      MODULE_LABELS[ev.module] || ev.module || '—',
-      String(ev.detail || ''),
-      ev.statut == null ? '' : String(ev.statut),
-    ];
-    let x = L;
-    for (let i = 0; i < COLS.length; i++) {
-      doc.font('Helvetica').fontSize(8).fillColor('#111827');
-      doc.text(vals[i], x + 3, y + 4, { width: COLS[i].w - 6, lineBreak: false, ellipsis: true });
-      x += COLS[i].w;
-    }
-    doc.moveTo(L, y + rowH).lineTo(R, y + rowH).strokeColor('#d1d5db').lineWidth(0.5).stroke();
-    let vx = L;
-    for (const c of COLS) {
-      vx += c.w;
-      doc.moveTo(vx, y).lineTo(vx, y + rowH).strokeColor('#e5e7eb').lineWidth(0.4).stroke();
-    }
-    return y + rowH;
-  };
-
-  let y = drawHeader(32);
-  y = drawCols(y);
-  if (evenements.length === 0) {
-    doc.font('Helvetica').fontSize(10).fillColor('#6b7280').text('Aucun événement sur la période demandée.', L, y + 16, { align: 'center', width: W });
-  }
-  evenements.forEach((ev, idx) => {
-    if (y + rowH > pageH - 40) {
-      doc.addPage();
-      y = drawHeader(32);
-      y = drawCols(y);
-    }
-    y = drawRow(ev, idx, y);
+  return buildListePdf({
+    res,
+    orientation: req.query.orientation === 'portrait' ? 'portrait' : 'landscape',
+    titre: 'Mouchard — Journal des activités',
+    sousTitre: `Période : ${periode} — ${evenements.length} événement(s)`,
+    refLigne: `Édité le ${fmtDateFR(new Date().toISOString().slice(0, 10))} · ${new Date().toTimeString().slice(0, 5)}`,
+    filename: `mouchard-evenements_${debut || 'tout'}_${fin || 'tout'}.pdf`,
+    emptyText: 'Aucun événement sur la période demandée.',
+    columns: [
+      { label: '#', weight: 0.35, align: 'right', color: '#94a3b8', format: (ev) => String(evenements.indexOf(ev) + 1) },
+      { label: 'Date & heure', weight: 1.15, format: (ev) => fmtDateTimeFR(ev.created_at) },
+      { label: 'Login', weight: 1.15, bold: true, format: (ev) => String(ev.login || '?') },
+      { label: 'Rôle', weight: 0.95, format: (ev) => ROLE_LABELS[ev.role] || ev.role || '—' },
+      { label: 'Action', weight: 1.1, format: (ev) => ACTION_LABELS[ev.action] || ev.action || '—' },
+      { label: 'Rubrique', weight: 1.3, format: (ev) => MODULE_LABELS[ev.module] || ev.module || '—' },
+      { label: 'Détail', weight: 3.4, color: '#475569', format: (ev) => String(ev.detail || '—') },
+      { label: 'Statut', weight: 0.55, align: 'center', format: (ev) => (ev.statut == null ? '—' : String(ev.statut)) },
+    ],
+    rows: evenements,
   });
-
-  drawPDFBrandFooter(doc, { footerText: 'Journal des activités (Mouchard)' });
-  doc.end();
 });
 
 // DELETE /api/mouchard?debut=&fin= — supprimer les événements d'une période (tout si aucune période)

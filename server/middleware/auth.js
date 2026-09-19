@@ -27,6 +27,7 @@ const MODULES = {
   soldes: 'Soldes & opérations',
   demandes: 'Demandes de congé',
   maladie: 'Arrêts maladie',
+  credits: 'Crédits & avances',
 };
 
 // Permissions par défaut (tout décoché)
@@ -85,20 +86,28 @@ function parseCookies(req) {
   return map;
 }
 
+// Cross-origin (déploiement Render : client et API sur des hôtes différents) →
+// le navigateur n'envoie jamais un cookie SameSite=Lax sur la requête cross-site
+// POST /auth/refresh (seule une navigation GET de niveau supérieur transporterait
+// le cookie Lax). Conséquence : à chaque F5 en production, le refresh de session
+// 401 → déconnexion. Il faut donc SameSite=None + Secure pour ce cas-là.
+const SAME_SITE_REFRESH = process.env.CORS_ORIGIN ? 'None' : 'Lax';
+
 function setRefreshCookie(res, token, maxAgeDays = REFRESH_TOKEN_EXPIRES_DAYS) {
   const parts = [
     `refreshToken=${encodeURIComponent(token)}`,
     'HttpOnly',
     'Path=/',
-    'SameSite=Lax',
+    `SameSite=${SAME_SITE_REFRESH}`,
     `Max-Age=${maxAgeDays * 86400}`,
   ];
-  if (process.env.NODE_ENV === 'production') parts.push('Secure');
+  // Cross-origin → SameSite=None exige Secure ; sur notre backend Render c'est HTTPS.
+  if (SAME_SITE_REFRESH === 'None' || process.env.NODE_ENV === 'production') parts.push('Secure');
   res.setHeader('Set-Cookie', parts.join('; '));
 }
 
 function clearRefreshCookie(res) {
-  res.setHeader('Set-Cookie', 'refreshToken=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0');
+  res.setHeader('Set-Cookie', `refreshToken=; HttpOnly; Path=/; SameSite=${SAME_SITE_REFRESH}${SAME_SITE_REFRESH === 'None' ? '; Secure' : ''}; Max-Age=0`);
 }
 
 // ---- Refresh tokens opaques (stockés hashés ? Non : UUID aléatoire non devinable) ----

@@ -15,11 +15,12 @@ const roleMeta = (r) => ROLES.find((x) => x.value === r) || ROLES[0];
 const ROLE_LABELS = { super_admin: 'Super Admin', consultation: 'Consultation', moderateur: 'Modérateur', employe: 'Employé' };
 
 const MODULES = [
-  { key: 'employes', label: 'Employés' },
-  { key: 'categories', label: 'Catégories' },
-  { key: 'soldes', label: 'Soldes & opérations' },
-  { key: 'demandes', label: 'Demandes de congé' },
-  { key: 'maladie', label: 'Arrêts maladie' },
+  { key: 'employes', label: 'EMPLOYÉS' },
+  { key: 'categories', label: 'CATÉGORIES' },
+  { key: 'soldes', label: 'SOLDES & OPÉRATIONS' },
+  { key: 'demandes', label: 'DEMANDES DE CONGÉ' },
+  { key: 'maladie', label: 'ARRÊTS MALADIE' },
+  { key: 'credits', label: 'CRÉDITS & AVANCES' },
 ];
 
 const ACTIONS = [
@@ -188,7 +189,7 @@ export default function GestionComptes() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Gestion des comptes</h2>
+          <h2 className="text-lg font-bold text-slate-900">GESTION DES COMPTES</h2>
           <p className="text-sm text-slate-500">Création, rôles, réinitialisation de mot de passe et génération d'identifiants.</p>
         </div>
         <div className="flex gap-2">

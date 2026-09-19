@@ -6,6 +6,23 @@ export const CONTRAINTES_VIDEO = {
   audio: false,
 };
 
+// Renvoie la liste des caméras disponibles (après demande de permission ou sur PC si déjà donnée).
+export async function listerCameras() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return [];
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.filter((d) => d.kind === 'videoinput');
+  } catch { return []; }
+}
+
+// Contraintes vidéo ciblées : si deviceId est fourni, on l'utilise en priorité (caméra USB / arrière).
+export function construireContraintes(facingMode = 'user', deviceId) {
+  if (deviceId) {
+    return { video: { width: { ideal: 1280 }, height: { ideal: 720 }, deviceId: { exact: deviceId } }, audio: false };
+  }
+  return { video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode }, audio: false };
+}
+
 // Messages d'aide visibles (PC & mobile)
 export const MESSAGES_CAMERA = {
   permission: "La caméra est bloquée par votre navigateur. Veuillez cliquer sur l'icône de caméra dans la barre d'adresse en haut pour autoriser l'accès.",
@@ -21,7 +38,11 @@ const NOMS_ERREURS_PERMISSION = new Set([
 const NOMS_ERREURS_AUCUNE_CAMERA = new Set([
   'NotFoundError',
   'DevicesNotFoundError',
+]);
+const NOMS_ERREURS_NOTReadable = new Set([
+  'NotReadableError',
   'OverconstrainedError',
+  'AbortError',
 ]);
 
 // Ouvre le flux vidéo : renvoie le MediaStream, ou lève une erreur normalisée
@@ -43,6 +64,9 @@ export async function ouvrirFluxVideo(constraints = CONTRAINTES_VIDEO) {
     } else if (NOMS_ERREURS_AUCUNE_CAMERA.has(name)) {
       erreur.message = MESSAGES_CAMERA.aucune;
       erreur.code = 'aucune';
+    } else if (NOMS_ERREURS_NOTReadable.has(name)) {
+      erreur.message = 'La caméra est déjà utilisée par une autre application ou onglet.';
+      erreur.code = 'occupee';
     } else {
       erreur.message = (err && err.message) || MESSAGES_CAMERA.indisponible;
       erreur.code = 'inconnue';

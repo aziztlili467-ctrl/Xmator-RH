@@ -1,167 +1,15 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { useEffect, useState, useMemo } from 'react';
-import {
-  IconDashboard,
-  IconUsers,
-  IconCalendarPlus,
-  IconArrowDown,
-  IconCalendarCheck,
-  IconJournal,
-  IconEdit,
-  IconTags,
-  IconFileText,
-  IconClipboardCheck,
-  IconStethoscope,
-  IconTrendUp,
-  IconUserCog,
-  IconShieldCheck,
-  IconActivity,
-  IconClock,
-  IconCalendarDays,
-  IconUserClock,
-  IconLogout,
-  IconDownloadApp,
-  IconMonitor,
-  IconChat,
-  IconSettings,
-  IconClipboardList,
-  IconBellAlert,
-  IconBuildingOffice,
-  IconBanknotes,
-  IconAward,
-  IconPrinter,
-  IconCamera,
-} from './icons';
+import { useEffect, useRef, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
+import { IconTags, IconLogout } from './icons';
 import { useAuth } from '../AuthContext';
+import { LayoutGrid } from 'lucide-react';
 import { api, getToken, getSessionId } from '../api';
+import { NAV, GROUP_ICONS, ROLE_LABELS, itemVisible, buildGroups } from '../navConfig';
 import PwaInstall from './PwaInstall';
 import ChatWidget from './ChatWidget';
 import GlobalTableScroll from './GlobalTableScroll';
 import ToastHost from './ToastHost';
-
-const NAV = [
-  { to: '/', label: 'Tableau de bord', icon: IconDashboard, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
-  { section: 'Renseignements RH', roles: ['super_admin', 'moderateur'] },
-  { to: '/employes', label: 'Employés', icon: IconUsers, end: false, roles: ['super_admin', 'moderateur'], module: 'employes' },
-  { to: '/categories', label: 'Catégories', icon: IconTags, end: true, roles: ['super_admin', 'moderateur'], module: 'categories' },
-  { subSection: 'Fiche Signalétique', roles: ['super_admin', 'moderateur'] },
-  { to: '/fiche-signaletique/creation', label: 'Création et Maj Employé', icon: IconUsers, end: true, roles: ['super_admin', 'moderateur'], module: 'employes' },
-  { to: '/fiche-signaletique/profil', label: 'Consult. Profil Employé', icon: IconClipboardList, end: true, roles: ['super_admin', 'moderateur'], module: 'employes' },
-  { to: '/fiche-signaletique/indemnites', label: 'Consult. Détaillée Indemnités', icon: IconTrendUp, end: true, roles: ['super_admin', 'moderateur'], module: 'employes' },
-  { section: 'Demandes de congé', roles: ['super_admin', 'moderateur'] },
-  { to: '/demandes/nouvelle', label: 'Nouvelle demande', icon: IconFileText, end: true, roles: ['super_admin', 'moderateur'], module: 'demandes' },
-  { to: '/demandes/instance', label: 'Demandes en instance', icon: IconClipboardCheck, end: true, roles: ['super_admin', 'moderateur'], module: 'demandes' },
-  { section: 'Gestion des congés', roles: ['super_admin', 'moderateur'] },
-  { to: '/solde-initial', label: 'Nouveau solde initial', icon: IconCalendarPlus, end: true, roles: ['super_admin', 'moderateur'], module: 'soldes' },
-  { to: '/prelevement', label: 'Prélèvement de congé', icon: IconArrowDown, end: true, roles: ['super_admin', 'moderateur'], module: 'soldes' },
-  { to: '/ajout-annuel', label: 'Ajout de solde annuel', icon: IconCalendarCheck, end: true, roles: ['super_admin', 'moderateur'], module: 'soldes' },
-  { to: '/journal', label: 'Journal des mouvements', icon: IconJournal, end: true, roles: ['super_admin', 'moderateur'], module: 'soldes' },
-  { to: '/editer-solde', label: 'Éditer solde de congé', icon: IconEdit, end: true, roles: ['super_admin', 'moderateur'], module: 'soldes' },
-  { subSection: 'Édition des congés', roles: ['super_admin', 'moderateur'] },
-  { to: '/edition-conges', label: 'Journal des congés', icon: IconPrinter, end: true, roles: ['super_admin', 'moderateur'], module: 'soldes' },
-  { section: 'Paie Mensuelle', roles: ['super_admin', 'consultation', 'moderateur'] },
-  { to: '/stats-journal', label: 'Journal de paie', icon: IconTrendUp, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
-  { to: '/journal-rma', label: 'Journal RMA', icon: IconClipboardList, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
-  { to: '/calcul-paie', label: 'Calcul de Paie', icon: IconClipboardList, end: true, roles: ['super_admin', 'consultation', 'moderateur'], module: 'paie' },
-  { to: '/indemnites-fv', label: 'Indemnités FV', icon: IconBanknotes, end: true, roles: ['super_admin', 'consultation', 'moderateur'], module: 'paie' },
-  { to: '/simulateur-impot', label: 'Simulateur Impôt', icon: IconTrendUp, end: true, roles: ['super_admin', 'consultation', 'moderateur'], module: 'paie' },
-  { to: '/parametres-codification', label: 'Paramètres & Codification', icon: IconSettings, end: true, roles: ['super_admin'] },
-  { to: '/grille-salaire', label: 'Grille de Salaire', icon: IconClipboardList, end: true, roles: ['super_admin'] },
-  { section: 'Horaires', roles: ['super_admin', 'consultation', 'moderateur'] },
-  { to: '/horaires', label: 'Horaires de travail', icon: IconClock, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
-  { to: '/presence', label: 'Pointages & présences', icon: IconUserClock, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
-  { to: '/borne', label: 'Borne de pointage (Xmator-Eye)', icon: IconCamera, end: true, roles: ['super_admin', 'consultation', 'moderateur'], module: 'presence' },
-  { to: '/pointage-biometrique', label: 'Pointage biométrique', icon: IconCamera, end: true, roles: ['super_admin', 'consultation', 'moderateur'], module: 'presence' },
-  { to: '/notification-absences', label: "Notification d'Absences", icon: IconBellAlert, end: true, roles: ['super_admin', 'consultation', 'moderateur'] },
-  { section: 'Maladie', roles: ['super_admin', 'moderateur'] },
-  { to: '/maladie/nouvel-arret', label: 'Nouvel arrêt maladie', icon: IconStethoscope, end: true, roles: ['super_admin', 'moderateur'], module: 'maladie' },
-  { to: '/maladie/instance', label: 'Arrêts en instance', icon: IconClipboardCheck, end: true, roles: ['super_admin', 'moderateur'], module: 'maladie' },
-  { to: '/maladie/ajout-solde', label: 'Ajout solde maladie annuel', icon: IconCalendarCheck, end: true, roles: ['super_admin', 'moderateur'], module: 'maladie' },
-  { to: '/maladie/journal', label: 'Journal des arrêts maladie', icon: IconJournal, end: true, roles: ['super_admin', 'moderateur'], module: 'maladie' },
-  { section: 'Administration', roles: ['super_admin'] },
-  { to: '/calendrier', label: "Calendrier de l'année", icon: IconCalendarDays, end: true, roles: ['super_admin'] },
-  { to: '/comptes', label: 'Gestion des comptes', icon: IconUserCog, end: true, roles: ['super_admin'] },
-  { to: '/mouchard', label: 'Mouchard (activité)', icon: IconActivity, end: true, roles: ['super_admin'] },
-  { to: '/maintenance', label: 'Sauvegarde & données', icon: IconShieldCheck, end: true, roles: ['super_admin'] },
-  { section: 'Application Web', roles: ['super_admin'] },
-  { to: '/application/telecharger', label: "Télécharger l'application", icon: IconDownloadApp, end: true, roles: ['super_admin'] },
-  { to: '/application/appareils', label: 'Appareils connectés', icon: IconMonitor, end: true, roles: ['super_admin'] },
-  { to: '/application/chat', label: 'Chat en direct', icon: IconChat, end: true, roles: ['super_admin'] },
-  { section: 'Référentiel', roles: ['super_admin'] },
-  { to: '/referentiel/parametres-generaux', label: 'Paramètres Généraux', icon: IconSettings, end: true, roles: ['super_admin'] },
-  { to: '/referentiel/parametres-administratifs', label: 'Paramètres administratifs', icon: IconBuildingOffice, end: true, roles: ['super_admin'] },
-  { to: '/referentiel/parametre-salaire', label: 'Paramètre de Salaire', icon: IconBanknotes, end: true, roles: ['super_admin'] },
-  { to: '/referentiel/parametres-conge-maladie', label: 'Paramètres de Congé & Maladie', icon: IconCalendarCheck, end: true, roles: ['super_admin'] },
-  { to: '/referentiel/parametres-pointage', label: 'Paramètres de Pointage', icon: IconUserClock, end: true, roles: ['super_admin'] },
-  { to: '/parametres-presence', label: 'Paramètres de présence', icon: IconSettings, end: true, roles: ['super_admin'], module: 'presence' },
-  { to: '/parametres-indemnites', label: 'Paramètres Indemnités', icon: IconBanknotes, end: true, roles: ['super_admin'], module: 'paie' },
-  { to: '/referentiel/promotion-notation', label: 'Promotion & Notation', icon: IconAward, end: true, roles: ['super_admin'] },
-  { to: '/referentiel/saas-tableau-de-bord', label: 'SaaS & Tableau de Bord', icon: IconDashboard, end: true, roles: ['super_admin'] },
-];
-
-const GROUP_ICONS = {
-  'Tableau de bord': IconDashboard,
-  'Renseignements RH': IconUsers,
-  'Demandes de congé': IconFileText,
-  'Gestion des congés': IconCalendarCheck,
-  'Paie Mensuelle': IconClipboardList,
-  'Horaires': IconClock,
-  'Maladie': IconStethoscope,
-  'Administration': IconUserCog,
-  'Application Web': IconMonitor,
-  'Référentiel': IconSettings,
-};
-
-const ROLE_LABELS = {
-  super_admin: 'Super Admin',
-  consultation: 'Consultation',
-  moderateur: 'Modérateur',
-  employe: 'Employé',
-};
-
-function itemVisible(item, role, perms) {
-  if (!item.roles.includes(role)) return false;
-  if (role === 'moderateur' && item.module) {
-    const p = perms && perms[item.module];
-    return !!(p && (p.lire || p.ajouter || p.modifier));
-  }
-  return true;
-}
-
-function buildGroups(filteredNav) {
-  const groups = [];
-  let current = null;
-  let sub = null;
-  for (const item of filteredNav) {
-    if (item.section) {
-      current = { id: item.section, label: item.section, icon: GROUP_ICONS[item.section] || IconTags, items: [], subGroups: [] };
-      sub = null;
-      groups.push(current);
-    } else if (item.subSection) {
-      sub = { id: item.subSection, label: item.subSection, items: [] };
-      if (current) current.subGroups.push(sub);
-      else {
-        current = { id: item.subSection, label: item.subSection, icon: IconTags, items: [], subGroups: [] };
-        groups.push(current);
-        sub = null;
-      }
-    } else if (item.to) {
-      const target = sub || current;
-      if (!target) {
-        let dash = groups.find((g) => g.id === 'Tableau de bord');
-        if (!dash) { dash = { id: 'Tableau de bord', label: 'Tableau de bord', icon: IconDashboard, items: [], subGroups: [] }; groups.unshift(dash); }
-        dash.items.push(item);
-      } else {
-        target.items.push(item);
-      }
-    }
-  }
-  const dashEntry = filteredNav.find((x) => x.to === '/');
-  if (dashEntry && !groups.find((g) => g.id === 'Tableau de bord')) {
-    groups.unshift({ id: 'Tableau de bord', label: 'Tableau de bord', icon: IconDashboard, items: [dashEntry] });
-  }
-  return groups.filter((g) => g.items.length > 0 || g.id === 'Tableau de bord');
-}
 
 export default function Layout() {
   const { user, logout } = useAuth();
@@ -183,8 +31,12 @@ export default function Layout() {
 
   const activeGroupId = useMemo(() => {
     const path = location.pathname;
+    const match = (it) => (it.end
+      ? path === it.to
+      : (path === it.to || path.startsWith(it.to + '/')));
     for (const g of groups) {
-      if (g.items.some((it) => path === it.to || (it.to !== '/' && path.startsWith(it.to)))) return g.id;
+      if (g.items.some(match)) return g.id;
+      if ((g.subGroups || []).some((sg) => sg.items.some(match))) return g.id;
     }
     return groups[0]?.id || null;
   }, [location.pathname, groups]);
@@ -238,11 +90,63 @@ export default function Layout() {
   const activeGroup = groups.find((g) => g.id === selectedGroup) || groups.find((g) => g.id === activeGroupId) || groups[0];
   const subItems = activeGroup ? activeGroup.items : [];
   const subGroups = activeGroup ? (activeGroup.subGroups || []) : [];
-  const [ficheOpen, setFicheOpen] = useState(false);
+  // Sous-menu : panneau rendu via un portail en position fixe (indépendant de
+  // l'overflow horizontal du bandeau → fonctionne aussi sur mobile).
+  const [openSub, setOpenSub] = useState(null);
+  const closeTimer = useRef(null);
+  const hoverDevice = useMemo(
+    () => typeof window !== 'undefined' && window.matchMedia('(hover: hover) and (pointer: fine)').matches,
+    [],
+  );
+
+  const annulerFermeture = () => {
+    if (closeTimer.current) { clearTimeout(closeTimer.current); closeTimer.current = null; }
+  };
+  const planifierFermeture = () => {
+    annulerFermeture();
+    closeTimer.current = setTimeout(() => setOpenSub(null), 180);
+  };
+  const ouvrirSub = (sub, el) => {
+    if (!el) return;
+    annulerFermeture();
+    const r = el.getBoundingClientRect();
+    const largeur = Math.max(220, Math.min(280, window.innerWidth - 16));
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - largeur - 8));
+    const hauteur = 12 + sub.items.length * 40;
+    const versLeBas = r.bottom + hauteur <= window.innerHeight - 8;
+    setOpenSub({
+      sub, largeur, left,
+      top: versLeBas ? r.bottom + 6 : null,
+      bottom: versLeBas ? null : window.innerHeight - r.top + 6,
+    });
+  };
+  const fermerSub = () => { annulerFermeture(); setOpenSub(null); };
+
+  useEffect(() => () => annulerFermeture(), []);
+  useEffect(() => { fermerSub(); }, [location.pathname]);
+  useEffect(() => {
+    if (!openSub) return undefined;
+    const surClicExterieur = (e) => {
+      if (e.target.closest?.('.submenu-panel') || e.target.closest?.('.submenu-trigger')) return;
+      fermerSub();
+    };
+    const fermer = () => fermerSub();
+    const surTouche = (e) => { if (e.key === 'Escape') fermerSub(); };
+    document.addEventListener('pointerdown', surClicExterieur, true);
+    window.addEventListener('scroll', fermer, true);
+    window.addEventListener('resize', fermer);
+    window.addEventListener('keydown', surTouche);
+    return () => {
+      document.removeEventListener('pointerdown', surClicExterieur, true);
+      window.removeEventListener('scroll', fermer, true);
+      window.removeEventListener('resize', fermer);
+      window.removeEventListener('keydown', surTouche);
+    };
+  }, [openSub]);
 
   const handleGroupClick = (g) => {
     setSelectedGroup(g.id);
-    if (g.id === 'Tableau de bord') {
+    if (g.id === 'TABLEAU DE BORD') {
       navigate('/');
     } else if (g.items.length === 1) {
       navigate(g.items[0].to);
@@ -309,7 +213,7 @@ export default function Layout() {
           {groups.map((g) => {
             const isActive = selectedGroup === g.id;
             const GIcon = g.icon;
-            const groupHref = g.id === 'Tableau de bord' ? '/' : (g.items[0]?.to || '/');
+            const groupHref = g.id === 'TABLEAU DE BORD' ? '/' : (g.items[0]?.to || '/');
             return (
               <a
                 key={g.id}
@@ -393,7 +297,7 @@ export default function Layout() {
               </button>
               <div className="min-w-0">
                 <h1 className="truncate font-display text-base font-semibold text-stone-900 sm:text-lg lg:text-xl">
-                  {activeGroup?.label || 'Gestion des congés'}
+                  {activeGroup?.label || 'GESTION DES CONGÉS'}
                 </h1>
                 <p className="hidden truncate text-xs text-stone-600 sm:block">
                   Amicale du Personnel — {activeGroup?.items.length || 0} rubrique(s)
@@ -404,6 +308,23 @@ export default function Layout() {
               {role === 'employe' && (
                 <NavLink to="/mon-espace" className="hidden text-sm font-semibold text-brand-600 hover:text-brand-700 hover:underline sm:block">
                   Mon espace
+                </NavLink>
+              )}
+              {/* Accès au portail de sélection des modules (hub après login) */}
+              {role !== 'employe' && (
+                <NavLink
+                  to="/modules"
+                  title="Espace de travail — Modules"
+                  aria-label="Espace de travail — Modules"
+                  className={({ isActive }) =>
+                    `flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition ${
+                      isActive
+                        ? 'bg-[var(--brand-50)] text-[#8F701E]'
+                        : 'text-stone-500 hover:bg-brand-50 hover:text-brand-700'
+                    }`
+                  }
+                >
+                  <LayoutGrid size={20} strokeWidth={2} />
                 </NavLink>
               )}
               <div className="flex items-center gap-2">
@@ -430,68 +351,75 @@ export default function Layout() {
             </div>
           </div>
 
-          {/* Bandeau de sous-navigation */}
-          {(subItems.length > 1 || subGroups.length > 0) && (
+          {/* Bandeau de sous-navigation — enfants rendus dans l'ordre du NAV
+              (rubriques directes et sous-sections entremêlées). Les sous-menus
+              sont affichés via un portail en position fixe (jamais rognés par
+              le défilement horizontal du bandeau, y compris sur mobile). */}
+          {activeGroup && (activeGroup.children || []).length > 0 && (subItems.length > 1 || subGroups.length > 0) && (
             <div className="app-subnav">
               <div className="flex items-center gap-2 overflow-x-auto px-2 py-1.5 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible sm:px-6 sm:py-2 [&::-webkit-scrollbar]:hidden">
-                {subItems.length > 0 && (
-                  <div className="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                    <span className="hidden shrink-0 text-[10px] font-bold uppercase tracking-widest sm:block" style={{ color: 'var(--text-muted)' }}>
-                      {activeGroup.label}
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      {subItems.map((it) => (
-                        <NavLink
-                          key={it.to}
-                          to={it.to}
-                          end={it.end}
-                          className={({ isActive }) => `subnav-chip shrink-0 ${isActive ? 'is-active' : ''}`}
-                        >
-                          <span className="flex h-4 w-4 shrink-0 items-center justify-center"><it.icon /></span>
-                          {it.label}
-                        </NavLink>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {subGroups.map((sg) => (
-                  <div key={sg.id} className="relative" onMouseEnter={() => setFicheOpen(true)} onMouseLeave={() => setFicheOpen(false)}>
-                    <a
-                      href={sg.items[0]?.to || '/'}
-                      onClick={(e) => {
-                        if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
-                        e.preventDefault();
-                        setFicheOpen((v) => !v);
-                      }}
-                      className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 no-underline hover:bg-stone-50"
+                <span className="hidden shrink-0 text-[10px] font-bold uppercase tracking-widest sm:block" style={{ color: 'var(--text-muted)' }}>
+                  {activeGroup.label}
+                </span>
+                {(activeGroup.children || []).map((c, i) =>
+                  c.kind === 'item' ? (
+                    <NavLink
+                      key={`it-${c.item.to}-${i}`}
+                      to={c.item.to}
+                      end={c.item.end}
+                      className={({ isActive }) => `subnav-chip shrink-0 ${isActive ? 'is-active' : ''}`}
+                    >
+                      <span className="flex h-4 w-4 shrink-0 items-center justify-center">{c.item.icon ? <c.item.icon /> : <IconTags />}</span>
+                      {c.item.label}
+                    </NavLink>
+                  ) : (
+                    <button
+                      key={`sub-${c.sub.id}`}
+                      type="button"
+                      className="submenu-trigger inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 hover:bg-stone-50"
                       style={{ borderColor: 'var(--border)' }}
+                      onMouseEnter={hoverDevice ? (e) => ouvrirSub(c.sub, e.currentTarget) : undefined}
+                      onMouseLeave={hoverDevice ? planifierFermeture : undefined}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (openSub?.sub.id === c.sub.id) fermerSub();
+                        else ouvrirSub(c.sub, e.currentTarget);
+                      }}
                     >
                       <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-stone-100 text-stone-600">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                       </span>
-                      {sg.label}
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`transition-transform ${ficheOpen ? 'rotate-180' : ''}`}><path d="M6 9l6 6 6-6"/></svg>
-                    </a>
-                    {ficheOpen && (
-                      <div className="submenu-slide absolute start-0 top-full z-20 mt-1 flex w-[min(84vw,260px)] min-w-0 sm:min-w-[260px] flex-col gap-1 rounded-xl border border-[#E5D5B5] bg-white/95 p-1.5 shadow-xl backdrop-blur-md">
-                        {sg.items.map((it) => (
-                          <NavLink
-                            key={it.to}
-                            to={it.to}
-                            end={it.end}
-                            onClick={() => setFicheOpen(false)}
-                            className={({ isActive }) => `flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition ${isActive ? 'bg-[var(--brand-primary-bg)] text-[#75581A]' : 'text-stone-700 hover:bg-[var(--brand-50)]'}`}
-                          >
-                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--brand-50)] text-[#8F701E]"><it.icon /></span>
-                            {it.label}
-                          </NavLink>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                      {c.sub.label}
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`transition-transform ${openSub?.sub.id === c.sub.id ? 'rotate-180' : ''}`}><path d="M6 9l6 6 6-6"/></svg>
+                    </button>
+                  ),
+                )}
               </div>
             </div>
+          )}
+
+          {openSub && createPortal(
+            <div
+              role="menu"
+              className="submenu-panel submenu-slide fixed z-[200] flex flex-col gap-1 rounded-xl border border-[#E5D5B5] bg-white/95 p-1.5 shadow-xl backdrop-blur-md"
+              style={{ left: openSub.left, width: openSub.largeur, ...(openSub.top != null ? { top: openSub.top } : { bottom: openSub.bottom }) }}
+              onMouseEnter={hoverDevice ? annulerFermeture : undefined}
+              onMouseLeave={hoverDevice ? planifierFermeture : undefined}
+            >
+              {openSub.sub.items.map((it) => (
+                <NavLink
+                  key={it.to}
+                  to={it.to}
+                  end={it.end}
+                  onClick={fermerSub}
+                  className={({ isActive }) => `flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition ${isActive ? 'bg-[var(--brand-primary-bg)] text-[#75581A]' : 'text-stone-700 hover:bg-[var(--brand-50)]'}`}
+                >
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--brand-50)] text-[#8F701E]">{it.icon ? <it.icon /> : <IconTags />}</span>
+                  {it.label}
+                </NavLink>
+              ))}
+            </div>,
+            document.body,
           )}
         </header>
 

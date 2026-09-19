@@ -123,7 +123,7 @@ export default function NouvelleDemande() {
   return (
     <div className="max-w-3xl space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-slate-900">Nouvelle Demande de Congé</h2>
+        <h2 className="text-lg font-bold text-slate-900">NOUVELLE DEMANDE DE CONGÉ</h2>
         <p className="text-sm text-slate-500">
           Générez une demande officielle. Le numéro séquentiel est attribué automatiquement par le serveur. Les jours de repos hebdomadaire de la catégorie (samedi/dimanche par défaut) ne sont pas comptés. Pour une demi-journée, cochez « Dernier jour en demi-journée » : la date de fin compte pour 0,5 (ex. : du lundi au mercredi coché = 2,5 jours). Déduits du solde uniquement après acceptation.
         </p>

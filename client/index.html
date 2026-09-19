@@ -15,7 +15,24 @@
     <link rel="manifest" href="/manifest.webmanifest" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <script>
+      // Typographie Google Fonts chargée uniquement APRÈS window.load : elle ne peut ni bloquer
+      // le rendu ni l'événement load (sur réseau sans accès Google, la requête reste en arrière-plan
+      // et la page utilise la pile système — --font-sans/--font-display/--font-numeric ont des replis).
+      (function () {
+        var url =
+          'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800' +
+          '&family=Inter:wght@400;500;600;700;800;900' +
+          '&family=JetBrains+Mono:wght@400;500;600;700;800' +
+          '&display=swap';
+        window.addEventListener('load', function injecter() {
+          var el = document.createElement('link');
+          el.rel = 'stylesheet';
+          el.href = url;
+          document.head.appendChild(el);
+        });
+      })();
+    </script>
     <link rel="icon" type="image/png" href="/emoticon-Xmator.png?v=rh2026" />
     <link rel="apple-touch-icon" href="/icons/xmator-rh-apple-touch-icon.png" />
     <title>Amicale — Gestion des congés</title>

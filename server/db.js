@@ -408,6 +408,83 @@ CREATE TABLE IF NOT EXISTS indemnites_employe (
   UNIQUE (employe_id, type, annee, mois)
 );
 CREATE INDEX IF NOT EXISTS idx_indemnites_emp_effet ON indemnites_employe(employe_id, type, annee, mois);
+
+-- ---- Module « Crédits & Avances Emploi » : référentiel des types de crédits ----
+-- Un type de crédit définit les règles d'un produit (plafond, durée, intérêts,
+-- frais de dossier, taux d'endettement max, différé, pause mensualité, STC).
+CREATE TABLE IF NOT EXISTS credits_types (
+  id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+  nom                   TEXT NOT NULL,
+  code_paie             TEXT NOT NULL UNIQUE,
+  plafond_montant       REAL,
+  plafond_mode          TEXT NOT NULL DEFAULT 'dt' CHECK (plafond_mode IN ('dt','multiple_salaire')),
+  duree_min             INTEGER NOT NULL DEFAULT 1,
+  duree_max             INTEGER NOT NULL DEFAULT 36,
+  taux_interet_annuel   REAL NOT NULL DEFAULT 0,
+  frais_dossier         REAL NOT NULL DEFAULT 0,
+  taux_endettement_max  REAL NOT NULL DEFAULT 30,
+  differe_max           INTEGER NOT NULL DEFAULT 0,
+  pause_mensualite      INTEGER NOT NULL DEFAULT 0,
+  stc_auto              INTEGER NOT NULL DEFAULT 0,
+  actif                 INTEGER NOT NULL DEFAULT 1,
+  created_at            TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  updated_at            TEXT
+);
+
+-- Champs personnalisés (Texte / Nombre / Booléen / Fichier) attachés à un type de crédit
+CREATE TABLE IF NOT EXISTS credits_champs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  type_id     INTEGER NOT NULL REFERENCES credits_types(id) ON DELETE CASCADE,
+  nom         TEXT NOT NULL,
+  type_champ  TEXT NOT NULL DEFAULT 'texte' CHECK (type_champ IN ('texte','nombre','booleen','fichier')),
+  obligatoire INTEGER NOT NULL DEFAULT 0,
+  ordre       INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_credits_champs_type ON credits_champs(type_id, ordre);
+
+-- Crédits / avances octroyés à un employé (contrat).
+-- montant_actuel = capital accordé ; total_retenu = capital + intérêts + frais de dossier ;
+-- le CRD (capital restant dû) se déduit des échéances : total_retenu − Σ(échéances payées).
+CREATE TABLE IF NOT EXISTS credits_employe (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  employe_id          INTEGER NOT NULL REFERENCES employes(id),
+  type_id             INTEGER NOT NULL REFERENCES credits_types(id),
+  montant_actuel      REAL NOT NULL,
+  frais_dossier       REAL NOT NULL DEFAULT 0,
+  taux_interet_annuel REAL NOT NULL DEFAULT 0,
+  duree_mois          INTEGER NOT NULL,
+  differe_mois        INTEGER NOT NULL DEFAULT 0,
+  mensualite          REAL NOT NULL,
+  total_retenu        REAL NOT NULL,
+  taux_endettement    REAL,
+  salaire_reference   REAL,
+  date_octroi         TEXT NOT NULL,
+  date_debut_retenue  TEXT NOT NULL,
+  statut              TEXT NOT NULL DEFAULT 'en_cours' CHECK (statut IN ('en_cours','solde','annule')),
+  motif               TEXT,
+  justificatifs       TEXT,
+  created_by          INTEGER,
+  created_at          TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  updated_at          TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_credits_employe ON credits_employe(employe_id, statut);
+CREATE INDEX IF NOT EXISTS idx_credits_employe_type ON credits_employe(type_id);
+
+-- Échéancier du contrat : une ligne par mensualité (year, mois de la retenue).
+CREATE TABLE IF NOT EXISTS credits_echeances (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  credit_id     INTEGER NOT NULL REFERENCES credits_employe(id) ON DELETE CASCADE,
+  num           INTEGER NOT NULL,
+  annee         INTEGER NOT NULL CHECK (annee BETWEEN 2000 AND 2100),
+  mois          INTEGER NOT NULL CHECK (mois BETWEEN 1 AND 12),
+  montant       REAL NOT NULL,
+  statut        TEXT NOT NULL DEFAULT 'prevu' CHECK (statut IN ('prevu','paye')),
+  date_paiement TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_credits_echance_mois ON credits_echeances(annee, mois, statut);
+CREATE INDEX IF NOT EXISTS idx_credits_echance_credit ON credits_echeances(credit_id, num);
 `);
 
 // ---- Migration d'une base existante ----

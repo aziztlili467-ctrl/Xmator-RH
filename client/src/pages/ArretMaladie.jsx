@@ -102,7 +102,7 @@ export default function ArretMaladie() {
   return (
     <div className="max-w-3xl space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-slate-900">Nouvel arrêt maladie</h2>
+        <h2 className="text-lg font-bold text-slate-900">NOUVEL ARRÊT MALADIE</h2>
         <p className="text-sm text-slate-500">Saisissez l'arrêt de travail d'un employé. Tous les jours du calendrier sont comptés, samedis et dimanches compris. Une fois validé, le solde maladie est déduit automatiquement.</p>
       </div>
 

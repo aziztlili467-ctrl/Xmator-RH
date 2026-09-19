@@ -4,7 +4,7 @@ const { loadContext, estOuvrable, heuresPour } = require('../utils/jourOuvrable'
 const { departementsPresenceDefaut, normaliserDept } = require('../utils/presenceDefaut');
 const { onDataChanged } = require('./dataSync');
 const presence = require('./presence');
-const { normaliser, horairePour, diffSecondes, statutPour, retardComptable, sortieAnticipeeComptable } = presence;
+const { normaliser, tolerancePour, diffSecondes, statutPour, retardComptable, sortieAnticipeeComptable } = presence;
 const router = Router();
 
 const SEUIL_ALERTE = 5;
@@ -238,7 +238,7 @@ router.get('/audit', (req, res) => {
   `).all(...wparams);
   if (!employes.length) return res.status(404).json({ error: 'Aucun employé ne correspond au filtre.' });
 
-  const payload = dashMemo('audit:' + req.originalUrl, () => {
+  let payload = dashMemo('audit:' + req.originalUrl, () => {
   const ids = employes.map((e) => e.id);
   // Repos hebdomadaires par catégorie (le samedi peut être travaillé, ex. Femme de ménage)
   const ctx = loadContext();
@@ -395,7 +395,7 @@ router.get('/audit', (req, res) => {
     if (c.ramadan_debut && c.ramadan_fin) ramadanByAnnee[c.annee] = { debut: c.ramadan_debut, fin: c.ramadan_fin };
   }
   const pRows = db.prepare(`
-    SELECT p.employe_id, p.date, p.horodatage, c.libelle AS categorie
+    SELECT p.employe_id, p.date, p.horodatage, e.categorie_id, c.libelle AS categorie
     FROM pointages p
     JOIN employes e ON e.id = p.employe_id
     JOIN categories c ON c.id = e.categorie_id
@@ -421,7 +421,7 @@ router.get('/audit', (req, res) => {
   const parJour = new Map();
   for (const r of pRows) {
     const key = pointagesKey(r);
-    if (!parJour.has(key)) parJour.set(key, { employe_id: r.employe_id, date: r.date, categorie: r.categorie, nb: 0, min: null, max: null });
+    if (!parJour.has(key)) parJour.set(key, { employe_id: r.employe_id, date: r.date, categorie_id: r.categorie_id, categorie: r.categorie, nb: 0, min: null, max: null });
     const g = parJour.get(key);
     g.nb += 1;
     if (g.min === null || r.horodatage < g.min) g.min = r.horodatage;
@@ -455,9 +455,16 @@ router.get('/audit', (req, res) => {
   for (const c of db.prepare('SELECT employe_id, date, retard_secondes, sortie_anticipee_secondes FROM corrections_pointages').all()) {
     corrMap.set(`${c.employe_id}|${c.date}`, c);
   }
+  // Horaires réglementaires configurables par catégorie (Référentiel → Paramètres de Pointage →
+  // « Tolérance de retard et de sortie ») : identiques à ceux de « Présences & pointages ».
+  const tolerances = new Map(
+    db.prepare('SELECT categorie_id, entree_reglementaire, sortie_reglementaire FROM tolerances_categorie')
+      .all()
+      .map((t) => [t.categorie_id, t])
+  );
   for (const g of parJour.values()) {
     const annee = Number(g.date.slice(0, 4));
-    const horaire = horairePour(normaliser(g.categorie), g.date, ramadanByAnnee[annee] || null);
+    const horaire = tolerancePour(tolerances, g.categorie_id, normaliser(g.categorie), g.date, ramadanByAnnee[annee] || null);
     const entree = String(g.min || '').slice(11, 19);
     const sortie = g.nb >= 2 ? String(g.max || '').slice(11, 19) : null;
     let retardSec = horaire ? retardComptable(diffSecondes(entree, horaire.entree) || 0) : 0;
@@ -890,10 +897,22 @@ router.get('/audit', (req, res) => {
   });
   // Codes & couleurs lus à chaque requête (source « Paramètres & Codification ») — hors cache,
   // pour que toute mise à jour / rectification des codes soit reflétée en temps réel.
+  // Fusion dans une copie fraîche : l'objet mis en cache n'est jamais muté (sinon des codes
+  // obsolètes resteraient figés dans le cache partagé entre requêtes).
   if (payload && typeof payload === 'object' && 'calendrier' in payload) {
-    payload.codes = db.prepare('SELECT code, libelle, couleur FROM codes_paie ORDER BY code').all();
+    payload = { ...payload, codes: db.prepare('SELECT code, libelle, couleur FROM codes_paie ORDER BY code').all() };
   }
-  return res.json(payload);
+  // Garde-fou auto-réparateur : si le payload s'avère in-sérialisable (référence circulaire — non
+  // reproductible hors de la fenêtre de redémarrage `node --watch`), on purge la clé de cache
+  // fautive (reconstruction saine à la prochaine requête) et on répond un 500 propre au lieu de
+  // laisser l'erreur remonter au handler global.
+  try {
+    return res.json(payload);
+  } catch (err) {
+    dashCache.delete('audit:' + req.originalUrl);
+    console.error('[dashboard] payload illisible purgé :', req.originalUrl, err.message);
+    return res.status(500).json({ error: 'Données temporairement indisponibles, rechargez la page.' });
+  }
 });
 
 module.exports = router;

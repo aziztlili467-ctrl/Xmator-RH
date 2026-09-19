@@ -40,7 +40,7 @@ export default function ParametresPresence() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-slate-900">Paramètres de présence</h2>
+        <h2 className="text-lg font-bold text-slate-900">PARAMÈTRES DE PRÉSENCE</h2>
         <p className="text-sm text-slate-500">
           Départements dont les employés sont affichés <strong>PRÉSENT (P1) par défaut</strong> chaque jour
           ouvrable selon le calendrier, même sans pointage badgeuse.

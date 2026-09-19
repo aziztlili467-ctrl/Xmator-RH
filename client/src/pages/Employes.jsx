@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { api } from '../api';
 import { fmtJours, downloadFile } from '../utils';
 import { IconUsers, IconDownload, IconUpload, IconAlert, IconUserCheck, IconTrash, IconCamera } from '../components/icons';
-import { ouvrirFluxVideo, arreterFluxVideo, MESSAGES_CAMERA } from '../utils/camera';
+import { ouvrirFluxVideo, arreterFluxVideo, MESSAGES_CAMERA, listerCameras, construireContraintes } from '../utils/camera';
 
 // Dossier public des modèles IA de reconnaissance faciale (téléchargés via `npm run models`)
 const MODELS_URL = `${import.meta.env.BASE_URL || '/'}models`;
@@ -332,7 +332,7 @@ export default function Employes() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Employés</h2>
+          <h2 className="text-lg font-bold text-slate-900">EMPLOYÉS</h2>
           <p className="text-sm text-slate-500">{employes.length} fiche(s) · catégories paramétrables</p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -857,24 +857,55 @@ function Modal({ title, children, onClose, danger }) {
   );
 }
 
-// Modale d'enrôlement facial (Xmator-Eye) : caméra live, détection ssd_mobilenetv1 +
-// landmarks, signature (descriptor 128 floats) calculée puis sauvegardée sur la fiche employé.
+// Seuils de la preuve de vie (liveness) : clignement des yeux (EAR) et/ou sourire (expression happy)
+const SEUIL_OEIL_FERME = 0.22;
+const SEUIL_SOURIRE = 0.4;
+
+// Ratio d'aspect de l'œil (Eye Aspect Ratio) — modèle 68 points (face-api) : œil gauche 36-41,
+// œil droit 42-47. EAR bas => paupières fermées ; un cycle fermé → ouvert compte un clignement.
+function earOeil(p, debut) {
+  const d = (i, j) => {
+    const a = p[debut + i];
+    const b = p[debut + j];
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+  const v1 = d(1, 5);
+  const v2 = d(2, 4);
+  const h = d(0, 3);
+  if (h < 1e-6) return 1;
+  return (v1 + v2) / (2 * h);
+}
+
+function earMoyen(landmarks) {
+  return (earOeil(landmarks, 36) + earOeil(landmarks, 42)) / 2;
+}
+
+// Enrôlement facial (Xmator-Eye) : capture « Caméra en direct » en plein écran (object-fit: cover,
+// sans bandes noires sur mobile) avec bascule frontale/arrière et preuve de vie (clignement/sourire),
+// + import d'une photo. Jusqu'à 2 empreintes par employé : A « sans lunettes » et B « avec lunettes ».
 function EnrolerVisage({ emp, onClose, onChangement }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const trameRef = useRef(null);
   const photoInputRef = useRef(null);
   const [mode, setMode] = useState('cam'); // cam | photo
   const [etape, setEtape] = useState('chargement'); // chargement | prêt | erreur
   const [message, setMessage] = useState('');
   const [erreur, setErreur] = useState('');
   const [detecte, setDetecte] = useState(false);
+  const [vivant, setVivant] = useState(false);
   const [capture, setCapture] = useState(null); // { dataUrl, descriptor }
   const [photo, setPhoto] = useState(null); // { dataUrl, nom }
   const [photoResult, setPhotoResult] = useState(null); // { descriptor, detecte, score }
   const [analysePhoto, setAnalysePhoto] = useState(false);
   const [sauvegarde, setSauvegarde] = useState(false);
-  const [dejaEnrole, setDejaEnrole] = useState(!!emp.has_face);
   const [confirmerRetrait, setConfirmerRetrait] = useState(false);
+  const [camFace, setCamFace] = useState('user');
+  const [etatFace, setEtatFace] = useState({ a: !!emp.has_face, aLe: null, b: false, bLe: null });
+
+  const dejaEnrole = (etatFace.a || etatFace.b) || !!emp.has_face;
 
   const faceapiRef = useRef(null);
   const faceRef = useRef(null);
@@ -882,9 +913,32 @@ function EnrolerVisage({ emp, onClose, onChangement }) {
   const timerRef = useRef(null);
   const loopRef = useRef(null);
   const captureRef = useRef(null);
+  const blinksRef = useRef(0);
+  const paupiereFermeeRef = useRef(false);
+  const sourireRef = useRef(false);
+  const camsRef = useRef([]);
+  const camIndexRef = useRef(0);
+
+  // État facial existant (empreintes A / B) au chargement de la modale.
+  useEffect(() => {
+    let mort = false;
+    api.faceEmploye(emp.id)
+      .then((r) => {
+        if (mort) return;
+        setEtatFace({
+          a: !!r.enrole,
+          aLe: r.enrole_le || null,
+          b: !!r.enrole_b,
+          bLe: r.enrole_le_b || null,
+        });
+      })
+      .catch(() => { /* offline : on garde `emp.has_face` comme indication */ });
+    return () => { mort = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emp.id]);
 
   // === Fonctions partagées (mode « Caméra en direct ») ===
-  const dessiner = (video, result) => {
+  const dessiner = (video, result, echelle = 1) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
@@ -894,11 +948,11 @@ function EnrolerVisage({ emp, onClose, onChangement }) {
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const b = result.detection.box;
-    ctx.strokeStyle = '#10b981';
+    ctx.strokeStyle = '#22ff88';
     ctx.lineWidth = 3;
-    ctx.strokeRect(b.x, b.y, b.width, b.height);
-    ctx.fillStyle = 'rgba(16,185,129,0.9)';
-    for (const p of result.landmarks.positions) ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3);
+    ctx.strokeRect(b.x * echelle, b.y * echelle, b.width * echelle, b.height * echelle);
+    ctx.fillStyle = 'rgba(34,255,136,0.85)';
+    for (const p of result.landmarks.positions) ctx.fillRect(p.x * echelle - 1.5, p.y * echelle - 1.5, 3, 3);
   };
 
   const effacer = () => {
@@ -911,16 +965,52 @@ function EnrolerVisage({ emp, onClose, onChangement }) {
     if (stopRef.current || captureRef.current) return;
     const fapi = faceapiRef.current;
     const video = videoRef.current;
-    if (!fapi || !video) return;
+    // Modèles pas encore prêts : on garde le flux live et on re-polle (la détection se
+    // branche dès que les poids IA sont chargés — ne pas réarmer tuerait la boucle).
+    if (!fapi || !video) {
+      if (!stopRef.current) timerRef.current = setTimeout(boucle, 200);
+      return;
+    }
     try {
       const opts = new fapi.SsdMobilenetv1Options({ minConfidence: 0.5 });
-      const r = await fapi.detectSingleFace(video, opts).withFaceLandmarks().withFaceDescriptor();
+      // Entrée de détection allégée (largeur max 480) : les nets internes (ssd 300,
+      // recognition 112) n'ont pas besoin du 1280 p → la charge CPU chute et le fil
+      // principal reste libre, c'est ce qui rend l'aperçu réellement LIVE.
+      const vw = video.videoWidth || 0;
+      if (!vw) {
+        if (!stopRef.current) timerRef.current = setTimeout(boucle, 150);
+        return;
+      }
+      const tc = trameRef.current || (trameRef.current = document.createElement('canvas'));
+      const echelle = Math.min(1, 480 / vw);
+      tc.width = Math.max(1, Math.round(vw * echelle));
+      tc.height = Math.max(1, Math.round((video.videoHeight || 0) * echelle));
+      tc.getContext('2d').drawImage(video, 0, 0, tc.width, tc.height);
+      const r = await fapi.detectSingleFace(tc, opts)
+        .withFaceLandmarks()
+        .withFaceDescriptor()
+        .withFaceExpressions();
       if (stopRef.current || captureRef.current) return;
       if (r) {
+        // Liveness : clignement (EAR) et/ou sourire (expression happy).
+        const ear = earMoyen(r.landmarks.positions);
+        if (ear < SEUIL_OEIL_FERME) {
+          paupiereFermeeRef.current = true;
+        } else if (paupiereFermeeRef.current) {
+          paupiereFermeeRef.current = false;
+          blinksRef.current += 1;
+        }
+        const happy = (r.expressions && r.expressions.happy) || 0;
+        sourireRef.current = happy >= SEUIL_SOURIRE;
+        setVivant(blinksRef.current >= 1 || sourireRef.current);
         faceRef.current = Array.from(r.descriptor);
         setDetecte(true);
-        dessiner(video, r);
+        dessiner(video, r, vw / tc.width);
       } else {
+        blinksRef.current = 0;
+        paupiereFermeeRef.current = false;
+        sourireRef.current = false;
+        setVivant(false);
         faceRef.current = null;
         setDetecte(false);
         effacer();
@@ -929,7 +1019,7 @@ function EnrolerVisage({ emp, onClose, onChangement }) {
       timerRef.current = setTimeout(boucle, 250);
       return;
     }
-    timerRef.current = setTimeout(boucle, 120);
+    timerRef.current = setTimeout(boucle, 100);
   };
 
   useEffect(() => {
@@ -961,6 +1051,7 @@ function EnrolerVisage({ emp, onClose, onChangement }) {
         await mod.nets.ssdMobilenetv1.loadFromUri(MODELS_URL);
         await mod.nets.faceLandmark68Net.loadFromUri(MODELS_URL);
         await mod.nets.faceRecognitionNet.loadFromUri(MODELS_URL);
+        await mod.nets.faceExpressionNet.loadFromUri(MODELS_URL);
         if (annule) return;
         setEtape('prêt');
       } catch (e) {
@@ -977,23 +1068,31 @@ function EnrolerVisage({ emp, onClose, onChangement }) {
   }, []);
 
   // Démarrage / arrêt de la caméra selon l'onglet actif (mode 'cam' uniquement).
+  // La caméra démarre IMMÉDIATEMENT, en parallèle du chargement des modèles IA (mode live réel) :
+  // la détection s'active d'elle-même quand les poids sont prêts (voir boucle).
   useEffect(() => {
-    if (mode !== 'cam' || etape !== 'prêt') return;
+    if (mode !== 'cam') return;
     let annule = false;
     let stream = null;
-    // StrictMode (dev) rejoue cet effet : on réarme l'état pour que la boucle de
-    // détection démarre réellement sur l'instance montée.
     stopRef.current = false;
     captureRef.current = null;
+    blinksRef.current = 0;
+    paupiereFermeeRef.current = false;
+    sourireRef.current = false;
+    setVivant(false);
 
     const demarrerCamera = async () => {
       try {
-        stream = await ouvrirFluxVideo();
+        stream = await ouvrirFluxVideo(construireContraintes('user'));
+        try { camsRef.current = await listerCameras(); } catch { camsRef.current = []; }
         if (annule) { if (stream) stream.getTracks().forEach((t) => t.stop()); return; }
         const video = videoRef.current;
         if (!video) { stream.getTracks().forEach((t) => t.stop()); return; }
         video.srcObject = stream;
-        await video.play();
+        // Conduit en tâche de fond : le flux devient live aussitôt (element autoplay/muted),
+        // on ne bloque plus la boucle de détection derrière video.play().
+        const p = video.play();
+        if (p && p.catch) p.catch(() => {});
         timerRef.current = setTimeout(boucle, 60);
       } catch (e) {
         if (annule) return;
@@ -1013,7 +1112,87 @@ function EnrolerVisage({ emp, onClose, onChangement }) {
       arreterFluxVideo(videoRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, etape]);
+  }, [mode]);
+
+  // Bascule de caméra (frontale / arrière / USB) — conçue pour fonctionner sur tous les
+  // navigateurs mobiles et PC :
+  //   1) Libère l'ancien flux AVANT de demander la nouvelle (indispensable sur iOS Safari,
+  //      sinon getUserMedia renvoie la même caméra ou lève NotReadableError) ;
+  //   2) Essaie le flip facingMode pur (sans résolution), puis avec résolution idéale (certains
+  //      webviews Android jettent OverconstrainedError quand les deux sont combinés) ;
+  //   3) En repli, cycle les caméras énumérées via enumerateDevices (PC webcam USB) ;
+  //   4) Si tout échoue, restaure l'ancienne caméra et affiche un message clair.
+  const basculerCam = async () => {
+    if (captureRef.current) return;
+    const video = videoRef.current;
+    if (!video) return;
+    const cams = Array.isArray(camsRef.current) ? camsRef.current : [];
+    const faceFlip = camFace === 'user' ? 'environment' : 'user';
+    const faceRegex = /back|rear|arri|post|backup|0$/i;
+
+    // Attache un flux sur la balise <video> EN DIRECT, sans attendre play() ni rebuild de
+    // pipeline (video.load() coûtait plusieurs secondes) : l'élément est autoplay/muted donc
+    // le flux devient live immédiat, la détection suit dès les premières images.
+    const attacherFlux = (stream) => {
+      try {
+        video.srcObject = stream;
+        const p = video.play();
+        if (p && p.catch) p.catch(() => {});
+        return true;
+      } catch {}
+      try { if (stream && stream.getTracks) stream.getTracks().forEach((t) => t.stop()); } catch {}
+      return false;
+    };
+
+    // Candidats par ordre de fiabilité croissante.
+    const faceCandidateBase = { audio: false };
+    const candidates = [
+      { ...faceCandidateBase, video: { facingMode: faceFlip } },
+      { ...faceCandidateBase, video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: faceFlip } },
+    ];
+    for (let k = 1; k <= Math.max(cams.length, 1); k += 1) {
+      const cam = cams.length ? cams[(camIndexRef.current + k) % cams.length] : null;
+      if (!cam || !cam.deviceId) continue;
+      const face = faceRegex.test(cam.label || '') ? 'environment' : 'user';
+      candidates.push({ ...faceCandidateBase, video: { facingMode: face, deviceId: { exact: cam.deviceId } } });
+      candidates.push({ ...faceCandidateBase, video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: face, deviceId: { exact: cam.deviceId } } });
+    }
+
+    // Étape 1 : libère l'ancien flux d'abord (paramètre indispensable pour iOS Safari).
+    const ancienFlux = video.srcObject;
+    if (ancienFlux && typeof ancienFlux.getTracks === 'function') {
+      ancienFlux.getTracks().forEach((t) => { try { t.stop(); } catch {} });
+    }
+    try { video.srcObject = null; } catch {}
+
+    // Étapes 2→3 : essaie les candidats jusqu'au premier flux qui se monte.
+    let applique = null;
+    for (const contraintesVideo of candidates) {
+      let flux;
+      try { flux = await ouvrirFluxVideo(contraintesVideo); } catch { continue; }
+      if (await attacherFlux(flux)) { applique = contraintesVideo.video.facingMode || faceFlip; break; }
+    }
+
+    // Étape 4 : échec total → restaure l'ancienne caméra pour ne pas laisser un écran noir.
+    if (!applique) {
+      try { await attacherFlux(await ouvrirFluxVideo({ video: { facingMode: camFace }, audio: false })); } catch {}
+      setErreur('Impossible de basculer de caméra sur cet appareil. La caméra active est conservée.');
+      return;
+    }
+
+    // Nouvelle caméra → on repart d'un état de détection propre.
+    stopRef.current = false;
+    blinksRef.current = 0;
+    paupiereFermeeRef.current = false;
+    sourireRef.current = false;
+    setVivant(false);
+    setDetecte(false);
+    setErreur('');
+    setCamFace(applique === 'environment' ? 'environment' : 'user');
+    effacer();
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(loopRef.current, 60);
+  };
 
   const capturer = () => {
     const d = faceRef.current;
@@ -1037,20 +1216,31 @@ function EnrolerVisage({ emp, onClose, onChangement }) {
     captureRef.current = null;
     setCapture(null);
     setErreur('');
+    blinksRef.current = 0;
+    paupiereFermeeRef.current = false;
+    sourireRef.current = false;
+    setVivant(false);
     timerRef.current = setTimeout(loopRef.current, 60);
   };
 
-  const enregistrer = async () => {
-    if (!capture) return;
+  // Enregistre l'empreinte A (sans lunettes) ou B (avec lunettes) du candidat courant.
+  const enregistrer = async (repertoire = 'a') => {
+    const d = capture ? capture.descriptor : (photoResult && photoResult.descriptor);
+    if (!d || d.length !== 128) {
+      setErreur('Aucun visage analysé. Capturez ou importez d\'abord un visage correctement.');
+      return;
+    }
     setSauvegarde(true);
     setErreur('');
     try {
-      await api.sauvegarderFace(emp.id, capture.descriptor);
-      setDejaEnrole(true);
+      await api.sauvegarderFace(emp.id, d, repertoire);
+      const horo = new Date().toISOString();
+      setEtatFace((s) => (repertoire === 'b' ? { ...s, b: true, bLe: horo } : { ...s, a: true, aLe: horo }));
       setConfirmerRetrait(false);
-      setMessage('Signature faciale enregistrée pour la reconnaissance de pointage (Xmator-Eye).');
+      setMessage(`${repertoire === 'b' ? 'Empreinte B — avec lunettes' : 'Empreinte A — sans lunettes'} enregistrée pour la reconnaissance de pointage (Xmator-Eye).`);
       setCapture(null);
       captureRef.current = null;
+      setPhotoResult(null);
       if (onChangement) onChangement();
     } catch (e) {
       setErreur(e.message);
@@ -1110,33 +1300,12 @@ function EnrolerVisage({ emp, onClose, onChangement }) {
     lecteur.readAsDataURL(fichier);
   };
 
-  const enregistrerPhoto = async () => {
-    if (!photoResult || !photoResult.detecte || !photoResult.descriptor || photoResult.descriptor.length !== 128) {
-      setErreur('Aucun visage détecté sur cette photo. Importez une photo avec un visage net et bien visible.');
-      return;
-    }
-    setSauvegarde(true);
-    setErreur('');
-    try {
-      await api.sauvegarderFace(emp.id, photoResult.descriptor);
-      setDejaEnrole(true);
-      setConfirmerRetrait(false);
-      setPhotoResult(null);
-      setMessage('Signature faciale enregistrée pour la reconnaissance de pointage (Xmator-Eye).');
-      if (onChangement) onChangement();
-    } catch (err) {
-      setErreur(err.message);
-    } finally {
-      setSauvegarde(false);
-    }
-  };
-
   const retirer = async () => {
     setSauvegarde(true);
     setErreur('');
     try {
       await api.supprimerFace(emp.id);
-      setDejaEnrole(false);
+      setEtatFace({ a: false, aLe: null, b: false, bLe: null });
       setConfirmerRetrait(false);
       setMessage('Enrôlement facial supprimé (Xmator-Eye).');
       if (onChangement) onChangement();
@@ -1149,6 +1318,176 @@ function EnrolerVisage({ emp, onClose, onChangement }) {
 
   const enSuspens = (mode === 'cam' && !!capture) || (mode === 'photo' && !!(photoResult && photoResult.detecte));
 
+  // ---- CAMÉRA PLEIN ÉCRAN (mobile & desktop) : object-fit cover, aucune bande noire ----
+  // S'affiche immédiatement (mode live réel) ; les modèles IA se chargent en arrière-plan.
+  if (mode === 'cam' && etape !== 'erreur') {
+    return (
+      <div className="fixed inset-0 z-[70] overflow-hidden bg-black text-white">
+        <video ref={videoRef} muted playsInline autoPlay className="absolute inset-0 h-full w-full object-cover opacity-95" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/55 via-transparent to-black/70" />
+        <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" />
+
+        {/* BARRE HAUTE — retour / flip caméra */}
+        <div className="absolute inset-x-0 top-0 flex items-center justify-between gap-2 p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+          <button
+            type="button"
+            onClick={() => setMode('photo')}
+            className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-xs font-bold text-white/90 backdrop-blur-md transition hover:bg-black/60"
+          >
+            ◁ Importer une photo
+          </button>
+          <p className="rounded-full border border-white/15 bg-black/40 px-4 py-1.5 text-center text-[11px] font-black uppercase tracking-[0.2em] text-white/90 backdrop-blur-md">
+            {camFace === 'environment' ? 'Caméra arrière' : 'Caméra frontale'} · Enrôlement
+          </p>
+          <button
+            type="button"
+            onClick={basculerCam}
+            title="Changer de caméra (frontale / arrière / USB)"
+            aria-label="Changer de caméra"
+            className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-black/40 text-white backdrop-blur-md transition hover:rotate-180 hover:bg-black/60"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 4v6h-6M1 20v-6h6" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+          </button>
+        </div>
+
+        {/* JAUGE DU VIVANT + messages */}
+        <div className="absolute left-1/2 top-[max(4.25rem,calc(env(safe-area-inset-top)+60px))] flex -translate-x-1/2 flex-col items-center gap-2 text-center">
+          <span
+            className={`rounded-full px-3.5 py-1.5 text-[11px] font-black uppercase tracking-widest backdrop-blur-md transition-all duration-300 ${
+              vivant ? 'bg-emerald-500/95 text-emerald-950 shadow-[0_0_18px_rgba(34,255,136,0.9)]' : 'border border-white/15 bg-black/40 text-white/70'
+            }`}
+          >
+            {vivant ? '✓ Preuve de vie détectée' : '👁 Clignez des yeux ou souriez'}
+          </span>
+          {etape !== 'prêt' && (
+            <span className="rounded-full bg-amber-400/25 px-3.5 py-1.5 text-[11px] font-bold text-amber-200 ring-1 ring-amber-300/40 backdrop-blur-md">
+              ⏳ Préparation de la détection IA…
+            </span>
+          )}
+          {message && (
+            <span className="rounded-full bg-emerald-500/25 px-3.5 py-1.5 text-[11px] font-bold text-emerald-200 ring-1 ring-emerald-300/40 backdrop-blur-md">
+              {message}
+            </span>
+          )}
+          {erreur && etape !== 'erreur' && (
+            <span className="max-w-[90%] rounded-xl bg-red-600/30 px-3.5 py-1.5 text-[11px] font-bold text-red-100 ring-1 ring-red-400/40 backdrop-blur-md">
+              {erreur}
+            </span>
+          )}
+          {!capture && etatFace.a && !etatFace.b && (
+            <span className="rounded-full bg-amber-400/25 px-3.5 py-1.5 text-[11px] font-bold text-amber-200 ring-1 ring-amber-300/40 backdrop-blur-md">
+              💡 Ajoutez l'empreinte B — capturée avec lunettes — pour la reconnaissance avec/sans lunettes
+            </span>
+          )}
+        </div>
+
+        {/* CADRE OVALE DE GUIDAGE + coins lumineux (statique) */}
+        <div
+          className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2"
+          style={{
+            width: 'min(72vw, 420px)',
+            height: 'min(46vh, 540px)',
+            borderColor: vivant ? '#22ff8866' : (detecte ? '#fbbf2466' : '#ef44446b'),
+            boxShadow: `0 0 40px ${vivant ? '#22ff8840' : detecte ? '#fbbf2440' : '#ef444430'}, inset 0 0 28px ${vivant ? '#22ff8822' : detecte ? '#fbbf2422' : '#ef444412'}`,
+            transition: 'border-color .3s ease, box-shadow .3s ease',
+          }}
+        >
+          {[
+            { l: -4, t: -4, bt: true, bl: true, radius: 'border-tl' },
+            { r: -4, t: -4, bt: true, br: true, radius: 'border-tr' },
+            { l: -4, b: -4, bb: true, bl: true, radius: 'border-bl' },
+            { r: -4, b: -4, bb: true, br: true, radius: 'border-br' },
+          ].map((c, i) => (
+            <span
+              key={i}
+              className={`absolute h-12 w-12 ${c.radius} rounded-full border-4 ${c.bt ? 'border-t' : ''} ${c.bl ? 'border-l' : ''} ${c.br ? 'border-r' : ''} ${c.bb ? 'border-b' : ''} border-white`}
+              style={{
+                left: c.l, top: c.t, right: c.r, bottom: c.b,
+                borderColor: vivant ? '#22ff88' : (detecte ? '#fbbf24' : '#ef4444'),
+                filter: `drop-shadow(0 0 8px ${vivant ? '#22ff88' : detecte ? '#fbbf24' : '#ef4444'})`,
+              }}
+            />
+          ))}
+        </div>
+
+        {/* BADGES EMPREINTES A / B */}
+        <div className="absolute left-1/2 top-[32%] flex -translate-x-1/2 gap-2">
+          <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest backdrop-blur-md ${etatFace.a ? 'bg-emerald-500/90 text-emerald-950' : 'border border-white/20 bg-black/40 text-white/60'}`}>
+            A · sans lunettes {etatFace.a ? '✔' : '—'}
+          </span>
+          <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest backdrop-blur-md ${etatFace.b ? 'bg-emerald-500/90 text-emerald-950' : 'border border-white/20 bg-black/40 text-white/60'}`}>
+            B · avec lunettes {etatFace.b ? '✔' : '—'}
+          </span>
+        </div>
+
+        {/* PANNEAU BAS — capture / vérification + enregistrement A/B */}
+        <div className="absolute inset-x-0 bottom-[max(0.75rem,env(safe-area-inset-bottom))] px-4 pb-2">
+          {capture && (
+            <div className="mx-auto flex w-full max-w-xl items-center gap-3 rounded-2xl border border-white/15 bg-black/50 p-3 backdrop-blur-xl">
+              <img src={capture.dataUrl} alt="Visage capturé" className="h-20 w-auto shrink-0 rounded-xl object-cover ring-1 ring-white/30" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold text-white">Signature prête à enregistrer</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <button type="button" className="btn-primary !px-3 !py-1.5 text-xs" onClick={() => enregistrer('a')} disabled={sauvegarde}>
+                    {sauvegarde ? '…' : '✚ A — sans lunettes'}
+                  </button>
+                  <button type="button" className="btn-secondary !px-3 !py-1.5 text-xs" onClick={() => enregistrer('b')} disabled={sauvegarde}>
+                    {sauvegarde ? '…' : '✚ B — avec lunettes'}
+                  </button>
+                  <button type="button" className="rounded-xl px-2.5 py-1.5 text-xs font-semibold text-white/80 hover:bg-white/10" onClick={reprendre} disabled={sauvegarde}>
+                    Reprendre
+                  </button>
+                  <button type="button" onClick={onClose} className="rounded-xl px-2.5 py-1.5 text-xs font-semibold text-white/50 hover:text-white">
+                    ✕ Fermer sans enregistrer
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!capture && (
+            <div className="mx-auto flex w-full max-w-xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="rounded-2xl border border-white/15 bg-black/50 px-4 py-3 text-left backdrop-blur-xl sm:flex-1">
+                <p className="text-sm font-bold text-white">
+                  {detecte ? (vivant ? 'Visage détecté + preuve de vie ✔' : 'Visage détecté — prouvez que vous êtes vivant') : 'Placez le visage dans le cadre ovale'}
+                </p>
+                <p className="mt-0.5 text-[11px] text-white/60">Clignez des yeux ou souriez, puis l'enrôlement se valide en quelques secondes.</p>
+              </div>
+              <button type="button" className="btn-primary shrink-0 !px-5 !py-3 text-sm" onClick={capturer} disabled={!detecte || !vivant || sauvegarde}>
+                Capturer la signature
+              </button>
+            </div>
+          )}
+
+          {!capture && (
+            <p className="mt-2 text-center text-[11px] text-white/50">
+              mat. {emp.matricule} — {emp.nom} {emp.prenom}
+              {confirmerRetrait ? (
+                <span className="ml-1 inline-flex items-center gap-2">
+                  Retirer toutes les signatures ?
+                  <button className="rounded-lg bg-red-600 px-2 py-0.5 text-[11px] font-bold text-white" onClick={retirer} disabled={sauvegarde}>Confirmer</button>
+                  <button className="text-white/70 hover:text-white" onClick={() => setConfirmerRetrait(false)}>Annuler</button>
+                </span>
+              ) : dejaEnrole ? (
+                <button className="ml-2 font-bold text-red-300 hover:text-red-200" onClick={() => setConfirmerRetrait(true)}>Retirer l'enrôlement</button>
+              ) : null}
+            </p>
+          )}
+
+          {!capture && (
+            <p className="mt-1 text-center">
+              <button type="button" onClick={onClose} className="text-xs font-semibold text-white/60 hover:text-white">✕ Fermer</button>
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ---- MODALE « CLASSIQUE » : chargement, erreur et import d'une photo ----
   return (
     <Modal onClose={onClose} title={`Signature faciale — mat. ${emp.matricule} — ${emp.nom} ${emp.prenom}`}>
       <div className="space-y-4">
@@ -1193,39 +1532,6 @@ function EnrolerVisage({ emp, onClose, onChangement }) {
           </div>
         )}
 
-        {etape === 'prêt' && mode === 'cam' && (
-          <>
-            <div className="relative overflow-hidden rounded-lg bg-slate-900">
-              <video ref={videoRef} muted playsInline className="block aspect-[4/3] w-full opacity-90" />
-              <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" />
-            </div>
-            <div className="flex min-h-6 items-center justify-between gap-2 text-xs">
-              <span className={capture ? 'text-slate-500' : detecte ? 'font-semibold text-emerald-700' : 'text-slate-400'}>
-                {capture ? 'Visage saisi — vérifiez puis enregistrez.' : detecte ? 'Visage détecté.' : 'Placez votre visage dans le cadre.'}
-              </span>
-            </div>
-            {capture ? (
-              <>
-                <div className="overflow-hidden rounded-lg border border-slate-200">
-                  <img src={capture.dataUrl} alt="Visage capturé" className="mx-auto max-h-56" />
-                </div>
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  <button type="button" className="btn-secondary" onClick={reprendre} disabled={sauvegarde}>Reprendre</button>
-                  <button type="button" className="btn-primary" onClick={enregistrer} disabled={sauvegarde}>
-                    {sauvegarde ? 'Enregistrement…' : 'Enregistrer la signature'}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <button type="button" className="btn-primary" onClick={capturer} disabled={!detecte}>
-                  Capturer le visage
-                </button>
-              </div>
-            )}
-          </>
-        )}
-
         {etape === 'prêt' && mode === 'photo' && (
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1262,11 +1568,23 @@ function EnrolerVisage({ emp, onClose, onChangement }) {
 
             {photo && !analysePhoto && photoResult && photoResult.detecte && (
               <div className="flex flex-wrap items-center justify-end gap-2">
-                <button type="button" className="btn-primary" onClick={enregistrerPhoto} disabled={sauvegarde}>
-                  {sauvegarde ? 'Enregistrement…' : 'Enregistrer la signature'}
+                <button type="button" className="btn-primary" onClick={() => enregistrer('a')} disabled={sauvegarde}>
+                  {sauvegarde ? 'Enregistrement…' : 'Enregistrer — sans lunettes (A)'}
+                </button>
+                <button type="button" className="btn-secondary" onClick={() => enregistrer('b')} disabled={sauvegarde}>
+                  {sauvegarde ? '…' : 'Enregistrer — avec lunettes (B)'}
                 </button>
               </div>
             )}
+
+            <div className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 ring-1 ring-slate-100">
+              <span className={`rounded-full px-2 py-0.5 font-bold ${etatFace.a ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>
+                A · sans lunettes {etatFace.a ? '✔' : '—'}
+              </span>
+              <span className={`rounded-full px-2 py-0.5 font-bold ${etatFace.b ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>
+                B · avec lunettes {etatFace.b ? '✔' : '—'}
+              </span>
+            </div>
           </div>
         )}
 
@@ -1274,14 +1592,16 @@ function EnrolerVisage({ emp, onClose, onChangement }) {
           <>
             {dejaEnrole && !enSuspens && !confirmerRetrait && (
               <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 ring-1 ring-emerald-200">
-                Un visage est déjà enrôlé pour cet employé. Une nouvelle capture ou une photo importée remplacera la signature existante.
+                {etatFace.b
+                  ? 'Deux empreintes sont enrôlées (avec et sans lunettes) pour cet employé.'
+                  : 'Une empreinte est déjà enrôlée pour cet employé. Ajoutez l\'empreinte B (avec lunettes) pour fiabiliser la reconnaissance avec/sans lunettes, ou remplacez la signature existante.'}
               </p>
             )}
             {!enSuspens && (
               <div className="flex flex-wrap items-center justify-end gap-2">
                 {confirmerRetrait ? (
                   <span className="flex items-center gap-2 text-xs text-red-700">
-                    Retirer la signature ?
+                    Retirer toutes les signatures ?
                     <button type="button" className="rounded-lg bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-700" onClick={retirer} disabled={sauvegarde}>
                       Confirmer
                     </button>

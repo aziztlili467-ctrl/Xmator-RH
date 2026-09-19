@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { today, debutMois, fmtDate } from '../utils';
-import { IconBellAlert, IconPrinter, IconTrash, IconAlert } from '../components/icons';
+import { IconBellAlert, IconPrinter, IconTrash, IconAlert, IconFilter } from '../components/icons';
 
 const vide = { matricule: '', nom: '', prenom: '', categorie: '', date_debut: '', date_fin: '', superieur: '' };
 
@@ -42,8 +42,9 @@ export default function NotificationAbsences() {
       .finally(() => setLoading(false));
   };
 
+  const executerJournal = () => loadJournal(fDebut, fFin);
+
   useEffect(() => {
-    loadJournal('', '');
     if (estAdmin) {
       api.employes()
         .then((r) => setEmployes(Array.isArray(r) ? r : r.employes || []))
@@ -126,7 +127,7 @@ export default function NotificationAbsences() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-slate-900">Notification d'Absences</h2>
+        <h2 className="text-lg font-bold text-slate-900">NOTIFICATION D'ABSENCES</h2>
         <p className="text-sm text-slate-500">
           Formulaire rempli par le supérieur hiérarchique ou le responsable RH : déclaration d'une absence par matricule,
           dates de début et de fin, nombre de jours calculé <strong>hors repos hebdomadaires et jours fériés payés</strong>
@@ -241,48 +242,48 @@ export default function NotificationAbsences() {
             <p className="mt-1 text-xs text-slate-500">Toutes les opérations enregistrées, de la plus récente à la plus ancienne.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <input type="date" className="input" value={fDebut} onChange={(e) => { setFDebut(e.target.value); loadJournal(e.target.value, fFin); }} title="Absences à partir du…" />
+            <input type="date" className="input" value={fDebut} onChange={(e) => setFDebut(e.target.value)} title="Absences à partir du…" />
             <span className="text-slate-400">→</span>
-            <input type="date" className="input" value={fFin} onChange={(e) => { setFFin(e.target.value); loadJournal(fDebut, e.target.value); }} title="Absences jusqu'au…" />
+            <input type="date" className="input" value={fFin} onChange={(e) => setFFin(e.target.value)} title="Absences jusqu'au…" />
+            <button className="btn-primary" onClick={executerJournal} disabled={loading}>
+              <IconFilter /> {loading ? 'Chargement…' : 'Exécuter'}
+            </button>
           </div>
         </div>
 
-        {data && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            <span className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-              {data.totaux.notifications} notification{data.totaux.notifications > 1 ? 's' : ''}
-            </span>
-            <span className="rounded-lg bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700">
-              {data.totaux.jours} jour(s) d'absence cumulés
-            </span>
-          </div>
-        )}
+        {data ? (
+          <>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                {data.totaux.notifications} notification{data.totaux.notifications > 1 ? 's' : ''}
+              </span>
+              <span className="rounded-lg bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700">
+                {data.totaux.jours} jour(s) d'absence cumulés
+              </span>
+            </div>
 
-        <div className="table-wrap mt-4">
-          <table className="w-full min-w-[860px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-2 py-2">N°</th>
-                <th className="px-2 py-2">Saisie le</th>
-                <th className="px-2 py-2">Matricule</th>
-                <th className="px-2 py-2">Employé</th>
-                <th className="px-2 py-2">Catégorie</th>
-                <th className="px-2 py-2">Du</th>
-                <th className="px-2 py-2">Au</th>
-                <th className="px-2 py-2 text-right">Jours</th>
-                <th className="px-2 py-2">Supérieur hiérarchique</th>
-                <th className="px-2 py-2">Établi par</th>
-                <th className="px-2 py-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && !data && (
-                <tr><td colSpan={11} className="px-2 py-6 text-center text-slate-400">Chargement…</td></tr>
-              )}
-              {data && data.notifications.length === 0 && (
-                <tr><td colSpan={11} className="px-2 py-6 text-center text-slate-400">Aucune notification d'absence enregistrée.</td></tr>
-              )}
-              {data && data.notifications.map((n) => (
+            <div className="table-wrap mt-4">
+              <table className="w-full min-w-[860px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                    <th className="px-2 py-2">N°</th>
+                    <th className="px-2 py-2">Saisie le</th>
+                    <th className="px-2 py-2">Matricule</th>
+                    <th className="px-2 py-2">Employé</th>
+                    <th className="px-2 py-2">Catégorie</th>
+                    <th className="px-2 py-2">Du</th>
+                    <th className="px-2 py-2">Au</th>
+                    <th className="px-2 py-2 text-right">Jours</th>
+                    <th className="px-2 py-2">Supérieur hiérarchique</th>
+                    <th className="px-2 py-2">Établi par</th>
+                    <th className="px-2 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.notifications.length === 0 && (
+                    <tr><td colSpan={11} className="px-2 py-6 text-center text-slate-400">Aucune notification d'absence enregistrée.</td></tr>
+                  )}
+                  {data.notifications.map((n) => (
                 <tr key={n.id} className="border-b border-slate-100 hover:bg-slate-50">
                   <td className="px-2 py-2 font-mono text-xs text-slate-500">{String(n.id).padStart(4, '0')}</td>
                   <td className="px-2 py-2 whitespace-nowrap text-xs text-slate-500">{fmtHorodatage(n.created_at)}</td>
@@ -319,6 +320,14 @@ export default function NotificationAbsences() {
             </tbody>
           </table>
         </div>
+          </>
+        ) : (
+          !loading && (
+            <p className="mt-4 px-4 py-8 text-center text-sm text-slate-400">
+              Aucune donnée affichée — sélectionnez une période, puis cliquez sur <strong>Exécuter</strong>.
+            </p>
+          )
+        )}
       </div>
 
       {aSupprimer && (

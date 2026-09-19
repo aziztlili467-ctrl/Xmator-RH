@@ -47,7 +47,7 @@ export default function TelechargerApp() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-slate-900">Télécharger l'application</h2>
+        <h2 className="text-lg font-bold text-slate-900">TÉLÉCHARGER L'APPLICATION</h2>
         <p className="mt-0.5 text-sm text-slate-500">
           Installez le SaaS RH sur votre ordinateur, mobile ou tablette — même application, même compte, fonctionnement hors-ligne partiel.
         </p>
@@ -97,7 +97,15 @@ export default function TelechargerApp() {
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-3">
-            <BoutonInstaller nomApp="XMATOR EYE" variante="borne" />
+            <a
+              href="/terminal/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-cyan-400/40 bg-cyan-600/80 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-cyan-900/30 transition hover:bg-cyan-500"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
+              Installer Xmator Terminal
+            </a>
             <button onClick={() => navigate('/borne')} className="btn-primary shrink-0 px-6 py-3">
               Accéder à la borne
             </button>

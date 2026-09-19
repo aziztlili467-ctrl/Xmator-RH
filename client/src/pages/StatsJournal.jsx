@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { api } from '../api';
 import { today, debutMois, downloadFile } from '../utils';
-import { IconDownload, IconFileText, IconPrinter } from '../components/icons';
+import ImprimerPdf from '../components/ImprimerPdf';
+import { IconDownload, IconFilter } from '../components/icons';
 
 const isWeekend = (iso) => {
   const wd = new Date(iso + 'T00:00:00').getDay();
@@ -21,8 +22,11 @@ const fmtFR = (iso) => {
 export default function StatsJournal() {
   const [debut, setDebut] = useState(debutMois());
   const [fin, setFin] = useState(today());
+  const [matricule, setMatricule] = useState('');
+  const [orientation, setOrientation] = useState('landscape');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [printing, setPrinting] = useState(false);
   const [error, setError] = useState('');
 
   // Métadonnées des codes (couleur + libellé) renvoyées par l'API — visibles par tous les rôles en lecture
@@ -39,25 +43,23 @@ export default function StatsJournal() {
     return { backgroundColor: meta.couleur + '1f', color: meta.couleur, boxShadow: 'inset 0 0 0 1px ' + meta.couleur + '55' };
   };
 
-  const load = (d, f) => {
+  const load = (d, f, m) => {
     if (!d || !f) return;
     if (f < d) return setError('La date de fin doit être postérieure ou égale à la date de début.');
     if (new Date(f) - new Date(d) > 370 * 86400000) return setError('Période trop longue (maximum 12 mois) — resserrez le filtre.');
     setLoading(true);
     setError('');
-    api.statsJournal({ debut: d, fin: f })
+    api.statsJournal({ debut: d, fin: f, matricule: m })
       .then(setData)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => {
-    load(debut, fin);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Les lignes ne sont chargées qu'après un clic sur « Exécuter » (page vide par défaut).
+  const executer = () => load(debut, fin, matricule);
 
-  const changeDebut = (v) => { setDebut(v); load(v, fin); };
-  const changeFin = (v) => { setFin(v); load(debut, v); };
+  const changeDebut = (v) => setDebut(v);
+  const changeFin = (v) => setFin(v);
 
   const totalJours = (id) => {
     const j = data.jours[id];
@@ -79,23 +81,26 @@ export default function StatsJournal() {
     downloadFile(`journal-paie_${debut}_${fin}.csv`, [header, ...lines, totalLine].join('\n'));
   };
 
-  const exportPdf = async () => {
+  const exportPdf = async (o) => {
     if (!data) return;
     setError('');
     try {
-      await api.statsJournalPdf({ debut, fin });
+      await api.statsJournalPdf({ debut, fin, matricule, orientation: o || orientation });
     } catch (e) {
       setError(e.message);
     }
   };
 
-  const imprimer = async () => {
+  const imprimer = async (o) => {
     if (!data) return;
+    setPrinting(true);
     setError('');
     try {
-      await api.statsJournalPrint({ debut, fin });
+      await api.statsJournalPrint({ debut, fin, matricule, orientation: o || orientation });
     } catch (e) {
       setError(e.message);
+    } finally {
+      setPrinting(false);
     }
   };
 
@@ -103,7 +108,7 @@ export default function StatsJournal() {
     if (!data) return;
     setError('');
     try {
-      await api.statsJournalXls({ debut, fin });
+      await api.statsJournalXls({ debut, fin, matricule });
     } catch (e) {
       setError(e.message);
     }
@@ -113,19 +118,21 @@ export default function StatsJournal() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Journal de présence</h2>
+          <h2 className="text-lg font-bold text-slate-900">JOURNAL DE PRÉSENCE</h2>
           <p className="text-sm text-slate-500">
             Matrice quotidienne : chaque ligne est un employé, chaque colonne une date. P1 = journée présente (pointage badgeuse),
             complétée par les codifications importées du Journal RMA (A1, CA, MA, R3, RP…).
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button className="btn-primary" onClick={imprimer} disabled={!data}>
-            <IconPrinter /> Imprimer
-          </button>
-          <button className="btn-secondary" onClick={exportPdf} disabled={!data}>
-            <IconFileText /> Exporter PDF
-          </button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <ImprimerPdf
+            orientation={orientation}
+            onOrientationChange={setOrientation}
+            onPrint={imprimer}
+            onDownload={exportPdf}
+            disabled={!data}
+            busy={printing}
+          />
           <button className="btn-secondary" onClick={exportXls} disabled={!data}>
             <IconDownload /> Exporter XLS
           </button>
@@ -145,6 +152,17 @@ export default function StatsJournal() {
             <span className="text-slate-400">→</span>
             <input type="date" className="input" value={fin} onChange={(e) => changeFin(e.target.value)} />
           </div>
+          <label className="text-sm font-semibold text-slate-600">Matricule :</label>
+          <input
+            type="text"
+            className="input w-28 font-mono"
+            placeholder="ex : 35"
+            value={matricule}
+            onChange={(e) => setMatricule(e.target.value)}
+          />
+          <button className="btn-primary" onClick={executer} disabled={loading}>
+            <IconFilter /> {loading ? 'Chargement…' : 'Exécuter'}
+          </button>
         </div>
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
           {Object.values(metaCodes).map((c) => (
@@ -155,6 +173,16 @@ export default function StatsJournal() {
           ))}
         </p>
       </div>
+
+      {!data && !loading && (
+        <div className="card flex flex-col items-center gap-2 p-8 text-center">
+          <IconFilter className="h-8 w-8 text-slate-300" />
+          <p className="text-sm font-semibold text-slate-700">Aucune ligne affichée</p>
+          <p className="text-sm text-slate-500">
+            Choisissez une période (12 mois maximum) et, si besoin, un matricule, puis cliquez sur <strong>Exécuter</strong> pour afficher la matrice.
+          </p>
+        </div>
+      )}
 
       {data && (
         <>

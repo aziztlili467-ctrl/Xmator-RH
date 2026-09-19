@@ -178,7 +178,7 @@ export default function GrilleSalaire() {
     <div className="space-y-6">
         <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Grille de Salaire</h2>
+          <h2 className="text-lg font-bold text-slate-900">GRILLE DE SALAIRE</h2>
           <p className="text-sm text-slate-500">
             Paramétrez la grille salariale par Rubrique, Grade, Classe, Echelon et Valeur. Chaque ligne est enregistrée en base et consultable par tous les super_admin.
           </p>

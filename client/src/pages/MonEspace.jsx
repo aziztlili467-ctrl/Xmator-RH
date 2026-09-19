@@ -100,7 +100,7 @@ export default function MonEspace() {
     <div className="space-y-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Mon espace</h2>
+          <h2 className="text-lg font-bold text-slate-900">MON ESPACE</h2>
           <p className="text-sm text-slate-500">Vue personnelle — vos congés, maladies et absences.</p>
         </div>
         {fiche && (

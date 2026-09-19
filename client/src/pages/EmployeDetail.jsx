@@ -6,6 +6,7 @@ import BadgeType from '../components/BadgeType';
 import SoldeJauge from '../components/SoldeJauge';
 import PresenceHeures from '../components/PresenceHeures';
 import CalendrierPresenceEmploye from '../components/CalendrierPresenceEmploye';
+import EmployeeCreditTab from '../components/EmployeeCreditTab';
 import { IconArrowDown, IconCalendarCheck, IconAlert } from '../components/icons';
 
 export default function EmployeDetail() {
@@ -201,6 +202,8 @@ export default function EmployeDetail() {
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Jauge du solde</p>
         <SoldeJauge solde={emp.solde} reference={emp.accorde || 30} />
       </div>
+
+      <EmployeeCreditTab employe={emp} />
 
       <PresenceHeures matricule={emp.matricule} />
 

@@ -22,13 +22,28 @@ function codesPaie() {
   return map;
 }
 
-function buildPdf({ res, debut, fin, dates, employes, jours, joursDemi, totaux, titre }) {
+function chunk(arr, size) {
+  if (!arr.length) return [[]];
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+// Matrice « journal » (dates en colonnes, employés en lignes) — utilisée par le Journal de présence
+// et le Journal RMA. `orientation` = 'landscape' (défaut, tout sur une page si la période le permet)
+// ou 'portrait' : les dates sont alors découpées en blocs lisibles répétés page par page.
+function buildPdf({ res, debut, fin, dates, employes, jours, joursDemi, totaux, titre, orientation = 'landscape' }) {
+  const paysage = orientation === 'landscape';
   const codesMeta = codesPaie();
   const codeColor = {};
   for (const [code, meta] of Object.entries(codesMeta)) codeColor[code] = meta.couleur || '#111827';
   const legendTxt = Object.keys((totaux || {}).par_code || {}).sort().map((c) => `${c} = ${(codesMeta[c] || {}).libelle || c}`).join(' · ') || 'Aucune codification sur la période';
 
-  const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margins: { top: 18, bottom: 10, left: 11, right: 11 } });
+  const doc = new PDFDocument({
+    size: 'A4',
+    layout: paysage ? 'landscape' : 'portrait',
+    margins: { top: 18, bottom: 10, left: 11, right: 11 },
+  });
   doc.registerFont('Garamond', path.join(__dirname, '..', 'fonts', 'EBGaramond.ttf'));
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${titre.toLowerCase().replace(/ /g, '-')}-${debut}_${fin}.pdf"`);
@@ -40,17 +55,22 @@ function buildPdf({ res, debut, fin, dates, employes, jours, joursDemi, totaux, 
   const R = pageW - doc.page.margins.right;
   const W = R - L;
 
-  const matColW = 30;
-  const empColW = 74;
-  const totalColW = 26;
-  const datesW = W - matColW - empColW - totalColW;
-  const dateColW = Math.max(12, datesW / Math.max(1, dates.length));
+  const matColW = paysage ? 30 : 26;
+  const empColW = paysage ? 74 : 68;
+  const totalColW = paysage ? 26 : 24;
+  const fixed = matColW + empColW + totalColW;
+  const minDateCol = paysage ? 12 : 11;
+  const maxPerBlock = Math.max(1, Math.floor((W - fixed) / minDateCol));
+  const blocks = chunk(dates, paysage ? Math.max(maxPerBlock, dates.length || 1) : maxPerBlock);
+
   // Réduit pour densifier : +6 lignes/page, évite 3/4 vide après matr. 260 / 354
-  const rowH = 7.5;
+  const rowH = paysage ? 7.5 : 8;
   const headerH = 10;
 
-  const dateFontSize = Math.min(5.5, Math.max(4, dateColW / 4.7));
-  const codeFontSize = Math.min(5.5, Math.max(4, dateColW / 4.3));
+  // Colonne de dates : largeur recalculée à chaque bloc (responsive portrait/paysage).
+  let dateColW = 14;
+  let dateFontSize = 5;
+  let codeFontSize = 5;
 
   const shortName = (e) => `${e.nom} ${e.prenom}`;
 
@@ -66,11 +86,15 @@ function buildPdf({ res, debut, fin, dates, employes, jours, joursDemi, totaux, 
   const isOuvPdf = (empId, iso) => hasCalPdf
     ? estOuvrable(ctxPdf, catByEmp[empId], iso, legalByDatePdf[iso])
     : !reposFor(catByEmp[empId]).has(new Date(iso + 'T00:00:00').getDay());
-  const totalJours = (id) => {
+
+  // Total d'un employé sur un sous-ensemble de dates (bloc en portrait, période entière en paysage).
+  const sumJours = (id, dc) => {
     if (!jours[id]) return 0;
     let s = 0;
-    for (const [iso, cell] of Object.entries(jours[id])) {
+    for (const iso of dc) {
       if (!isOuvPdf(id, iso)) continue;
+      const cell = jours[id][iso];
+      if (!cell) continue;
       for (const c of String(cell).split('/')) {
         if ((c === 'CA' && joursDemi && joursDemi[id] && joursDemi[id][iso]) || c === 'DJ') s += 0.5; else s += 1;
       }
@@ -82,6 +106,20 @@ function buildPdf({ res, debut, fin, dates, employes, jours, joursDemi, totaux, 
     doc.font('Helvetica-Bold').fontSize(10).fillColor('#111827').text(`${titre} — Période : ${fmtFR(debut)} → ${fmtFR(fin)}`, L, y0, { width: W, align: 'left' });
     doc.font('Helvetica').fontSize(7).fillColor('#555555').text(`${legendTxt} — Total : ${totaux.total || 0} jours`, L, y0 + 11, { width: W, align: 'left' });
     return y0 + 16;
+  };
+
+  const drawSuiteBand = () => {
+    doc.rect(0, 0, pageW, 16).fill('#1e3a5f');
+    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(7.5)
+      .text(`${titre} — Période : ${fmtFR(debut)} → ${fmtFR(fin)} (suite)`, L, 4.5, { width: W, align: 'center', lineBreak: false });
+    return 20;
+  };
+
+  const drawBlockLabel = (dc, y0) => {
+    const label = blocks.length > 1 ? `Dates : ${fmtDateShort(dc[0])} → ${fmtDateShort(dc[dc.length - 1])} (${dc.length} jour(s))` : '';
+    if (!label) return y0;
+    doc.font('Helvetica-Bold').fontSize(7).fillColor('#1e3a5f').text(label, L, y0, { width: W, align: 'left', lineBreak: false });
+    return y0 + 10;
   };
 
   const headerRow = (dc, y) => {
@@ -125,7 +163,7 @@ function buildPdf({ res, debut, fin, dates, employes, jours, joursDemi, totaux, 
       x += dateColW;
     });
     doc.rect(x, y, totalColW, rowH).strokeColor('#888888').lineWidth(0.4).stroke();
-    doc.fillColor('#111827').font('Helvetica-Bold').fontSize(6).text(String(totalJours(e.id)), x, y + 2.5, { width: totalColW, align: 'center' });
+    doc.fillColor('#111827').font('Helvetica-Bold').fontSize(6).text(String(sumJours(e.id, dc)), x, y + 2.5, { width: totalColW, align: 'center' });
     return y + rowH;
   };
 
@@ -153,33 +191,44 @@ function buildPdf({ res, debut, fin, dates, employes, jours, joursDemi, totaux, 
       x += dateColW;
     });
     doc.rect(x, y, totalColW, headerH).fillAndStroke('#f8fafc', '#333333');
-    doc.fillColor('#111827').font('Helvetica-Bold').fontSize(6).text(String(employes.reduce((s, e) => s + totalJours(e.id), 0)), x, y + 3.5, { width: totalColW, align: 'center' });
+    doc.fillColor('#111827').font('Helvetica-Bold').fontSize(6).text(String(dc.reduce((s, iso) => s + countDate(iso), 0)), x, y + 3.5, { width: totalColW, align: 'center' });
     return y + headerH;
   };
 
-  const dc = dates;
-
-  let y;
   const bottomLimit = pageH - doc.page.margins.bottom;
-  const ensureFit = (need) => {
-    if (y + need > bottomLimit) {
-      doc.addPage();
-      // En-tête allégé sur pages suivantes pour maximiser le remplissage
-      doc.font('Helvetica-Bold').fontSize(7).fillColor('#111827').text(`${titre} (suite)`, L, 14, { width: W, align: 'center' });
-      y = headerRow(dc, 22);
-    }
-  };
 
-  employes.forEach((e, idx) => {
-    if (idx === 0) {
+  blocks.forEach((dc, bi) => {
+    // Largeur de colonne de dates recalculée pour ce bloc (le portrait découpe la période).
+    dateColW = Math.max(minDateCol, (W - fixed) / Math.max(1, dc.length));
+    dateFontSize = Math.min(5.5, Math.max(3.4, dateColW / 4.7));
+    codeFontSize = Math.min(5.5, Math.max(3.2, dateColW / 4.3));
+
+    let y;
+    if (bi === 0) {
       y = drawHeaderBlock(14);
-      y = headerRow(dc, y);
+    } else {
+      doc.addPage();
+      y = drawSuiteBand();
     }
-    ensureFit(rowH);
-    y = empRow(e, dc, y);
+    y = drawBlockLabel(dc, y);
+    y = headerRow(dc, y);
+
+    const ensureFit = (need) => {
+      if (y + need > bottomLimit) {
+        doc.addPage();
+        y = drawSuiteBand();
+        y = drawBlockLabel(dc, y);
+        y = headerRow(dc, y);
+      }
+    };
+
+    for (const e of employes) {
+      ensureFit(rowH);
+      y = empRow(e, dc, y);
+    }
+    ensureFit(headerH);
+    y = totalsRow(dc, y);
   });
-  ensureFit(headerH);
-  y = totalsRow(dc, y);
 
   doc.end();
 }
