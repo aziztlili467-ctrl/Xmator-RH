@@ -1,4 +1,5 @@
-require('dotenv').config({ path: __dirname + '/.env' });
+// Charge server/.env (JWT_SECRET, CORS_ORIGIN…) AVANT tout autre require.
+try { require('dotenv').config({ path: require('path').join(__dirname, '.env') }); } catch { /* ok */ }
 const express = require('express');
 const cors = require('cors');
 let compression;
@@ -303,9 +304,18 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: err.message || 'Erreur interne.' });
 });
 
+// ---- Isolation Dev / Prod ----
+// En mode développement (NODE_ENV !== 'production'), le client React est servi par Vite
+// sur http://localhost:5173 avec proxy /api -> http://localhost:4000.
+// Le serveur Express sur le port 4000 ne doit PAS servir les fichiers statiques de build
+// pour éviter les conflits de cache et les fausses détections de PWA en dev.
+const isProd = process.env.NODE_ENV === 'production';
+
 // ---- PWA Xmator Terminal (borne biométrique indépendante) ----
+// Servi uniquement en production : en dev, Vite relaie /terminal vers Express via proxy,
+// mais Express ne sert le build terminal que si isProd.
 const terminalDist = path.join(__dirname, '..', 'terminal', 'dist');
-if (fs.existsSync(terminalDist)) {
+if (isProd && fs.existsSync(terminalDist)) {
   app.use('/terminal', express.static(terminalDist, { maxAge: '1y', immutable: true, index: false, etag: true }));
   // Fallback SPA de la borne : les routes internes (/borne, /login…) servent l'index du terminal
   // (le serveur de fichiers statiques ci-dessus répond aux assets ; les autres chemins tombent ici)
@@ -319,8 +329,9 @@ if (fs.existsSync(terminalDist)) {
 }
 
 const clientDist = path.join(__dirname, '..', 'client', 'dist');
-if (fs.existsSync(clientDist)) {
+if (isProd && fs.existsSync(clientDist)) {
   // Assets versionnés (hash dans le nom) → 1 an immutable, ultra-rapide au 2e chargement
+  // En dev, ce bloc est ignoré : le client est servi par Vite sur :5173
   app.use(express.static(clientDist, { maxAge: '1y', immutable: true, index: false, etag: true }));
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api')) return next();
@@ -330,6 +341,8 @@ if (fs.existsSync(clientDist)) {
     res.setHeader('Pragma', 'no-cache');
     res.sendFile(path.join(clientDist, 'index.html'));
   });
+} else if (!isProd) {
+  console.log('[dev] Mode développement : les fichiers statiques client/dist ne sont pas servis par Express (Vite sur :5173).');
 }
 app.disable('x-powered-by');
 
