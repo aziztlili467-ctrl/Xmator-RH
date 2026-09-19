@@ -135,24 +135,40 @@ function hmrSocketGuard() {
   };
 }
 
+// --- Configuration SaaS Dev isolée ---
+// - Client Vite exclusivement sur http://localhost:5173 (port 5173, strictPort)
+// - Proxy /api, /photos, /terminal vers http://localhost:4000 (API Express)
+// - En dev, Express (4000) ne sert PAS les fichiers statiques client/dist (isolation dev/prod)
+// - En prod, Express sert le build statique (client/dist) sur même origine, plus de CORS nécessaire
 export default defineConfig({
   plugins: [react(), pwaGenerate(), hmrSocketGuard()],
   server: {
-    host: '0.0.0.0',
+    host: '0.0.0.0', // 0.0.0.0 pour permettre preview sandbox + LAN, mais port fixe 5173 = localhost:5173
     port: 5173,
+    strictPort: true, // garantit l'exécution exclusive sur 5173, échec si occupé
     // Autorise les hôtes de prévisualisation distants (tunnels, sandbox, mobile sur le LAN)
     allowedHosts: true,
     proxy: {
-      '/api': 'http://localhost:4000',
-      '/photos': 'http://localhost:4000',
+      '/api': {
+        target: 'http://localhost:4000',
+        changeOrigin: true,
+      },
+      '/photos': {
+        target: 'http://localhost:4000',
+        changeOrigin: true,
+      },
       // La borne Xmator Terminal est un build séparé servi par Express (/terminal/) :
       // en dev le serveur Vite relaie ces chemins pour que le bouton d'installation marche aussi sur :5173
-      '/terminal': 'http://localhost:4000',
+      '/terminal': {
+        target: 'http://localhost:4000',
+        changeOrigin: true,
+      },
     },
   },
   preview: {
     host: '0.0.0.0',
     port: 4173,
+    strictPort: true,
     allowedHosts: true,
   },
 });

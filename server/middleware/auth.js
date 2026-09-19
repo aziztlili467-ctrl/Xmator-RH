@@ -2,15 +2,30 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { db } = require('../db');
 
-// Aucun secret « par défaut » connu n'est utilisé : soit JWT_SECRET est défini dans
-// l'environnement, soit (hors production uniquement) une clé éphémère aléatoire est
-// générée à chaque démarrage — jamais une constante du dépôt.
-const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+// Chargement dotenv défensif : si le fichier .env existe (dev local), ses variables
+// sont injectées avant toute utilisation de JWT_SECRET. En production, les variables
+// viennent de l'environnement (Render, Docker, etc.) et ce chargement est inoffensif.
+try {
+  // eslint-disable-next-line import/no-extraneous-dependencies, global-require
+  require('dotenv').config({ path: require('path').join(__dirname, '..', '..', '.env') });
+} catch {
+  // dotenv non installé ou .env absent : on continue (Node --env-file ou variables système)
+}
+
+// Clé JWT : en production, OBLIGATOIRE depuis l'environnement (aucune valeur par défaut).
+// En développement, on utilise une clé de secours STABLE afin d'éviter la génération
+// d'une clé éphémère aléatoire à chaque redémarrage qui invaliderait tous les JWT
+// et provoquerait une déconnexion au F5 (bug critique).
+const DEV_FALLBACK_JWT_SECRET = 'dev_jwt_secret_xmator_rh_stable_2026_local_only_change_me_in_prod_32chars!';
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? null : DEV_FALLBACK_JWT_SECRET);
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET manquant : définir la variable JWT_SECRET dans l\'environnement (voir .env.example).');
+}
 if (!process.env.JWT_SECRET) {
   if (process.env.NODE_ENV === 'production') {
     throw new Error('JWT_SECRET manquant : définir la variable JWT_SECRET dans l\'environnement (voir .env.example).');
   }
-  console.warn('[auth] JWT_SECRET non défini : clé éphémère générée — les sessions seront invalidées au prochain redémarrage.');
+  console.warn('[auth] JWT_SECRET non défini : utilisation de la clé de secours stable pour le dev — les sessions restent valides entre redémarrages.');
 }
 
 // Le jeton d'accès est court (mémoire client) ; la session durable repose sur un
